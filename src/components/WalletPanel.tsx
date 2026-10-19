@@ -1,0 +1,30 @@
+import { desc, eq, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { payouts, teacherProfiles, transactions } from "@/db/schema";
+import { requestPayout, topUp } from "@/lib/actions";
+import { MIN_PAYOUT } from "@/lib/money";
+import { fmt } from "@/lib/time";
+import { money } from "@/lib/package-pricing";
+import type { T, Lang } from "@/lib/i18n";
+import type { LearningCopy } from "@/lib/learning-i18n";
+import Icon from "./Icon";
+import { demoPaymentsEnabled } from "@/lib/runtime-policy";
+import { getIntegrationConfig } from "@/lib/integration-config";
+const card="rounded-[24px] border border-slate-200 bg-white p-6", input="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-teal-500";
+export default async function WalletPanel({ userId, isTutor, balance, escrow, tutor, t, c, lang, ok, err }: { userId:number; isTutor:boolean; balance:number; escrow:number; tutor?:typeof teacherProfiles.$inferSelect; t:T; c:LearningCopy; lang:Lang; ok?:string; err?:string }) {
+  const [txs,withdrawals,[earned]]=await Promise.all([
+    db.select().from(transactions).where(eq(transactions.userId,userId)).orderBy(desc(transactions.createdAt),desc(transactions.id)).limit(50),
+    isTutor?db.select().from(payouts).where(eq(payouts.teacherId,userId)).orderBy(desc(payouts.createdAt)).limit(20):Promise.resolve([]),
+    db.select({total:sql<number>`coalesce(sum(${transactions.amount}),0)::int`}).from(transactions).where(sql`${transactions.userId}=${userId} and ${transactions.type}='earning'`),
+  ]);
+  const realPaymentsConfigured = Boolean((await getIntegrationConfig()).payments.secretKey);
+  const canTopUp = realPaymentsConfigured || demoPaymentsEnabled();
+  const unavailable = { en: "Online payments are not configured yet. Wallet top-ups are unavailable.", zh: "在线支付尚未配置，暂时无法充值钱包。", ja: "オンライン決済は未設定です。ウォレットへのチャージは利用できません。" }[lang];
+  const labels:Record<string,string>={package_purchase:c.packageTx,package_booking:c.packageBookingTx,package_restore:c.packageRestoreTx};
+  return <div className="space-y-6">{ok==="paid"&&<p className="rounded-2xl bg-teal-50 p-4 text-sm font-medium text-teal-800">{t.paid}</p>}{ok==="payout"&&<p className="rounded-2xl bg-teal-50 p-4 text-sm font-medium text-teal-800">{t.payoutRequested}</p>}{err&&<p className="rounded-2xl bg-red-50 p-4 text-sm text-red-600">{t[`err_${err}` as keyof T]||t.err_generic}</p>}
+    <div className="grid gap-4 md:grid-cols-3"><section className="rounded-[24px] bg-[#123e39] p-8 text-white md:col-span-2"><div className="flex items-center gap-2 text-xs text-teal-100/70"><Icon name="wallet" width={16} height={16}/>{t.availableBalance}</div><div className="mt-3 text-4xl font-bold tracking-tight">{money(balance)}</div>{isTutor&&<p className="mt-4 text-xs text-teal-100/60">{t.earnings}: {money(earned.total)} · {t.pendingEarnings}: {money(escrow)}</p>}</section><div className={card}><Icon name="shield" className="text-teal-700"/><h2 className="mt-3 text-sm font-bold text-teal-950">{t.securePay}</h2><p className="mt-2 text-xs leading-5 text-slate-500">{isTutor?t.minPayout:c.paymentPolicy}</p></div></div>
+    {!isTutor&&<form action={topUp} className={card}><h2 className="mb-4 text-lg font-bold text-teal-950">{t.topUp}</h2><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[2000,5000,10000,20000].map(a=><button key={a} name="amount" value={a} disabled={!canTopUp} className="rounded-2xl border border-slate-200 py-5 text-xl font-bold text-teal-950 hover:border-teal-600 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40">{money(a)}</button>)}</div>{!realPaymentsConfigured&&<p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">{canTopUp?t.demoNotice:unavailable}</p>}</form>}
+    {isTutor&&<div className="grid gap-5 lg:grid-cols-2"><form action={requestPayout} className={card}><h2 className="text-lg font-bold text-teal-950">{t.withdraw}</h2><div className="mt-4 space-y-3"><label className="block text-xs font-semibold text-slate-500">{t.withdrawAmount}<input name="amount" type="number" min={MIN_PAYOUT/100} max={balance/100} step="0.01" required defaultValue={balance>=MIN_PAYOUT?Math.floor(balance/100):""} className={input}/></label><label className="block text-xs font-semibold text-slate-500">{t.payoutMethod}<select name="method" defaultValue={tutor?.payoutMethod||"PayPal"} className={input}>{["PayPal","Alipay","PayPay","Wise","Bank"].map(m=><option key={m}>{m}</option>)}</select></label><label className="block text-xs font-semibold text-slate-500">{t.payoutAccount}<input name="account" required minLength={4} maxLength={200} defaultValue={tutor?.payoutAccount} className={input}/></label><button disabled={balance<MIN_PAYOUT} className="w-full rounded-xl bg-teal-800 py-3 text-sm font-bold text-white disabled:opacity-40">{t.withdraw}</button><p className="text-[11px] leading-5 text-slate-400">{t.minPayout}</p></div></form><div className={card}><h2 className="mb-3 text-lg font-bold text-teal-950">{t.payoutHistory}</h2>{withdrawals.map(p=><div key={p.id} className="border-b border-slate-100 py-3 text-xs"><div className="flex justify-between gap-2"><b className="text-slate-700">{money(p.amount)} · {p.method}</b><span className="text-teal-700">{t[`payout_${p.status}` as keyof T]}</span></div><p className="mt-1 text-slate-400">{fmt(p.createdAt,lang)}</p></div>)}{!withdrawals.length&&<p className="py-4 text-sm text-slate-400">—</p>}</div></div>}
+    <section className={card}><h2 className="mb-4 text-lg font-bold text-teal-950">{t.txHistory}</h2>{txs.map(x=><div key={x.id} className="flex justify-between gap-3 border-b border-slate-50 py-3 text-xs"><div><b className="text-slate-600">{labels[x.type]||t[`tx_${x.type}` as keyof T]||x.type}</b><p className="mt-1 text-[11px] text-slate-400">{x.note} · {fmt(x.createdAt,lang)}</p></div><span className={`shrink-0 font-bold ${x.amount>0?"text-teal-700":"text-slate-600"}`}>{x.amount===0?"—":`${x.amount>0?"+":"−"}${money(Math.abs(x.amount))}`}</span></div>)}{!txs.length&&<p className="text-sm text-slate-400">—</p>}</section>
+  </div>;
+}

@@ -1,0 +1,20 @@
+# Netlify detects Next.js and uses its automatically updated OpenNext adapter.
+# Do NOT add a static export or a catch-all SPA redirect: the app needs SSR,
+# route handlers, sessions, Server Actions and PostgreSQL transactions.
+[build]
+  command = "node scripts/check-netlify-env.mjs && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
+  NETLIFY_NEXT_SKEW_PROTECTION = "true"
+
+# Secrets and runtime flags MUST be set in the Netlify dashboard with the
+# Builds AND Functions scopes. Values in this file are build-time settings.
+# Schema deployment is deliberately separate from the build to prevent
+# preview builds from modifying a shared production database.
+# Performance: set Cloud compute > Functions Region to Singapore (sin) in
+# Netlify's project UI and create the hosted Postgres DB in the same region.
+# Next.js functions are adapter-generated: a generic TOML region does not
+# replace the project-level region setting. Region selection requires Pro/Enterprise.

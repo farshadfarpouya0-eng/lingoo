@@ -1,0 +1,18 @@
+node_modules/
+.next/
+.netlify/
+.vercel/
+out/
+coverage/
+playwright-report/
+test-results/
+artifacts/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.tar.gz
+# Temporary source bundles are only for this sandbox preview, never deploy them.
+/public/downloads/
+npm-debug.log*
+.DS_Store

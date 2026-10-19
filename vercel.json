@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "node scripts/check-vercel-env.mjs && npm run build",
+  "crons": [
+    {
+      "path": "/api/cron/recordings-cleanup",
+      "schedule": "17 3 * * *"
+    }
+  ]
+}

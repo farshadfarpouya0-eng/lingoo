@@ -1,0 +1,10 @@
+import { redirect } from "next/navigation";
+import { desc } from "drizzle-orm";
+import { db } from "@/db";
+import { learningMaterials } from "@/db/schema";
+import { getUser } from "@/lib/auth";
+import AdminShell from "@/components/AdminShell";
+import { updateMaterialStatus } from "@/lib/feature-actions";
+import MaterialUploadForm from "@/components/MaterialUploadForm";
+export const dynamic="force-dynamic";
+export default async function AdminMaterials(){const user=await getUser();if(!user||user.role!=="admin")redirect("/login");const rows=await db.select().from(learningMaterials).orderBy(desc(learningMaterials.createdAt)).limit(200);return <AdminShell><div className="mb-6"><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Learning library</p><h1 className="mt-1 text-3xl font-black text-teal-950">Textbooks & audio</h1><p className="mt-2 text-sm text-slate-500">Manage educational materials. Uploads are stored in a private bucket; paid files are only served to students who purchased them.</p></div><MaterialUploadForm /><section className="mt-6 rounded-3xl border border-slate-200 bg-white p-5"><h2 className="mb-3 text-lg font-bold text-teal-950">Existing materials ({rows.length})</h2><div className="divide-y divide-slate-100">{rows.map(m=><div key={m.id} className="flex flex-wrap items-center gap-3 py-4"><div className="min-w-0 flex-1"><p className="font-semibold text-slate-800">{m.title}</p><p className="mt-1 text-xs text-slate-500">{m.kind} · {m.language} · {m.level} · {m.isFree?"Free":`Paid · ${(m.price/100).toFixed(2)}`} · {m.published?"Published":"Draft"}</p></div><a href={`/api/private-files/material/${m.id}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-teal-700">Open file ↗</a><form action={updateMaterialStatus}><input type="hidden" name="id" value={m.id}/><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="published" defaultChecked={m.published}/> Published</label><button className="mt-2 rounded-lg border px-3 py-1.5 text-xs">Save status</button></form></div>)}</div></section></AdminShell>}

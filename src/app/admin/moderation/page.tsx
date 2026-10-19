@@ -1,0 +1,19 @@
+import { redirect } from "next/navigation";
+import { desc, eq, inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { moderationCases, users } from "@/db/schema";
+import { getUser } from "@/lib/auth";
+import { reviewModerationCase } from "@/lib/moderation-actions";
+import AdminShell from "@/components/AdminShell";
+
+export const dynamic = "force-dynamic";
+export default async function ModerationPage() {
+  const admin = await getUser();
+  if (!admin || admin.role !== "admin") redirect("/login");
+  const rows = await db.select({ c: moderationCases, reporterName: users.name, reporterEmail: users.email })
+    .from(moderationCases).innerJoin(users, eq(users.id, moderationCases.reporterId)).orderBy(desc(moderationCases.createdAt)).limit(200);
+  const subjectIds = [...new Set(rows.map(r => r.c.subjectUserId).filter((id): id is number => id !== null))];
+  const subjectRows = subjectIds.length ? await db.select({ id: users.id, name: users.name, email: users.email, suspended: users.suspended, role: users.role }).from(users).where(inArray(users.id, subjectIds)) : [];
+  const subjects = new Map(subjectRows.map(r => [r.id, r]));
+  return <AdminShell><h1 className="text-3xl font-black text-teal-950">Safety & moderation</h1><p className="mb-6 mt-2 text-sm leading-6 text-slate-500">Review participant reports and appeals. Suspension is an explicit decision and must be accompanied by a recorded reason; reports do not trigger automatic account sanctions.</p><div className="space-y-4">{rows.map(({c,reporterName,reporterEmail})=>{const subject=c.subjectUserId?subjects.get(c.subjectUserId):null;return <article key={c.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="font-bold text-teal-950">Case #{c.id} · {c.category.replaceAll("_"," ")}</h2><p className="mt-1 text-xs text-slate-500">Lesson #{c.lessonId ?? "—"} · {c.createdAt.toLocaleString()}</p></div><span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">{c.status}</span></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{c.description}</p><div className="mt-3 grid gap-1 text-xs text-slate-500"><p>Reported by {reporterName} ({reporterEmail})</p><p>Subject: {subject ? `${subject.name} (${subject.email}) · ${subject.role}${subject.suspended?" · suspended":""}` : "No account selected"}</p></div>{c.appealText&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50 p-3"><p className="text-xs font-bold text-violet-900">Appeal submitted</p><p className="mt-1 whitespace-pre-wrap text-sm text-violet-950">{c.appealText}</p></div>}{c.resolution&&<p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Previous decision: {c.resolution}</p>}<form action={reviewModerationCase} className="mt-4 grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)_auto]"><input type="hidden" name="id" value={c.id}/><select name="status" defaultValue={c.status==="open"||c.status==="appealed"?"investigating":c.status} className="rounded-xl border p-3 text-sm"><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select><select name="sanction" defaultValue="none" className="rounded-xl border p-3 text-sm"><option value="none">No account change</option><option value="suspend">Suspend account</option><option value="unsuspend">Reinstate account</option></select><input name="resolution" required minLength={4} maxLength={2000} placeholder="Decision and reason (required)" className="min-w-0 rounded-xl border p-3 text-sm"/><button className="rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white">Save decision</button></form></article>;})}{!rows.length&&<p className="rounded-2xl border bg-white p-8 text-center text-sm text-slate-400">No moderation cases yet.</p>}</div></AdminShell>;
+}
