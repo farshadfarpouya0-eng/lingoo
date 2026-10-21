@@ -12,7 +12,7 @@ export default function AuthForm({ mode, t, defaultRole, referralCode = "", show
     <div className="mx-auto max-w-md px-4 py-16">
       <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl shadow-teal-100">
         <h1 className="text-3xl font-black text-teal-950">{mode === "login" ? t.login : t.register}</h1>
-        <form action={action} className="mt-6 space-y-4">
+        <form action={action as unknown as (fd: FormData) => Promise<void>} className="mt-6 space-y-4">
           {mode === "register" && (
             <>
               <input type="hidden" name="referralCode" value={referralCode} />

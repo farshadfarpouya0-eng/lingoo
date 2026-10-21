@@ -39,7 +39,7 @@ async function run() {
     let offset=4;
     const slot=()=>new Date(Math.ceil(Date.now()/3600_000)*3600_000+(offset++)*3600_000);
     const lesson=await reserveLesson(student.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id});
-    assert.equal(lesson.platform,"undecided");assert.equal(lesson.price,2613);assert.equal(lesson.packageId,pack.id);
+const l = lesson as any;assert.equal(l.platform,"undecided");assert.equal(l.price,2613);assert.equal(l.packageId,pack.id);
     assert.equal(await credits(pack.id),4);assert.equal(await balance(student.id),86935);
     console.log("PASS booking consumes one package credit with no wallet debit or preselected platform");
     await assert.rejects(reserveLesson(stranger.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id}),/credit/);

@@ -1,3 +1,5 @@
+import "./db-timezone";
+
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
@@ -13,6 +15,7 @@ export function hashPassword(pw: string) {
   return `${salt}:${scryptSync(pw, salt, 64).toString("hex")}`;
 }
 const DUMMY = hashPassword("dummy-password-for-timing");
+
 export function verifyPassword(pw: string, stored: string | null) {
   const [salt, hash] = (stored ?? DUMMY).split(":");
   if (!salt || !hash) return false;

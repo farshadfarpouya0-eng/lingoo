@@ -34,48 +34,65 @@ async function ReferralDashboardBlock({ userId, code }: { userId: number; code: 
   ]);
   const credit25 = Number(credits.find(c => c.duration === 25)?.remaining || 0);
   const credit50 = Number(credits.find(c => c.duration === 50)?.remaining || 0);
-  return <ReferralPanel code={code} qualified={progress.qualified % 3} rewardChoices={progress.rewardChoices} credits25={credit25} credits50={credit50}/>;
+  return <ReferralPanel code={code} qualified={progress.qualified % 3} rewardChoices={progress.rewardChoices} credits25={credit25} credits50={credit50} />;
 }
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "My learning", robots: { index:false, follow:false } };
-export default async function Dashboard({searchParams}:{searchParams:Promise<{tab?:string;with?:string;teacher?:string;ok?:string;err?:string}>}) {
-  const user=await getUser();
-  if(!user)redirect("/login");
-  if(user.role==="admin")redirect("/admin");
+export const metadata = { title: "My learning", robots: { index: false, follow: false } };
+
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string; with?: string; teacher?: string; ok?: string; err?: string }> }) {
+  const user = await getUser();
+  if (!user) redirect("/login");
+  if (user.role === "admin") redirect("/admin");
   await settleLessons(user.id);
-  const {t,lang}=await getT();
-  const c=LEARNING[lang];
-  const sp=await searchParams;
-  const isTutor=user.role==="teacher";
-  const requested=sp.tab||(isTutor?"overview":"packages");
-  const tab=["overview","packages","lessons","schedule","messages","wallet","profile","materials"].includes(requested)&&!(isTutor&&requested==="packages")&&(!isTutor&&requested!=="schedule"||isTutor)?requested:"overview";
-  const other=alias(users,"other");
-  const needsRows=tab==="overview"||tab==="lessons";
-  const groupSeatRows=!isTutor&&needsRows?await db.select({lessonId:lessonParticipants.lessonId}).from(lessonParticipants).where(and(eq(lessonParticipants.studentId,user.id),inArray(lessonParticipants.status,["booked","attended"]))):[];
-  const groupLessonIds=[...new Set(groupSeatRows.map(r=>r.lessonId))];
-  const studentLessonScope=groupLessonIds.length?or(eq(lessons.studentId,user.id),inArray(lessons.id,groupLessonIds)):eq(lessons.studentId,user.id);
-  const rowQuery=db.select({l:lessons,otherName:other.name,otherAvatar:other.avatar,otherId:other.id}).from(lessons)
-    .innerJoin(other,eq(other.id,isTutor?lessons.studentId:lessons.teacherId))
-    .where(tab==="overview"?(isTutor?upcomingForUser(user.id,true):and(studentLessonScope,inArray(lessons.status,["pending","confirmed"]))):(isTutor?eq(lessons.teacherId,user.id):studentLessonScope))
+  const { t, lang } = await getT();
+  const c = LEARNING[lang];
+  const sp = await searchParams;
+  const isTutor = user.role === "teacher";
+  const requested = sp.tab || (isTutor ? "overview" : "packages");
+  const tab = ["overview", "packages", "lessons", "schedule", "messages", "wallet", "profile", "materials"].includes(requested) && !(isTutor && requested === "packages") && (!isTutor && requested !== "schedule" || isTutor) ? requested : "overview";
+
+  const other = alias(users, "other");
+  const needsRows = tab === "overview" || tab === "lessons";
+
+  const groupSeatRows = !isTutor && needsRows
+    ? await db.select({ lessonId: lessonParticipants.lessonId }).from(lessonParticipants)
+        .where(and(eq(lessonParticipants.studentId, user.id), inArray(lessonParticipants.status, ["booked", "attended"])))
+    : [];
+  const groupLessonIds = [...new Set(groupSeatRows.map(r => r.lessonId))];
+  const studentLessonScope = groupLessonIds.length
+    ? or(eq(lessons.studentId, user.id), inArray(lessons.id, groupLessonIds))
+    : eq(lessons.studentId, user.id);
+
+  const rowQuery = db.select({ l: lessons, otherName: other.name, otherAvatar: other.avatar, otherId: other.id })
+    .from(lessons)
+    .innerJoin(other, eq(other.id, isTutor ? lessons.studentId : lessons.teacherId))
+    .where(tab === "overview"
+      ? (isTutor ? upcomingForUser(user.id, true) : and(studentLessonScope, inArray(lessons.status, ["pending", "confirmed"])))
+      : (isTutor ? eq(lessons.teacherId, user.id) : studentLessonScope))
     .orderBy(asc(lessons.startAt));
-  const [[fresh],rows,[tutor],[credits],summary,contacts,weeklySlots,blockedSlots,scheduleBookings,[presenceSetting]]=await Promise.all([
-    db.select({balance:users.balance}).from(users).where(eq(users.id,user.id)),
-    needsRows?(tab==="overview"?rowQuery.limit(5):rowQuery):Promise.resolve([]),
-    isTutor&&(tab==="profile"||tab==="wallet"||tab==="schedule")?db.select().from(teacherProfiles).where(eq(teacherProfiles.userId,user.id)):Promise.resolve([]),
-    !isTutor&&tab==="overview"?db.select({total:sql<number>`coalesce(sum(${lessonPackages.remainingLessons}),0)::int`}).from(lessonPackages).where(eq(lessonPackages.studentId,user.id)):Promise.resolve([{total:0}]),
-    tab==="overview"||(isTutor&&tab==="wallet")?dashboardSummary(user.id,isTutor):Promise.resolve({completedLessons:0,completedMinutes:0,students:0,escrow:0}),
-    tab==="messages"?db.selectDistinct({id:isTutor?lessons.studentId:lessons.teacherId}).from(lessons).where(eq(isTutor?lessons.teacherId:lessons.studentId,user.id)):Promise.resolve([]),
-    isTutor&&tab==="schedule"?db.select({weekday:teacherWeeklySlots.weekday,startMinute:teacherWeeklySlots.startMinute,endMinute:teacherWeeklySlots.endMinute}).from(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId,user.id)):Promise.resolve([]),
-    isTutor&&tab==="schedule"?db.select().from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId,user.id),gte(teacherBlockedSlots.endAt,new Date()))).orderBy(asc(teacherBlockedSlots.startAt)).limit(60):Promise.resolve([]),
-    isTutor&&tab==="schedule"?db.select({startAt:lessons.startAt,duration:lessons.duration,status:lessons.status,studentName:other.name}).from(lessons).innerJoin(other,eq(other.id,lessons.studentId)).where(and(eq(lessons.teacherId,user.id),inArray(lessons.status,["pending","confirmed"]),gte(lessons.startAt,new Date(Date.now()-86400_000)))).orderBy(asc(lessons.startAt)).limit(60):Promise.resolve([]),
-    db.select({visible:userPresence.visible}).from(userPresence).where(eq(userPresence.userId,user.id)).limit(1),
+
+  const [[fresh], rows, [tutor], [credits], summary, contacts, weeklySlots, blockedSlots, scheduleBookings, [presenceSetting]] = await Promise.all([
+    db.select({ balance: users.balance }).from(users).where(eq(users.id, user.id)),
+    needsRows ? (tab === "overview" ? rowQuery.limit(5) : rowQuery) : Promise.resolve([]),
+    isTutor && (tab === "profile" || tab === "wallet" || tab === "schedule") ? db.select().from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : Promise.resolve([]),
+    !isTutor && tab === "overview" ? db.select({ total: sql<number>`coalesce(sum(${lessonPackages.remainingLessons}),0)::int` }).from(lessonPackages).where(eq(lessonPackages.studentId, user.id)) : Promise.resolve([{ total: 0 }]),
+    tab === "overview" || (isTutor && tab === "wallet") ? dashboardSummary(user.id, isTutor) : Promise.resolve({ completedLessons: 0, completedMinutes: 0, students: 0, escrow: 0 }),
+    tab === "messages" ? db.selectDistinct({ id: isTutor ? lessons.studentId : lessons.teacherId }).from(lessons).where(eq(isTutor ? lessons.teacherId : lessons.studentId, user.id)) : Promise.resolve([]),
+    isTutor && tab === "schedule" ? db.select({ weekday: teacherWeeklySlots.weekday, startMinute: teacherWeeklySlots.startMinute, endMinute: teacherWeeklySlots.endMinute }).from(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId, user.id)) : Promise.resolve([]),
+    isTutor && tab === "schedule" ? db.select().from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, user.id), gte(teacherBlockedSlots.endAt, new Date()))).orderBy(asc(teacherBlockedSlots.startAt)).limit(60) : Promise.resolve([]),
+    isTutor && tab === "schedule" ? db.select({ startAt: lessons.startAt, duration: lessons.duration, status: lessons.status, studentName: other.name }).from(lessons).innerJoin(other, eq(other.id, lessons.studentId)).where(and(eq(lessons.teacherId, user.id), inArray(lessons.status, ["pending", "confirmed"]), gte(lessons.startAt, new Date(Date.now() - 86400_000)))).orderBy(asc(lessons.startAt)).limit(60) : Promise.resolve([]),
+    db.select({ visible: userPresence.visible }).from(userPresence).where(eq(userPresence.userId, user.id)).limit(1),
   ]);
-  const balance=fresh?.balance??user.balance;
-  const reviewedLessonIds=!isTutor&&needsRows?new Set((await db.select({lessonId:reviews.lessonId}).from(reviews).where(eq(reviews.studentId,user.id))).map(r=>r.lessonId).filter((v):v is number=>v!==null)):new Set<number>();
-  const displayRows=rows.map(row=>({...row,reviewedByMe:reviewedLessonIds.has(row.l.id)}));
-  const upcoming=displayRows.filter(x=>["pending","confirmed"].includes(x.l.status));
-  const escrow=summary.escrow;
+
+  const balance = fresh?.balance ?? user.balance;
+  const reviewedLessonIds = !isTutor && needsRows
+    ? new Set((await db.select({ lessonId: reviews.lessonId }).from(reviews).where(eq(reviews.studentId, user.id))).map(r => r.lessonId).filter((v): v is number => v !== null))
+    : new Set<number>();
+  const displayRows = rows.map(row => ({ ...row, reviewedByMe: reviewedLessonIds.has(row.l.id) }));
+  const upcoming = displayRows.filter(x => ["pending", "confirmed"].includes(x.l.status));
+  const escrow = summary.escrow;
+
   const courseProgress = tab === "overview" ? await (async () => {
     const packages = await db.select({ pack: lessonPackages, otherName: other.name })
       .from(lessonPackages).innerJoin(other, eq(other.id, isTutor ? lessonPackages.studentId : lessonPackages.teacherId))
@@ -91,43 +108,233 @@ export default async function Dashboard({searchParams}:{searchParams:Promise<{ta
     const countByPackage = new Map(counts.map(c => [c.packageId, c]));
     return packages.map(x => ({ ...x, completed: Number(countByPackage.get(x.pack.id)?.completed || 0), booked: Number(countByPackage.get(x.pack.id)?.booked || 0) }));
   })() : [];
-  const nav:{key:string;label:string;icon:IconName}[]=[
-    {key:"overview",label:t.overview,icon:"chart"},
-    ...(!isTutor?[{key:"packages",label:c.packages,icon:"box" as IconName}]:[]),
-    {key:"lessons",label:t.myLessons,icon:"calendar"},
-    {key:"materials",label:"Learning library",icon:"book"},
-    ...(isTutor?[{key:"schedule",label:t.scheduleTab,icon:"clock" as IconName}]:[]),
-    {key:"messages",label:t.messages,icon:"messages"},
-    {key:"wallet",label:t.wallet,icon:"wallet"},{key:"profile",label:t.profile,icon:"user"},
+
+  const nav: { key: string; label: string; icon: IconName }[] = [
+    { key: "overview", label: t.overview, icon: "chart" },
+    ...(!isTutor ? [{ key: "packages", label: c.packages, icon: "box" as IconName }] : []),
+    { key: "lessons", label: t.myLessons, icon: "calendar" },
+    { key: "materials", label: "Learning library", icon: "book" },
+    ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }] : []),
+    { key: "messages", label: t.messages, icon: "messages" },
+    { key: "wallet", label: t.wallet, icon: "wallet" },
+    { key: "profile", label: t.profile, icon: "user" },
   ];
-  let content:React.ReactNode;
-  if(tab==="materials") {
+
+  let content: React.ReactNode;
+
+  if (tab === "materials") {
     const [materials, purchases] = await Promise.all([
-      db.select().from(learningMaterials).where(eq(learningMaterials.published,true)).orderBy(asc(learningMaterials.title)).limit(200),
-      db.select({materialId:materialPurchases.materialId}).from(materialPurchases).where(eq(materialPurchases.userId,user.id)),
+      db.select().from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
+      db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(eq(materialPurchases.userId, user.id)),
     ]);
-    const owned = new Set(purchases.map(p=>p.materialId));
-    content=<section className="space-y-5"><div><h2 className="text-2xl font-bold text-teal-950">Learning library</h2><p className="mt-2 text-sm text-slate-500">Browse textbooks, audio and worksheets. Free resources open immediately; paid resources require a successful purchase.</p></div><div className="grid gap-4 md:grid-cols-2">{materials.map(m=>{const canOpen=m.isFree||owned.has(m.id)||isTutor;return <article key={m.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5">{m.coverUrl&&<img src={m.coverUrl} alt="" className="mb-4 h-36 w-full rounded-xl object-cover"/>}<div className="flex items-center justify-between gap-2"><span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase text-teal-800">{m.kind}</span><span className="text-xs font-bold text-teal-800">{m.isFree?"FREE":`$${(m.price/100).toFixed(2)}`}</span></div><h3 className="mt-3 text-lg font-bold text-teal-950">{m.title}</h3><p className="mt-1 text-xs text-slate-400">{m.language} · {m.level}</p><p className="mt-3 text-sm leading-6 text-slate-600">{m.description||"Learning resource from Lingorain."}</p><div className="mt-4">{canOpen?<a href={`/api/private-files/material/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white">Open resource ↗</a>:<form action={async (fd) => { await buyMaterial(fd); }}><input type="hidden" name="id" value={m.id}/><button className="rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-bold text-teal-950">Buy resource · ${((m.price||0)/100).toFixed(2)}</button><p className="mt-2 text-xs text-slate-400">Charged from your Lingorain balance.</p></form>}</div></article>})}</div>{!materials.length&&<p className="rounded-2xl border bg-white p-8 text-center text-sm text-slate-400">No materials have been published yet.</p>}</section>;
+    const owned = new Set(purchases.map(p => p.materialId));
+    content = (
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-2xl font-bold text-teal-950">Learning library</h2>
+          <p className="mt-2 text-sm text-slate-500">Browse textbooks, audio and worksheets. Free resources open immediately; paid resources require a successful purchase.</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {materials.map(m => {
+            const canOpen = m.isFree || owned.has(m.id) || isTutor;
+            return (
+              <article key={m.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5">
+                {m.coverUrl && <img src={m.coverUrl} alt="" className="mb-4 h-36 w-full rounded-xl object-cover" />}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase text-teal-800">{m.kind}</span>
+                  <span className="text-xs font-bold text-teal-800">{m.isFree ? "FREE" : `$${(m.price / 100).toFixed(2)}`}</span>
+                </div>
+                <h3 className="mt-3 text-lg font-bold text-teal-950">{m.title}</h3>
+                <p className="mt-1 text-xs text-slate-400">{m.language} · {m.level}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{m.description || "Learning resource from Lingorain."}</p>
+                <div className="mt-4">
+                  {canOpen ? (
+                    <a href={`/api/private-files/material/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white">Open resource ↗</a>
+                  ) : (
+                    /* ✅ FIX: pass the server action directly — never an inline async arrow */
+                    <form action={buyMaterial as unknown as (fd: FormData) => Promise<void>}>
+                      <input type="hidden" name="id" value={m.id} />
+                      <button className="rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-bold text-teal-950">Buy resource · ${((m.price || 0) / 100).toFixed(2)}</button>
+                      <p className="mt-2 text-xs text-slate-400">Charged from your Lingorain balance.</p>
+                    </form>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {!materials.length && <p className="rounded-2xl border bg-white p-8 text-center text-sm text-slate-400">No materials have been published yet.</p>}
+      </section>
+    );
+  } else if (tab === "packages") {
+    content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
+  } else if (tab === "lessons") {
+    content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
+  } else if (tab === "schedule" && isTutor) {
+    content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 8} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
+  } else if (tab === "wallet") {
+    content = <WalletPanel userId={user.id} isTutor={isTutor} balance={balance} escrow={escrow} tutor={tutor} t={t} c={c} lang={lang} ok={sp.ok} err={sp.err} />;
+  } else if (tab === "messages") {
+    content = <MessagesPanel userId={user.id} contactIds={contacts.map(x => x.id)} selectedId={Number(sp.with) || undefined} t={t} lang={lang} />;
+  } else if (tab === "profile") {
+    const docs = isTutor ? await db.select().from(teacherDocuments).where(eq(teacherDocuments.teacherId, user.id)).orderBy(asc(teacherDocuments.createdAt)) : [];
+    const completed = isTutor ? [Boolean(user.avatarStorageRef), Boolean(tutor?.headline), Boolean(tutor?.bio), Boolean(tutor?.speaks), Boolean(tutor?.tags), Boolean(tutor?.workDays), docs.some(d => d.documentType === "identity" && d.status === "verified"), docs.some(d => d.optionalCredential && d.status === "verified")].filter(Boolean).length : 0;
+    const percent = isTutor ? Math.round(completed / 8 * 100) : 0;
+    content = (
+      <div className="space-y-5">
+        <PresencePrivacySetting visible={presenceSetting?.visible ?? true} />
+        <ProfileAvatarUploadForm avatar={user.avatar} />
+        <ProfileForm user={user} tutor={tutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} />
+        {isTutor && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-teal-950">Profile completion</h2>
+                <p className="mt-1 text-sm text-slate-500">Complete more sections to build trust with students.</p>
+              </div>
+              <strong className="text-2xl text-teal-800">{percent}%</strong>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-700" style={{ width: `${percent}%` }} /></div>
+            <p className="mt-3 text-xs text-slate-500">Photo, headline, biography, languages, skills, timetable and verified documents contribute. Academic and teaching credentials are optional.</p>
+            <TeacherDocumentUploadForm />
+            {docs.length > 0 && (
+              <div className="mt-5 space-y-2">
+                {docs.map(d => (
+                  <div key={d.id} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm">
+                    <span>{d.documentType}{d.optionalCredential ? " · optional" : ""}</span>
+                    <span className="text-xs font-semibold text-slate-500">{d.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    );
+  } else {
+    const stats: { label: string; value: string; icon: IconName }[] = isTutor
+      ? [{ label: t.availableBalance, value: money(balance), icon: "wallet" }, { label: t.pendingEarnings, value: money(escrow), icon: "clock" }, { label: t.totalLessons, value: String(summary.completedLessons), icon: "book" }, { label: t.students, value: String(summary.students), icon: "user" }]
+      : [{ label: t.balance, value: money(balance), icon: "wallet" }, { label: c.packageCredit, value: String(credits.total), icon: "box" }, { label: t.totalLessons, value: String(summary.completedLessons), icon: "book" }, { label: t.hoursLearned, value: (summary.completedMinutes / 60).toFixed(1), icon: "clock" }];
+
+    content = (
+      <div className="space-y-6">
+        <DashboardRefresh />
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {stats.map((s, i) => (
+            <div key={s.label} className={`rounded-[22px] border p-5 ${i === 0 ? "border-teal-800 bg-teal-800 text-white" : "border-slate-200 bg-white text-teal-950"}`}>
+              <Icon name={s.icon} className={i === 0 ? "text-teal-200" : "text-teal-600"} />
+              <p className={`mt-4 text-[10px] font-semibold ${i === 0 ? "text-teal-100/70" : "text-slate-400"}`}>{s.label}</p>
+              <p className="mt-1 text-2xl font-bold tracking-tight">{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {!isTutor && (
+          <Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6">
+            <div className="flex items-center gap-4">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-teal-700"><Icon name="box" width={24} height={24} /></span>
+              <div>
+                <h2 className="text-lg font-bold text-teal-950">{c.packageTitle}</h2>
+                <p className="mt-1 text-xs text-slate-500">{c.flexible} · 5%, 10%, 15% {c.off}</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-2 text-xs font-semibold text-teal-800">{c.browse}<Icon name="arrow" width={16} height={16} /></span>
+          </Link>
+        )}
+
+        {!isTutor && tab === "overview" && <ReferralDashboardBlock userId={user.id} code={user.referralCode} />}
+
+        {tab === "overview" && courseProgress.length > 0 && (
+          <section className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-6">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-teal-950">Course progress</h2>
+              <p className="mt-1 text-xs text-slate-500">Completed lessons are counted only after the teacher marks them completed or they auto-settle.</p>
+            </div>
+            <div className="space-y-4">
+              {courseProgress.map(({ pack, otherName, completed, booked }) => {
+                const percent = Math.min(100, Math.round(completed / Math.max(1, pack.totalLessons) * 100));
+                return (
+                  <article key={pack.id} className="rounded-2xl border border-slate-100 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-teal-950">{otherName}</h3>
+                        <p className="mt-1 text-xs text-slate-500">{pack.duration}-minute package · {pack.totalLessons} total sessions</p>
+                      </div>
+                      <strong className="text-lg text-teal-800">{percent}%</strong>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{ width: `${percent}%` }} /></div>
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                      <span>Held: <b className="text-teal-800">{completed}</b></span>
+                      <span>Booked / pending: <b className="text-sky-700">{booked}</b></span>
+                      <span>Credits remaining: <b className="text-teal-800">{pack.remainingLessons}</b></span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-6">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-teal-950">{t.upcoming}</h2>
+            <Link href="/dashboard?tab=lessons" className="text-xs font-semibold text-teal-700">{t.viewAll} →</Link>
+          </div>
+          <div className="space-y-3">
+            {upcoming.slice(0, 5).map(row => (
+              <DashboardLessonRow key={row.l.id} row={row} isTutor={isTutor} t={t} c={c} lang={lang} />
+            ))}
+          </div>
+          {!upcoming.length && (
+            <p className="py-5 text-sm text-slate-400">
+              {t.noLessons} {!isTutor && <Link href="/teachers" className="ml-2 text-teal-700">{t.findTeachers} →</Link>}
+            </p>
+          )}
+        </section>
+      </div>
+    );
   }
-  else if(tab==="packages") content=<PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher)||undefined}/>;
-  else if(tab==="lessons")content=<><DashboardRefresh/><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok==="booked"}/></>;
-  else if(tab==="schedule"&&isTutor){content=<TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset??8} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang).label} okMsg={sp.ok==="saved"?t.saved:""} errMsg={sp.err?(t[`err_${sp.err}` as keyof typeof t]||t.err_generic):""}/>;}
-  else if(tab==="wallet")content=<WalletPanel userId={user.id} isTutor={isTutor} balance={balance} escrow={escrow} tutor={tutor} t={t} c={c} lang={lang} ok={sp.ok} err={sp.err}/>;
-  else if(tab==="messages")content=<MessagesPanel userId={user.id} contactIds={contacts.map(x=>x.id)} selectedId={Number(sp.with)||undefined} t={t} lang={lang}/>;
-  else if(tab==="profile") {
-    const docs=isTutor?await db.select().from(teacherDocuments).where(eq(teacherDocuments.teacherId,user.id)).orderBy(asc(teacherDocuments.createdAt)):[];
-    const completed=isTutor?[Boolean(user.avatarStorageRef),Boolean(tutor?.headline),Boolean(tutor?.bio),Boolean(tutor?.speaks),Boolean(tutor?.tags),Boolean(tutor?.workDays),docs.some(d=>d.documentType==="identity"&&d.status==="verified"),docs.some(d=>d.optionalCredential&&d.status==="verified")].filter(Boolean).length:0;
-    const percent=isTutor?Math.round(completed/8*100):0;
-    content=<div className="space-y-5"><PresencePrivacySetting visible={presenceSetting?.visible ?? true}/><ProfileAvatarUploadForm avatar={user.avatar}/><ProfileForm user={user} tutor={tutor} t={t} c={c} lang={lang} saved={sp.ok==="saved"}/>{isTutor&&<section className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-teal-950">Profile completion</h2><p className="mt-1 text-sm text-slate-500">Complete more sections to build trust with students.</p></div><strong className="text-2xl text-teal-800">{percent}%</strong></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-700" style={{width:`${percent}%`}}/></div><p className="mt-3 text-xs text-slate-500">Photo, headline, biography, languages, skills, timetable and verified documents contribute. Academic and teaching credentials are optional.</p><TeacherDocumentUploadForm />{docs.length>0&&<div className="mt-5 space-y-2">{docs.map(d=><div key={d.id} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><span>{d.documentType}{d.optionalCredential?" · optional":""}</span><span className="text-xs font-semibold text-slate-500">{d.status}</span></div>)}</div>}</section>}</div>;
-  }
-  else {
-    const stats:{label:string;value:string;icon:IconName}[]=isTutor?
-      [{label:t.availableBalance,value:money(balance),icon:"wallet"},{label:t.pendingEarnings,value:money(escrow),icon:"clock"},{label:t.totalLessons,value:String(summary.completedLessons),icon:"book"},{label:t.students,value:String(summary.students),icon:"user"}]:
-      [{label:t.balance,value:money(balance),icon:"wallet"},{label:c.packageCredit,value:String(credits.total),icon:"box"},{label:t.totalLessons,value:String(summary.completedLessons),icon:"book"},{label:t.hoursLearned,value:(summary.completedMinutes/60).toFixed(1),icon:"clock"}];
-    content=<div className="space-y-6"><DashboardRefresh/><div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{stats.map((s,i)=><div key={s.label} className={`rounded-[22px] border p-5 ${i===0?"border-teal-800 bg-teal-800 text-white":"border-slate-200 bg-white text-teal-950"}`}><Icon name={s.icon} className={i===0?"text-teal-200":"text-teal-600"}/><p className={`mt-4 text-[10px] font-semibold ${i===0?"text-teal-100/70":"text-slate-400"}`}>{s.label}</p><p className="mt-1 text-2xl font-bold tracking-tight">{s.value}</p></div>)}</div>{!isTutor&&<Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6"><div className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-teal-700"><Icon name="box" width={24} height={24}/></span><div><h2 className="text-lg font-bold text-teal-950">{c.packageTitle}</h2><p className="mt-1 text-xs text-slate-500">{c.flexible} · 5%, 10%, 15% {c.off}</p></div></div><span className="flex items-center gap-2 text-xs font-semibold text-teal-800">{c.browse}<Icon name="arrow" width={16} height={16}/></span></Link>}{!isTutor&&tab==="overview"&&<ReferralDashboardBlock userId={user.id} code={user.referralCode} />}{tab==="overview"&&courseProgress.length>0&&<section className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-6"><div className="mb-4"><h2 className="text-lg font-bold text-teal-950">Course progress</h2><p className="mt-1 text-xs text-slate-500">Completed lessons are counted only after the teacher marks them completed or they auto-settle.</p></div><div className="space-y-4">{courseProgress.map(({pack,otherName,completed,booked})=>{const percent=Math.min(100,Math.round(completed/Math.max(1,pack.totalLessons)*100));return <article key={pack.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-bold text-teal-950">{otherName}</h3><p className="mt-1 text-xs text-slate-500">{pack.duration}-minute package · {pack.totalLessons} total sessions</p></div><strong className="text-lg text-teal-800">{percent}%</strong></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{width:`${percent}%`}}/></div><div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500"><span>Held: <b className="text-teal-800">{completed}</b></span><span>Booked / pending: <b className="text-sky-700">{booked}</b></span><span>Credits remaining: <b className="text-teal-800">{pack.remainingLessons}</b></span></div></article>})}</div></section>}<section className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold text-teal-950">{t.upcoming}</h2><Link href="/dashboard?tab=lessons" className="text-xs font-semibold text-teal-700">{t.viewAll} →</Link></div><div className="space-y-3">{upcoming.slice(0,5).map(row=><DashboardLessonRow key={row.l.id} row={row} isTutor={isTutor} t={t} c={c} lang={lang}/>)}</div>{!upcoming.length&&<p className="py-5 text-sm text-slate-400">{t.noLessons} {!isTutor&&<Link href="/teachers" className="ml-2 text-teal-700">{t.findTeachers} →</Link>}</p>}</section></div>;
-  }
-  return <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:py-9">
-    <div className="mb-7 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-6"><div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{t.welcome}</p><h1 className="mt-1.5 text-2xl font-bold tracking-tight text-teal-950">{user.name}<span className="ml-3 rounded-full border border-slate-200 bg-white px-2.5 py-1 align-middle text-[10px] font-medium tracking-normal text-slate-400">{isTutor?t.teacher:t.student}</span></h1></div><div className="flex items-center gap-4"><Link href="/dashboard?tab=wallet" className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-500 sm:flex"><Icon name="wallet" width={15} height={15}/>{money(balance)}</Link><img src={user.avatar||""} alt={user.name} width={40} height={40} className="h-10 w-10 rounded-full object-cover ring-4 ring-white"/></div></div>
-    <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[210px_minmax(0,1fr)]"><aside className="min-w-0 lg:sticky lg:top-24"><nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:gap-1.5">{nav.map(item=><Link key={item.key} href={`/dashboard?tab=${item.key}`} aria-current={tab===item.key?"page":undefined} className={`flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-xs font-semibold transition ${tab===item.key?"bg-[#123e39] text-white shadow-sm":"text-slate-500 hover:bg-white hover:text-teal-800"}`}><Icon name={item.icon} width={17} height={17} className={tab===item.key?"text-teal-200":"text-slate-400"}/>{item.label}{item.key==="packages"&&<span className={`ml-auto rounded px-1.5 py-0.5 text-[9px] ${tab==="packages"?"bg-white/15 text-teal-100":"bg-teal-50 text-teal-700"}`}>−15%</span>}</Link>)}</nav><div className="mt-8 hidden rounded-2xl border border-slate-200 bg-white p-5 lg:block"><Icon name="shield" className="text-teal-700"/><p className="mt-3 text-xs font-semibold text-teal-950">{t.policyTitle}</p><p className="mt-2 text-[11px] leading-5 text-slate-400">{isTutor?c.switchRules:c.paymentPolicy}</p><Link href={isTutor?`/teachers/${user.id}`:"/teachers"} className="mt-4 flex items-center gap-2 text-[11px] font-bold text-teal-700">{isTutor?t.publicProfile:t.findTeachers}<Icon name="arrow" width={13} height={13}/></Link></div></aside><div className="min-w-0">{content}</div></div>
-  </div>;
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:py-9">
+      <div className="mb-7 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{t.welcome}</p>
+          <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-teal-950">
+            {user.name}
+            <span className="ml-3 rounded-full border border-slate-200 bg-white px-2.5 py-1 align-middle text-[10px] font-medium tracking-normal text-slate-400">{isTutor ? t.teacher : t.student}</span>
+          </h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard?tab=wallet" className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-500 sm:flex">
+            <Icon name="wallet" width={15} height={15} />{money(balance)}
+          </Link>
+          <img src={user.avatar || ""} alt={user.name} width={40} height={40} className="h-10 w-10 rounded-full object-cover ring-4 ring-white" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[210px_minmax(0,1fr)]">
+        <aside className="min-w-0 lg:sticky lg:top-24">
+          <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:gap-1.5">
+            {nav.map(item => (
+              <Link key={item.key} href={`/dashboard?tab=${item.key}`} aria-current={tab === item.key ? "page" : undefined} className={`flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-xs font-semibold transition ${tab === item.key ? "bg-[#123e39] text-white shadow-sm" : "text-slate-500 hover:bg-white hover:text-teal-800"}`}>
+                <Icon name={item.icon} width={17} height={17} className={tab === item.key ? "text-teal-200" : "text-slate-400"} />
+                {item.label}
+                {item.key === "packages" && <span className={`ml-auto rounded px-1.5 py-0.5 text-[9px] ${tab === "packages" ? "bg-white/15 text-teal-100" : "bg-teal-50 text-teal-700"}`}>−15%</span>}
+              </Link>
+            ))}
+          </nav>
+          <div className="mt-8 hidden rounded-2xl border border-slate-200 bg-white p-5 lg:block">
+            <Icon name="shield" className="text-teal-700" />
+            <p className="mt-3 text-xs font-semibold text-teal-950">{t.policyTitle}</p>
+            <p className="mt-2 text-[11px] leading-5 text-slate-400">{isTutor ? c.switchRules : c.paymentPolicy}</p>
+            <Link href={isTutor ? `/teachers/${user.id}` : "/teachers"} className="mt-4 flex items-center gap-2 text-[11px] font-bold text-teal-700">
+              {isTutor ? t.publicProfile : t.findTeachers}<Icon name="arrow" width={13} height={13} />
+            </Link>
+          </div>
+        </aside>
+        <div className="min-w-0">{content}</div>
+      </div>
+    </div>
+  );
 }

@@ -19,7 +19,7 @@ export default function StudentEditForm({ row, t }: { row: StudentRow; t: T }) {
       </div>
       <div className="flex flex-wrap gap-3">
         <BalanceTool id={row.id} t={t} />
-        <form action={delAction} onSubmit={e => { if (!confirm("Delete this student? This cannot be undone.")) e.preventDefault(); }}>
+        <form action={delAction as unknown as (fd: FormData) => Promise<void>} onSubmit={e => { if (!confirm("Delete this student? This cannot be undone.")) e.preventDefault(); }}>
           <input type="hidden" name="id" value={row.id} />
           <button disabled={delPending} className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50">{delPending ? "…" : "Delete student"}</button>
         </form>
@@ -33,7 +33,7 @@ function BalanceTool({ id, t }: { id: number; t: T }) {
   const [amount, setAmount] = useState("");
   const [, action, pending] = useActionState(adjustStudentBalance, { ok: false } as { ok?: boolean; error?: string; balance?: number });
   return (
-    <form action={action} onSubmit={() => setAmount("")} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+    <form action={action as unknown as (fd: FormData) => Promise<void>} onSubmit={() => setAmount("")} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
       <input type="hidden" name="id" value={id} />
       <span className="pl-1 text-xs font-semibold text-slate-500">Adjust (${t.balance})</span>
       <input name="delta" value={amount} onChange={e => setAmount(e.target.value)} type="number" step={0.01} placeholder="+/- amount" className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-teal-500" />

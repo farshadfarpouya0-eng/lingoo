@@ -7,7 +7,6 @@ import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { settleLessons } from "@/lib/money";
 import StudentEditForm, { type StudentRow } from "./StudentEditForm";
-import AdminShell from "@/components/AdminShell";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Students" };
@@ -27,10 +26,10 @@ export default async function AdminStudents({ searchParams }: { searchParams: Pr
     if (!row) redirect("/admin/students");
     const r: StudentRow = { id: row.id, name: row.name, email: row.email, balance: row.balance, level: row.level ?? "A1", suspended: row.suspended };
     return (
-      <AdminShell>
+      <>
         <div className="mb-5"><Link href="/admin/students" className="text-sm font-semibold text-teal-700">← Back to students</Link><h1 className="mt-2 text-3xl font-black text-teal-950">Edit student</h1></div>
         <div className="rounded-3xl border border-slate-200 bg-white p-5"><StudentEditForm row={r} t={t} /></div>
-      </AdminShell>
+      </>
     );
   }
 
@@ -43,7 +42,7 @@ export default async function AdminStudents({ searchParams }: { searchParams: Pr
   const T = totals[0] ?? { count: 0, balance: 0, active: 0 };
   void totals;
   return (
-    <AdminShell>
+    <>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-3xl font-black text-teal-950">Students</h1>
         <p className="text-sm text-slate-500">{T.count} students · {T.active} active · {usd(T.balance)} total balance</p>
@@ -59,7 +58,7 @@ export default async function AdminStudents({ searchParams }: { searchParams: Pr
           {!students.length && <p className="py-6 text-center text-sm text-slate-400">No students yet.</p>}
         </div>
       </div>
-    </AdminShell>
+    </>
   );
 }
 

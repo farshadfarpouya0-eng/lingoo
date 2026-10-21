@@ -5,7 +5,6 @@ import { payouts, users } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { fmt } from "@/lib/time";
-import AdminShell from "@/components/AdminShell";
 import { PayoutActions } from "@/components/admin/actions";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +22,7 @@ export default async function AdminPayouts() {
     db.select({ n: sql<number>`count(*)::int` }).from(payouts).where(eq(payouts.status, "pending")),
   ]);
   return (
-    <AdminShell>
+    <>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-3xl font-black text-teal-950">{t.payoutHistory}</h1>
         <p className="text-sm text-slate-500">{pending?.n ?? 0} pending</p>
@@ -46,6 +45,6 @@ export default async function AdminPayouts() {
           {!rows.length && <p className="py-8 text-center text-sm text-slate-400">No payout requests yet.</p>}
         </div>
       </div>
-    </AdminShell>
+    </>
   );
 }

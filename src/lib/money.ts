@@ -3,17 +3,21 @@ import { accountingEntries, lessonPackages, lessonParticipants, lessons, referra
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { qualifyStudentReferral } from "./referral-service";
 import { parseTeacherBonusPolicy, TEACHER_BONUS_SETTING } from "./teacher-bonus-policy";
+
 export const COMMISSION = 0.15;
 export const MIN_PAYOUT = 2000;
 export const FREE_CANCEL_HOURS = 12;
+/** Only a safety net: if a tutor forgets to mark the lesson complete, settle it this long after it ends. */
+export const AUTO_COMPLETE_GRACE_MINUTES = 24 * 60;
+
 export const teacherShare = (price: number) => Math.round(price * (1 - COMMISSION));
+
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 async function writeAccountingEntries(tx: Tx, transactionId: number, userId: number, amount: number) {
   if (amount === 0) return;
   if (!Number.isSafeInteger(amount)) throw new Error("Ledger amount must be an integer number of cents.");
   const value = Math.abs(amount);
-  // Wallet balances are liabilities owed to users. Crediting a wallet credits that
-  // liability and debits the clearing account; debiting a wallet does the reverse.
   const walletSide = amount > 0 ? "credit" : "debit";
   const clearingSide = amount > 0 ? "debit" : "credit";
   await tx.insert(accountingEntries).values([
@@ -29,7 +33,6 @@ export async function ledger(tx: Tx, userId: number, type: string, amount: numbe
   return row;
 }
 
-/** Insert a uniquely referenced transaction once, and journal it in the same DB transaction. */
 export async function ledgerOnce(tx: Tx, userId: number, type: string, amount: number, note: string, ref: string, lessonId?: number) {
   if (!ref.trim()) throw new Error("Idempotent ledger transactions require a reference.");
   if (!Number.isSafeInteger(amount)) throw new Error("Ledger amount must be an integer number of cents.");
@@ -39,6 +42,7 @@ export async function ledgerOnce(tx: Tx, userId: number, type: string, amount: n
   await writeAccountingEntries(tx, row.id, userId, amount);
   return true;
 }
+
 async function teacherPayoutBreakdown(tx: Tx, teacherId: number, gross: number) {
   const base = teacherShare(gross);
   const [policyRow] = await tx.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, TEACHER_BONUS_SETTING)).limit(1);
@@ -47,8 +51,6 @@ async function teacherPayoutBreakdown(tx: Tx, teacherId: number, gross: number) 
   const [profile] = await tx.select({ rating: teacherProfiles.rating, reviewsCount: teacherProfiles.reviewsCount })
     .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);
   if (!profile || Number(profile.rating) < policy.minRating || profile.reviewsCount < policy.minReviews) return { base, bonus: 0, percent: 0 };
-  // Standard share is 85%. Bonus is capped so at least 5% of gross remains
-  // with the platform before operating costs and taxes.
   const maxBonus = Math.max(0, gross - base - Math.ceil(gross * 0.05));
   const bonus = Math.min(maxBonus, Math.round(gross * policy.percent / 100));
   return { base, bonus, percent: policy.percent };
@@ -68,7 +70,6 @@ export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, pr
   return true;
 }
 
-/** Pay one semi-private seat exactly once; separate refs allow multiple students per lesson. */
 export async function payGroupSeat(tx: Tx, lessonId: number, teacherId: number, studentId: number, paidAmount: number, note: string) {
   const ref = `group-earning:${lessonId}:${studentId}`;
   const [exists] = await tx.select({ id: transactions.id }).from(transactions).where(eq(transactions.ref, ref)).limit(1);
@@ -82,7 +83,6 @@ export async function payGroupSeat(tx: Tx, lessonId: number, teacherId: number, 
   return true;
 }
 
-/** Restore one cash-funded group seat exactly once. Semi-private seats intentionally do not use packages/trial credits. */
 export async function refundGroupSeat(tx: Tx, lessonId: number, studentId: number, amount: number, note: string) {
   const ref = `group-refund:${lessonId}:${studentId}`;
   const [exists] = await tx.select({ id: transactions.id }).from(transactions).where(eq(transactions.ref, ref)).limit(1);
@@ -106,32 +106,68 @@ export async function refundStudent(tx: Tx, lessonId: number, studentId: number,
     await ledger(tx, studentId, "refund", price, note, lessonId, `refund:${lessonId}`);
   }
 }
-/** Settle only eligible lessons; dashboard visits are scoped to the current user. */
+
+/**
+ * Settle lessons. Two rules only:
+ *   1. `pending` lesson that never got confirmed and has already ended → auto-cancel + refund.
+ *   2. `confirmed` lesson that ended more than AUTO_COMPLETE_GRACE_MINUTES ago and the
+ *      tutor never marked it complete → auto-complete + pay (safety net).
+ * The normal path is the tutor pressing "Complete lesson".
+ */
 export async function settleLessons(actorId?: number) {
   const now = Date.now();
-  const due = sql`((${lessons.status} = 'pending' and ${lessons.startAt} < ${new Date(now)}) or (${lessons.status} = 'confirmed' and ${lessons.startAt} + (${lessons.duration} + 360) * interval '1 minute' < ${new Date(now)}))`;
+  const graceCutoff = new Date(now - AUTO_COMPLETE_GRACE_MINUTES * 60_000);
+  const nowDate = new Date(now);
+
+  const due = sql`(
+      (${lessons.status} = 'pending'
+        and ${lessons.startAt} + ${lessons.duration} * interval '1 minute' < ${nowDate})
+    or
+      (${lessons.status} = 'confirmed'
+        and ${lessons.startAt} + ${lessons.duration} * interval '1 minute' < ${graceCutoff})
+  )`;
+
   const owner = actorId ? sql`(${lessons.studentId} = ${actorId} or ${lessons.teacherId} = ${actorId})` : undefined;
   const stale = await db.select().from(lessons).where(and(due, owner)).orderBy(lessons.startAt).limit(100);
+
   for (const l of stale) {
-    if (l.status === "pending") {
+    const endsAt = l.startAt.getTime() + l.duration * 60_000;
+
+    /* ① never confirmed and the slot already passed → cancel + refund */
+    if (l.status === "pending" && endsAt < now) {
       await db.transaction(async tx => {
-        const r = await tx.update(lessons).set({ status: "cancelled" }).where(and(eq(lessons.id, l.id), eq(lessons.status, "pending"))).returning({ id: lessons.id });
-        if (r.length) await refundStudent(tx, l.id, l.studentId, l.price, "Tutor did not confirm in time", l.packageId ?? undefined, l.rewardCreditId ?? undefined);
+        const r = await tx.update(lessons).set({ status: "cancelled" })
+          .where(and(eq(lessons.id, l.id), eq(lessons.status, "pending")))
+          .returning({ id: lessons.id });
+        if (r.length) {
+          await refundStudent(tx, l.id, l.studentId, l.price,
+            "Tutor did not confirm this lesson in time", l.packageId ?? undefined, l.rewardCreditId ?? undefined);
+        }
       });
-    } else if (l.startAt.getTime() + (l.duration + 360) * 60_000 < now) {
+      continue;
+    }
+
+    /* ② confirmed but long past the end and nobody marked it → safety net */
+    if (l.status === "confirmed" && endsAt < graceCutoff.getTime()) {
       await db.transaction(async tx => {
-        const r = await tx.update(lessons).set({ status: "completed" }).where(and(eq(lessons.id, l.id), eq(lessons.status, "confirmed"))).returning({ id: lessons.id });
+        const r = await tx.update(lessons).set({ status: "completed" })
+          .where(and(eq(lessons.id, l.id), eq(lessons.status, "confirmed")))
+          .returning({ id: lessons.id });
         if (r.length) {
           if (l.classType === "semi_private") {
-            const seats = await tx.select().from(lessonParticipants).where(and(eq(lessonParticipants.lessonId, l.id), inArray(lessonParticipants.status, ["booked", "attended"]))).for("update");
+            const seats = await tx.select().from(lessonParticipants)
+              .where(and(eq(lessonParticipants.lessonId, l.id), inArray(lessonParticipants.status, ["booked", "attended"])))
+              .for("update");
             for (const seat of seats) {
-              await payGroupSeat(tx, l.id, l.teacherId, seat.studentId, seat.paidAmount, `Semi-private lesson #${l.id} seat settled`);
+              await payGroupSeat(tx, l.id, l.teacherId, seat.studentId, seat.paidAmount,
+                `Semi-private lesson #${l.id} seat settled automatically`);
               await tx.update(lessonParticipants).set({ status: "attended" }).where(eq(lessonParticipants.id, seat.id));
               if (seat.paidAmount > 0) await qualifyStudentReferral(tx, seat.studentId);
             }
-            await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` }).where(eq(teacherProfiles.userId, l.teacherId));
+            await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
+              .where(eq(teacherProfiles.userId, l.teacherId));
           } else {
-            await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed");
+            await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed (24h safety net)");
             if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
           }
         }

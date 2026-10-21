@@ -5,7 +5,6 @@ import { lessons, users } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { fmt } from "@/lib/time";
-import AdminShell from "@/components/AdminShell";
 import { CancelLesson } from "@/components/admin/actions";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,7 @@ export default async function AdminLessons() {
     db.select({ total: sql<number>`count(*)::int`, active: sql<number>`count(*) filter (where ${lessons.status} in ('pending','confirmed'))::int` }).from(lessons),
   ]);
   return (
-    <AdminShell>
+    <>
       <div className="mb-5 flex items-center justify-between">
         <h1 className="text-3xl font-black text-teal-950">{t.myLessons}</h1>
         <p className="text-sm text-slate-500">{summary?.total ?? 0} total · {summary?.active ?? 0} active</p>
@@ -51,6 +50,6 @@ export default async function AdminLessons() {
           </tbody>
         </table>
       </div>
-    </AdminShell>
+    </>
   );
 }

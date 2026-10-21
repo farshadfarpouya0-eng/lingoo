@@ -12,7 +12,7 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
   const [state, action, pending] = useActionState(isCreate ? createTeacher : updateTeacher, { ok: false } as { ok?: boolean; error?: string; id?: number });
   if (isCreate) {
     return (
-      <form action={action} className="rounded-3xl border border-slate-200 bg-white p-5">
+      <form action={action as unknown as (fd: FormData) => Promise<void>} className="rounded-3xl border border-slate-200 bg-white p-5">
         <h2 className="mb-4 text-lg font-bold text-teal-950">Add tutor</h2>
         {state?.error && <p className="mb-3 rounded-lg bg-red-50 p-2 text-xs text-red-600">Please enter a name and a valid email.</p>}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -27,7 +27,7 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
     );
   }
   return (
-    <form action={action} className="space-y-5">
+    <form action={action as unknown as (fd: FormData) => Promise<void>} className="space-y-5">
       <input type="hidden" name="id" value={row.id} />
       <div className="grid gap-5 sm:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5">

@@ -122,7 +122,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
           <button type="button" onClick={() => setSelected(new Set())} className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-400 hover:text-red-500">{t.clearAll}</button>
         </div>
 
-        <form action={saveWeeklyTimetable} onSubmit={() => setSaving(true)} onMouseUp={() => { paint.current.down = false; }} onMouseLeave={() => { paint.current.down = false; }}>
+        <form action={saveWeeklyTimetable as unknown as (fd: FormData) => Promise<void>} onSubmit={() => setSaving(true)} onMouseUp={() => { paint.current.down = false; }} onMouseLeave={() => { paint.current.down = false; }}>
           <input type="hidden" name="slots" value={slotsJson} />
           <input type="hidden" name="tzOffset" value={tzOffset} />
           <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-100">
@@ -181,7 +181,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
         <div className="rounded-3xl border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-bold text-teal-950">{t.blockedTitle}</h2>
           <p className="mt-1 text-sm text-slate-500">{t.blockedHint}</p>
-          <form action={addBlockedSlot} className="mt-4 grid grid-cols-2 gap-3">
+          <form action={addBlockedSlot as unknown as (fd: FormData) => Promise<void>} className="mt-4 grid grid-cols-2 gap-3">
             <label className="col-span-2 text-xs font-semibold text-slate-500">{t.blockDate}<input name="date" type="date" required min={today} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-teal-500" /></label>
             <label className="text-xs font-semibold text-slate-500">{t.blockStart}<input name="start" type="time" required className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-teal-500" /></label>
             <label className="text-xs font-semibold text-slate-500">{t.blockEnd}<input name="end" type="time" required className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-teal-500" /></label>
@@ -196,7 +196,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
                   <div className="font-semibold text-slate-700">{new Date(b.startAt.getTime() + tzOffset * 3600_000).toISOString().slice(0, 10)} · {new Date(b.startAt.getTime() + tzOffset * 3600_000).toISOString().slice(11, 16)}–{new Date(b.endAt.getTime() + tzOffset * 3600_000).toISOString().slice(11, 16)}</div>
                   {b.reason && <div className="truncate text-xs text-slate-500">{b.reason}</div>}
                 </div>
-                <form action={deleteBlockedSlot}><input type="hidden" name="id" value={b.id} /><button className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50">{t.delete}</button></form>
+                <form action={deleteBlockedSlot as unknown as (fd: FormData) => Promise<void>}><input type="hidden" name="id" value={b.id} /><button className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50">{t.delete}</button></form>
               </div>
             ))}
             {!blocked.length && <p className="text-sm text-slate-400">{t.noBlocks}</p>}

@@ -6,7 +6,6 @@ import { payouts, transactions, users, teacherProfiles, lessons } from "@/db/sch
 import { getUser } from "@/lib/auth";
 import { fmt } from "@/lib/time";
 import { settleLessons } from "@/lib/money";
-import AdminShell from "@/components/AdminShell";
 
 export const dynamic = "force-dynamic";
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
@@ -47,7 +46,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const payLabel: Record<string, string> = { pending: t.payout_pending, paid: t.payout_paid, rejected: t.payout_rejected };
 
   return (
-    <AdminShell>
+    <>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">{t.admin}</p>
@@ -121,6 +120,6 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           </div>
         </div>
       </div>
-    </AdminShell>
+    </>
   );
 }
