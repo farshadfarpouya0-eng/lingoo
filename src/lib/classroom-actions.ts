@@ -10,11 +10,13 @@ import { getIntegrationConfig } from "@/lib/integration-config";
 
 type SaveResult = { ok?: boolean; error?: string };
 const PLATFORMS = ["lingo", "daily", "meet", "zoom"] as const;
+/** Only the tutor may bring an external meeting link. Students use Lingo Room or Daily. */
+const TUTOR_ONLY = ["meet", "zoom"];
 
-/** Save / change the classroom. Both the tutor and the student of the lesson can choose. */
+/** Save / change the classroom. Students may choose Lingo or Daily; tutors may choose any. */
 export async function saveClassroom(_prev: SaveResult, formData: FormData): Promise<SaveResult> {
   const me = await getUser();
-  if (!me) return { ok: false, error: "forbidden" };
+  if (!me || me.suspended) return { ok: false, error: "forbidden" };
 
   const lessonId = Number(formData.get("lessonId"));
   const platform = String(formData.get("platform") ?? "");
@@ -23,21 +25,20 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   if (!Number.isInteger(lessonId) || lessonId < 1) return { ok: false, error: "forbidden" };
   if (!PLATFORMS.includes(platform as (typeof PLATFORMS)[number])) return { ok: false, error: "forbidden" };
 
-  /* Daily needs an API key + domain; never let anyone pick a room that can never open. */
-  if (platform === "daily") {
-    const cfg = await getIntegrationConfig();
-    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) {
-      return { ok: false, error: "daily_unconfigured" };
-    }
-  }
-
   const [l] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!l) return { ok: false, error: "forbidden" };
 
   const isTutor = l.teacherId === me.id;
   const isStudent = l.studentId === me.id;
   if (!isTutor && !isStudent) return { ok: false, error: "forbidden" };
-  if (me.suspended) return { ok: false, error: "forbidden" };
+  if (TUTOR_ONLY.includes(platform) && !isTutor) return { ok: false, error: "tutor_only" };
+
+  if (platform === "daily") {
+    const cfg = await getIntegrationConfig();
+    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) {
+      return { ok: false, error: "daily_unconfigured" };
+    }
+  }
 
   if (["completed", "cancelled"].includes(l.status)) return { ok: false, error: "closed" };
   if (Date.now() > l.startAt.getTime() + (l.duration + 15) * 60_000) return { ok: false, error: "closed" };

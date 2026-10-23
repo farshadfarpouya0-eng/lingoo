@@ -6,7 +6,7 @@ import { getT, LANGS } from "@/lib/i18n";
 import { LANDING } from "@/lib/landing-i18n";
 import { getUser } from "@/lib/auth";
 import { logout, setLang } from "@/lib/actions";
-import { getBranding } from "@/lib/branding";
+import { getPublicBranding } from "@/lib/branding";
 import { exitImpersonation } from "@/lib/impersonation-actions";
 import MobileMenu from "@/components/MobileMenu";
 import BrandMark from "@/components/BrandMark";
@@ -27,7 +27,7 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const { t, lang } = await getT();
   const c = LANDING[lang];
-  const branding = await getBranding();
+  const branding = await getPublicBranding();
   const user = await getUser().catch(() => null);
   const impersonating = Boolean(user) && (await cookies()).has("admin_sid");
   const safeUser = user ? { name: user.name, avatar: user.avatar, role: user.role } : null;

@@ -14,14 +14,17 @@ const D = {
   tutorPick: "Waiting for the student to pick a classroom",
   tutorPickText: "The student chooses the platform. You can still change it here.",
   switchTitle: "Change the classroom",
-  lingo: "Lingo Room", lingoDesc: "Runs right here — no install, no account, free.",
-  daily: "Daily", dailyDesc: "Private room with secure tokens and cloud recording.",
-  meet: "Google Meet", meetDesc: "Opens in a new tab. Best if you already use Meet.",
-  zoom: "Zoom", zoomDesc: "Best for breakout rooms and recording.",
+  lingo: "Lingo Room", lingoDesc: "Runs right here — no install, no account.",
+  daily: "Daily secure room", dailyDesc: "Private room with secure tokens and optional recording.",
+  meet: "Google Meet", meetDesc: "Opens in a new tab. Set up by your tutor.",
+  zoom: "Zoom", zoomDesc: "Opens in Zoom. Set up by your tutor.",
+  tutorOnly: "Only your tutor can use Google Meet or Zoom. Pick Lingo Room or Daily.",
   link: "Meeting link", linkHint: "Paste your Google Meet or Zoom link",
   save: "Save classroom", saved: "Classroom saved",
   invalidLink: "That doesn't look like a valid Google Meet or Zoom link.",
-  dailyOff: "Daily is not set up on this site yet. Pick Lingo Room, Google Meet or Zoom.",
+  dailyOff: "Daily is not set up on this site yet. Pick Lingo Room instead.",
+  dailyLoading: "Preparing the secure room…",
+  dailyError: "The secure room could not be opened. Try again or pick another room.",
   closed: "This lesson has ended.", forbidden: "You can't change the classroom for this lesson.",
   pendingTitle: "Waiting for the tutor to confirm",
   pendingText: "Once the tutor confirms this lesson you can pick the classroom.",
@@ -98,7 +101,12 @@ function Countdown({ startAtMs, durationMinutes, earlyMinutes }: { startAtMs: nu
 function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   lessonId: number; initial: RoomSnapshot; preference: string; onSaved: () => void; isTutor: boolean;
 }) {
-  const [platform, setPlatform] = useState<string>(initial.platform === "undecided" ? preference : initial.platform);
+  const allowed = (p: string) => isTutor || p === "lingo" || p === "daily";
+  const startPlatform = initial.platform === "undecided"
+    ? (allowed(preference) ? preference : "lingo")
+    : initial.platform;
+
+  const [platform, setPlatform] = useState<string>(startPlatform);
   const [link, setLink] = useState(initial.meetingUrl);
   const [result, action, pending] = useActionState(saveClassroom, {} as { ok?: boolean; error?: string });
   useEffect(() => { if (result?.ok) onSaved(); }, [result, onSaved]);
@@ -106,12 +114,13 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   const cards: { key: Platform; code: string; title: string; desc: string; tag: string }[] = [
     { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: "FREE" },
     { key: "daily", code: "DA", title: D.daily, desc: D.dailyDesc, tag: "SECURE" },
-    { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: "LINK" },
-    { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: "LINK" },
+    { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: isTutor ? "LINK" : "TUTOR" },
+    { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: isTutor ? "LINK" : "TUTOR" },
   ];
 
   const errorText =
     result?.error === "link" ? D.invalidLink :
+    result?.error === "tutor_only" ? D.tutorOnly :
     result?.error === "daily_unconfigured" ? D.dailyOff :
     result?.error === "closed" ? D.closed : D.forbidden;
 
@@ -133,25 +142,30 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(card => {
           const on = platform === card.key;
+          const locked = !allowed(card.key);
           return (
             <button
               type="button" key={card.key}
+              disabled={locked}
               onClick={() => { setPlatform(card.key); if (card.key !== platform) setLink(""); }}
               aria-pressed={on}
-              className={`rounded-2xl border-2 p-4 text-left transition ${on ? "border-teal-700 bg-teal-50" : "border-slate-200 hover:border-teal-300"}`}
+              className={`rounded-2xl border-2 p-4 text-left transition ${
+                locked ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-60"
+                  : on ? "border-teal-700 bg-teal-50" : "border-slate-200 hover:border-teal-300"
+              }`}
             >
               <div className="flex items-center justify-between">
                 <span className={`grid h-8 w-8 place-items-center rounded-lg text-[10px] font-bold ${on ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-500"}`}>{card.code}</span>
                 <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${on ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-400"}`}>{card.tag}</span>
               </div>
               <p className={`mt-3 text-sm font-bold ${on ? "text-teal-950" : "text-slate-700"}`}>{card.title}</p>
-              <p className="mt-1 text-[11px] leading-5 text-slate-500">{card.desc}</p>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">{locked ? D.tutorOnly : card.desc}</p>
             </button>
           );
         })}
       </div>
 
-      {(platform === "meet" || platform === "zoom") && (
+      {isTutor && (platform === "meet" || platform === "zoom") && (
         <label className="mt-5 block text-xs font-bold text-slate-600">
           {D.link}
           <input
@@ -188,6 +202,10 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
   const revision = useRef(initial.revision);
   const earlyMinutes = isTutor ? 30 : 10;
 
+  /* Daily rooms need a personal token from the server before they can open. */
+  const [dailyUrl, setDailyUrl] = useState("");
+  const [dailyError, setDailyError] = useState("");
+
   const refresh = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
@@ -207,6 +225,24 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     }
   }, [initial.lessonId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (room.platform !== "daily" || room.state !== "open") {
+      setDailyUrl("");
+      setDailyError("");
+      return;
+    }
+    setDailyError("");
+    fetch(`/api/lessons/${room.lessonId}/daily-token`, { method: "POST", cache: "no-store" })
+      .then(async r => {
+        const d = await r.json() as { joinUrl?: string; error?: string };
+        if (!r.ok || !d.joinUrl) throw new Error(d.error || D.dailyError);
+        if (!cancelled) setDailyUrl(d.joinUrl);
+      })
+      .catch(e => { if (!cancelled) setDailyError(e instanceof Error && e.message ? e.message : D.dailyError); });
+    return () => { cancelled = true; };
+  }, [room.lessonId, room.platform, room.state, room.revision]);
+
   const pollDelay = roomPollDelay(room.state, offline ? failures : 0);
   useEffect(() => {
     if (!pollDelay) return;
@@ -221,9 +257,6 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     };
   }, [refresh, pollDelay]);
 
-  const joinUrl = room.joinUrl;
-  const canJoinLingo = room.state === "open" && room.platform === "lingo" && !!joinUrl;
-
   const step =
     room.state === "closed" ? 5 :
     room.platform === "undecided" ? 2 :
@@ -231,6 +264,7 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     room.state === "early" ? 3 : 1;
 
   const opensText = `The classroom opens ${earlyMinutes} minutes before the lesson`;
+  const minutesLeft = Math.max(0, Math.round((startAtMs + durationMinutes * 60_000 - Date.now()) / 60_000));
 
   return (
     <div className="space-y-5">
@@ -260,23 +294,45 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
         <PlatformForm lessonId={room.lessonId} initial={room} preference={preference} onSaved={refresh} isTutor={isTutor} />
       )}
 
-      {canJoinLingo ? (
+      {room.state === "open" && room.platform === "lingo" && room.joinUrl ? (
         <LingoRoom
-          joinUrl={joinUrl}
+          joinUrl={room.joinUrl}
           roomName={`lingorain-${room.lessonId}`}
           displayName={name}
           onNameChange={setName}
           startLabel={startLabel}
-          minutesLeft={Math.max(0, Math.round((startAtMs + durationMinutes * 60_000 - Date.now()) / 60_000))}
+          minutesLeft={minutesLeft}
           isTutor={isTutor}
         />
-      ) : room.state === "open" && room.platform !== "undecided" && joinUrl ? (
+      ) : room.state === "open" && room.platform === "daily" && dailyUrl ? (
+        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-[#153d39]">
+          <div className="flex items-center justify-between px-5 py-3 text-xs text-white">
+            <b>{D.daily}</b>
+            <a href={dailyUrl} target="_blank" rel="noopener noreferrer" className="text-teal-100 hover:text-white">Open in a new tab ↗</a>
+          </div>
+          <iframe
+            key={dailyUrl}
+            title={D.daily}
+            src={dailyUrl}
+            allow="camera; microphone; fullscreen; display-capture; autoplay"
+            className="h-[70vh] min-h-[460px] w-full bg-slate-950"
+          />
+        </section>
+      ) : room.state === "open" && room.platform === "daily" && dailyError ? (
+        <section className="rounded-[26px] border border-amber-200 bg-amber-50 p-8 text-center">
+          <p className="text-sm font-semibold text-amber-900">{dailyError}</p>
+          <p className="mt-2 text-xs text-amber-800">{D.dailyError}</p>
+          <button type="button" onClick={() => void refresh()} className="mt-4 rounded-xl bg-teal-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-900">Try again</button>
+        </section>
+      ) : room.state === "open" && room.platform === "daily" ? (
+        <section className="rounded-[26px] border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">{D.dailyLoading}</section>
+      ) : room.state === "open" && (room.platform === "meet" || room.platform === "zoom") && room.joinUrl ? (
         <section className="rounded-[26px] border border-slate-200 bg-white px-6 py-14 text-center">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="video" width={30} height={30} /></div>
           <p className="mt-6 text-xs font-semibold uppercase tracking-widest text-slate-400">Join lesson</p>
           <h2 className="mt-2 text-3xl font-bold text-teal-950">{room.platform === "meet" ? D.meet : D.zoom}</h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">{room.platform === "meet" ? D.meetDesc : D.zoomDesc}</p>
-          <a href={joinUrl} target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex items-center gap-3 rounded-xl bg-teal-800 px-8 py-3.5 font-bold text-white hover:bg-teal-900">
+          <a href={room.joinUrl} target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex items-center gap-3 rounded-xl bg-teal-800 px-8 py-3.5 font-bold text-white hover:bg-teal-900">
             Open the classroom<Icon name="arrow" />
           </a>
         </section>
@@ -299,9 +355,11 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
                 : "The room unlocks automatically — no need to refresh."}
           </p>
 
-          <div className="mt-5 flex justify-center">
-            <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} />
-          </div>
+          {room.state !== "closed" && (
+            <div className="mt-5 flex justify-center">
+              <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} />
+            </div>
+          )}
 
           <div className="mx-auto mt-6 grid max-w-md gap-2 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
