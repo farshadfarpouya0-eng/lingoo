@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useTransition } from "react";
 import type { ReactNode } from "react";
 
 type NavItem = { key: string; label: string; icon: string; hint?: string };
 const items: NavItem[] = [
   { key: "/admin", label: "Dashboard", icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", hint: "Overview" },
+  { key: "/admin/revenue", label: "Revenue", icon: "M3 3v18h18M7 15l5-6 4 3 5-7", hint: "Profit & loss" },
+  { key: "/admin/branding", label: "Branding", icon: "M4 7h16v12H4zM4 11h16M8 7V5h8v2", hint: "Logo & hero text" },
   { key: "/admin/content", label: "Content", icon: "M4 5h16M4 12h16M4 19h10", hint: "Text & images" },
   { key: "/admin/materials", label: "Textbooks & audio", icon: "M4 4h16v16H4zM8 8h8M8 12h8", hint: "Learning library" },
   { key: "/admin/reports", label: "Lesson reports", icon: "M12 9v4m0 4h.01M10 3h4l8 16H2z", hint: "Review issues" },
@@ -26,6 +27,7 @@ const items: NavItem[] = [
 export default function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const active = items.find(i => i.key === "/admin" ? pathname === "/admin" : pathname === i.key || pathname.startsWith(`${i.key}/`))?.key || "";
+
   return (
     <div className="min-h-screen bg-[#f5f6f4]">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-6 p-4 lg:flex-row lg:gap-8 lg:p-8">
@@ -34,15 +36,23 @@ export default function AdminShell({ children }: { children: ReactNode }) {
             <div className="flex items-center justify-between px-2 py-2">
               <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Admin</span>
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-amber-400 text-teal-950">
-                <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" strokeLinejoin="round" /></svg>
+                <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" strokeLinejoin="round" />
+                </svg>
               </span>
             </div>
             <nav className="mt-1 flex gap-1 overflow-x-auto lg:flex-col">
               {items.map(i => {
                 const activeNow = i.key === active;
                 return (
-                  <Link key={i.key} href={i.key} className={`group flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 lg:shrink ${activeNow ? "bg-teal-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
-                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d={i.icon} /></svg>
+                  <Link
+                    key={i.key}
+                    href={i.key}
+                    className={`group flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 lg:shrink ${activeNow ? "bg-teal-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                      <path d={i.icon} />
+                    </svg>
                     <span className="whitespace-nowrap">{i.label}</span>
                   </Link>
                 );

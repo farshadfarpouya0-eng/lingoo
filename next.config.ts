@@ -32,6 +32,20 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  /* ⭐ smaller server bundles — drizzle-orm is the heaviest import */
+  experimental: {
+    optimizePackageImports: ["drizzle-orm"],
+  },
+  /* ⭐ modern image formats + cache for remote avatars */
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 86400,
+    remotePatterns: [
+      { protocol: "https", hostname: "api.dicebear.com" },
+      { protocol: "https", hostname: "randomuser.me" },
+      { protocol: "https", hostname: "images.pexels.com" },
+    ],
+  },
   async headers() {
     return [
       {

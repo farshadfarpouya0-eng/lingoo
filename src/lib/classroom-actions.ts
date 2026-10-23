@@ -6,12 +6,13 @@ import { db } from "@/db";
 import { lessonPlatformEvents, lessons } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { validMeetingLink } from "@/lib/room-service";
+import { getIntegrationConfig } from "@/lib/integration-config";
 
 type SaveResult = { ok?: boolean; error?: string };
 const PLATFORMS = ["lingo", "daily", "meet", "zoom"] as const;
 
-/** Save / change the classroom. Both the tutor and the student can choose. */
-export async function saveClassroom(prev: SaveResult, formData: FormData): Promise<SaveResult> {
+/** Save / change the classroom. Both the tutor and the student of the lesson can choose. */
+export async function saveClassroom(_prev: SaveResult, formData: FormData): Promise<SaveResult> {
   const me = await getUser();
   if (!me) return { ok: false, error: "forbidden" };
 
@@ -22,19 +23,27 @@ export async function saveClassroom(prev: SaveResult, formData: FormData): Promi
   if (!Number.isInteger(lessonId) || lessonId < 1) return { ok: false, error: "forbidden" };
   if (!PLATFORMS.includes(platform as (typeof PLATFORMS)[number])) return { ok: false, error: "forbidden" };
 
+  /* Daily needs an API key + domain; never let anyone pick a room that can never open. */
+  if (platform === "daily") {
+    const cfg = await getIntegrationConfig();
+    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) {
+      return { ok: false, error: "daily_unconfigured" };
+    }
+  }
+
   const [l] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!l) return { ok: false, error: "forbidden" };
 
   const isTutor = l.teacherId === me.id;
   const isStudent = l.studentId === me.id;
   if (!isTutor && !isStudent) return { ok: false, error: "forbidden" };
+  if (me.suspended) return { ok: false, error: "forbidden" };
 
   if (["completed", "cancelled"].includes(l.status)) return { ok: false, error: "closed" };
-  const endAt = l.startAt.getTime() + (l.duration + 15) * 60_000;
-  if (Date.now() > endAt) return { ok: false, error: "closed" };
+  if (Date.now() > l.startAt.getTime() + (l.duration + 15) * 60_000) return { ok: false, error: "closed" };
 
   const url = platform === "lingo" || platform === "daily" ? "" : validMeetingLink(platform, rawUrl);
-  if (platform !== "lingo" && platform !== "daily" && !url) return { ok: false, error: "link" };
+  if ((platform === "meet" || platform === "zoom") && !url) return { ok: false, error: "link" };
 
   await db.update(lessons).set({
     platform,
@@ -56,7 +65,7 @@ export async function saveClassroom(prev: SaveResult, formData: FormData): Promi
   return { ok: true };
 }
 
-/** Student reports a connection problem → asks for a platform switch. */
+/** Report a connection problem so the other side knows to switch platform. */
 export async function requestClassroomSwitch(lessonId: number): Promise<{ ok: boolean }> {
   const me = await getUser();
   if (!me) return { ok: false };

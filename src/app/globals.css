@@ -12,7 +12,6 @@ button:disabled{cursor:not-allowed;}
 .skip-link{position:fixed;z-index:100;top:8px;left:8px;transform:translateY(-150%);padding:12px 18px;border-radius:10px;background:var(--forest);color:#fff;}
 .skip-link:focus{transform:translateY(0);}
 
-/* A calm header, with a genuinely separate mobile navigation. */
 .site-header{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.94);border-bottom:1px solid #e8ede9;backdrop-filter:blur(16px);}
 .site-header-inner{width:calc(100% - 48px);max-width:1240px;height:76px;margin:auto;display:flex;align-items:center;gap:35px;}
 .site-brand{display:inline-flex;align-items:center;gap:9px;flex-shrink:0;font-size:24px;font-weight:750;letter-spacing:-1px;color:var(--forest);}
@@ -63,7 +62,6 @@ button:disabled{cursor:not-allowed;}
 .mobile-nav-account b,.mobile-nav-account span{display:block;font-size:13px;}
 .mobile-nav-account span{font-size:11px;color:#8a998f;margin-top:3px;}
 
-/* Shared landing rhythm */
 .lingorain-home{background:#fff;}
 .home-container{max-width:1240px;width:calc(100% - 48px);margin-inline:auto;}
 .home-section{padding-block:76px;scroll-margin-top:85px;}
@@ -84,7 +82,6 @@ button:disabled{cursor:not-allowed;}
 .home-filled-button{background:var(--forest);border-color:var(--forest);color:#fff;}
 .home-filled-button:hover{background:#25634f;}
 
-/* Equal adult/kids paths at the top, not a tall adult-only hero. */
 .home-hero{background:#f5f7f2;padding:38px 0 0;}
 .hero-introduction{display:flex;align-items:flex-end;justify-content:space-between;gap:40px;margin-bottom:27px;}
 .hero-introduction h1{font-size:50px;line-height:1.08;letter-spacing:-2.1px;font-weight:750;margin-top:12px;color:var(--forest);}
@@ -123,7 +120,6 @@ button:disabled{cursor:not-allowed;}
 .hero-benefits>span{display:inline-flex;align-items:center;gap:8px;}
 .hero-benefits svg{color:#5c8770;}
 
-/* Discovery: small form, clean vertical control stack on mobile. */
 .home-search-section{background:#fff;padding:24px 0;}
 .home-search-box{display:flex;align-items:center;gap:30px;border:1px solid #e3e9df;border-radius:18px;padding:16px 19px;background:#fdfefb;}
 .home-search-heading{display:flex;align-items:center;gap:12px;flex:1;min-width:0;}
@@ -136,7 +132,6 @@ button:disabled{cursor:not-allowed;}
 .home-search-form select{font-size:12px;min-height:29px;max-width:100%;width:100%;color:#445d4d;border:0;background:transparent;padding-right:9px;}
 .home-search-form button{min-height:44px;display:flex;align-items:center;justify-content:center;gap:13px;padding:10px 20px;border-radius:11px;background:var(--forest);color:#fff;font-size:12px;font-weight:650;}
 
-/* A welcoming early children's section; intentionally swipeable, never squeezed. */
 .home-kids-section{background:#fffaf3;padding-block:58px 56px;border-top:1px solid #f5efe6;border-bottom:1px solid #f2ede4;}
 .kids-section-heading .home-eyebrow{color:#af8965;}
 .kids-section-heading h2{font-size:33px;}
@@ -163,9 +158,8 @@ button:disabled{cursor:not-allowed;}
 .home-goal-card p{font-size:11px;line-height:1.8;color:#8b998e;margin-top:5px;}
 .goal-card-arrow{position:absolute;right:17px;top:23px;color:#bccbbc;}
 
-/* Tutor cards are readable independently of the landing page. */
 .home-tutors-section{background:#f6f9f5;border-block:1px solid #eaf0e7;}
-.snap-rail-tutors .home-snap-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;}
+.snap-rail-tutors .home-snap-rail{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;}
 .tutor-profile-card{display:flex;flex-direction:column;min-width:0;border:1px solid #e3e9e1;border-radius:20px;background:#fff;padding:23px;transition:transform .2s,border-color .2s,box-shadow .2s;}
 .tutor-profile-card:hover{border-color:#a5c7ab;box-shadow:0 12px 35px #1d463a09;transform:translateY(-3px);}
 .tutor-profile-top{display:flex;gap:14px;align-items:center;}
@@ -273,14 +267,13 @@ button:disabled{cursor:not-allowed;}
 .home-final-card .home-eyebrow{color:#8a9e6b;}
 .home-final-actions{display:flex;flex-direction:column;gap:9px;min-width:195px;}
 
-/* Tablet: no compressed desktop nav or tiny six-across picture cards. */
 @media(max-width:1100px){
   .site-header-inner{gap:24px;}.site-desktop-nav{gap:18px;font-size:12px;}.site-header-actions{gap:14px;}.desktop-auth{gap:12px;}.desktop-language{padding-right:10px;}
   .hero-introduction h1{font-size:43px;}.hero-intro-text{max-width:260px;font-size:13px;}.hero-path-content{padding:28px 0 28px 26px;width:66%;}.hero-path h2{font-size:32px;}.hero-path{min-height:380px;}.hero-path-description{font-size:12px;max-width:220px;}.kids-hero-image{width:50%;right:-14px;}.hero-topic-list{font-size:8px;}
   .home-search-heading{max-width:260px;}.home-search-form{grid-template-columns:150px 180px auto;gap:8px;}.home-search-box{gap:15px;}
   .home-detail-row{gap:40px;}.home-detail-content>h3{font-size:28px;}.home-detail-content>p:not(.home-eyebrow){font-size:13px;}
   .home-snap-rail{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}.learning-friend-image{aspect-ratio:4/3.5;}.learning-friend-body{padding:18px;}.learning-friend-body>p:last-child{font-size:12px;}.home-teach-content{padding:32px;}.home-faq-layout{gap:36px;}
-  .snap-rail-tutors .home-snap-rail{grid-template-columns:repeat(2,minmax(0,1fr));}.home-final-card h2{font-size:25px;}
+  .snap-rail-tutors .home-snap-rail{grid-template-columns:repeat(auto-fit,minmax(240px,1fr));}.home-final-card h2{font-size:25px;}
 }
 @media(max-width:900px){
   .site-desktop-nav,.desktop-language,.desktop-auth{display:none;}.site-header-inner{height:66px;}.mobile-header-auth{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;}.mobile-menu-control{display:block;}.mobile-menu-toggle{display:grid;place-items:center;width:42px;height:42px;border:1px solid #e2e9df;border-radius:11px;color:#4d6b55;}.site-header-actions{gap:12px;}
@@ -292,8 +285,6 @@ button:disabled{cursor:not-allowed;}
   .home-promise-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}.home-why-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 25px;}.home-promise{padding:24px;}
   .home-teach-card{grid-template-columns:1fr 1fr;}.home-teach-content h2{font-size:28px;}.home-teach-content{padding:28px;}.home-teach-content>p:not(.home-eyebrow){font-size:12px;}.home-teach-content li{font-size:11px;}.home-faq-layout{grid-template-columns:1fr;gap:20px;}.home-faq-heading h2{max-width:none;}.home-faq-heading .home-text-link{display:none;}.home-final-card{padding:30px;}
 }
-
-/* Phone: generous type, compact hero and intentional swipe rails. */
 @media(max-width:640px){
   .home-container,.site-header-inner,.footer-inner,.footer-bottom{width:calc(100% - 36px);}
   .site-header-inner{height:62px;gap:12px;}.site-brand{font-size:21px;letter-spacing:-.8px;gap:7px;}.site-brand-mark{width:29px;height:32px;border-radius:10px 10px 10px 3px;}.site-brand-mark svg{width:20px;height:20px;}.site-header-actions{gap:14px;}.mobile-header-auth>a{border:1px solid var(--line);padding:8px 12px;border-radius:100px;font-size:11px;min-height:36px;}.mobile-menu-toggle{width:38px;height:38px;border:none;background:#f2f5ee;border-radius:10px;}

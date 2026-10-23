@@ -15,20 +15,21 @@ import { reserveLesson, changeLessonStatus } from "./lesson-service";
 import { chooseClassroom } from "./room-service";
 import { demoPaymentsEnabled } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
+
 const str = (fd: FormData, k: string, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const pgCode = (e: unknown) => { const x = e as { code?: string; cause?: { code?: string } }; return x?.code ?? x?.cause?.code; };
+
 export async function setLang(fd: FormData) {
   const l = str(fd, "lang", 4);
   if (!["zh", "ja", "en"].includes(l)) return;
   (await cookies()).set("lang", l, { path: "/", maxAge: 31536000, sameSite: "lax" });
   revalidatePath("/", "layout");
 }
+
 export async function login(_: unknown, fd: FormData) {
   const email = str(fd, "email", 254).toLowerCase();
   const ip = await clientIp();
-  // Do not throttle every visitor through one shared pseudo-IP when proxy headers
-  // have not been explicitly trusted; per-account throttling is still enforced.
   if ((ip !== "untrusted-proxy-disabled" && !await hit(`login:ip:${ip}`, 30, 600_000))
     || !await hit(`login:email:${email}`, 8, 600_000)) return { error: "rate" };
   const [u] = await db.select().from(users).where(eq(users.email, email));
@@ -38,6 +39,8 @@ export async function login(_: unknown, fd: FormData) {
   if (u.suspended) redirect("/appeals");
   redirect(u.role === "admin" ? "/admin" : "/dashboard");
 }
+
+/* ⭐ Teacher sign-up now starts INACTIVE — admin must approve after seeing documents. */
 export async function register(_: unknown, fd: FormData) {
   const ip = await clientIp();
   if (ip !== "untrusted-proxy-disabled" && !await hit(`reg:ip:${ip}`, 10, 3600_000)) return { error: "rate" };
@@ -49,10 +52,23 @@ export async function register(_: unknown, fd: FormData) {
   if (!EMAIL_RE.test(email) || name.length < 2 || pw.length < 8) return { error: "fill" };
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing) return { error: "exists" };
+
   const u = await db.transaction(async tx => {
     const referralCode = randomBytes(6).toString("hex").toUpperCase();
-    const [nu] = await tx.insert(users).values({ email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode, avatar: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}` }).returning();
-    if (role === "teacher") await tx.insert(teacherProfiles).values({ userId: nu.id, headline: "New English tutor" });
+    const [nu] = await tx.insert(users).values({
+      email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode,
+      avatar: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}`,
+    }).returning();
+
+    if (role === "teacher") {
+      /* 🔒 not publicly listed until an admin approves */
+      await tx.insert(teacherProfiles).values({
+        userId: nu.id,
+        headline: "New English tutor",
+        active: false,
+      });
+    }
+
     const invitedBy = str(fd, "referralCode", 24).toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (role === "student" && invitedBy) {
       const [referrer] = await tx.select({ id: users.id, email: users.email, suspended: users.suspended })
@@ -63,11 +79,13 @@ export async function register(_: unknown, fd: FormData) {
     }
     return nu;
   }).catch(e => pgCode(e) === "23505" ? null : Promise.reject(e));
+
   if (!u) return { error: "exists" };
-  if (role === "teacher") updateTag(PUBLIC_TUTORS_TAG);
   await createSession(u.id);
-  redirect("/dashboard");
+  /* tutors land on their profile so they can upload documents right away */
+  redirect(role === "teacher" ? "/dashboard?tab=profile" : "/dashboard");
 }
+
 export async function logout() { await destroySession(); redirect("/"); }
 
 export async function bookLesson(fd: FormData) {
@@ -78,9 +96,13 @@ export async function bookLesson(fd: FormData) {
   if (!await hit(`book:${u.id}`, 30, 3600_000)) redirect(`/teachers/${teacherId}?err=rate`);
   let error = "";
   try {
-    await reserveLesson(u.id, { teacherId, startAt: new Date(str(fd, "startAt", 40)),
+    await reserveLesson(u.id, {
+      teacherId, startAt: new Date(str(fd, "startAt", 40)),
       duration: Number(fd.get("duration") || 50), trial: fd.get("trial") === "1",
-      packageId: Number(fd.get("packageId")) || undefined, topic: str(fd, "topic", 200), classType: fd.get("classType") === "semi_private" ? "semi_private" : "private", groupLessonId: Number(fd.get("groupLessonId")) || undefined });
+      packageId: Number(fd.get("packageId")) || undefined, topic: str(fd, "topic", 200),
+      classType: fd.get("classType") === "semi_private" ? "semi_private" : "private",
+      groupLessonId: Number(fd.get("groupLessonId")) || undefined,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "generic";
     error = ["balance", "slot", "credit", "trial", "group_unavailable", "group_full", "group_already_joined", "group_payment"].includes(msg) ? msg : pgCode(e) === "23505" ? "slot" : "generic";
@@ -88,6 +110,7 @@ export async function bookLesson(fd: FormData) {
   if (error) redirect(`/teachers/${teacherId}?err=${error}`);
   redirect("/dashboard?tab=lessons&ok=booked");
 }
+
 export async function updateLesson(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
@@ -99,6 +122,7 @@ export async function updateLesson(fd: FormData) {
   revalidatePath("/dashboard");
   revalidatePath(`/classroom/${id}`);
 }
+
 export async function leaveReview(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
@@ -119,6 +143,7 @@ export async function leaveReview(fd: FormData) {
   }).catch(() => false);
   if (inserted) { updateTag(PUBLIC_TUTORS_TAG); revalidatePath("/dashboard"); revalidatePath(`/teachers/${l.teacherId}`); }
 }
+
 export async function sendMessage(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
@@ -130,6 +155,7 @@ export async function sendMessage(fd: FormData) {
   }
   redirect(`/dashboard?tab=messages&with=${Number.isInteger(to) ? to : ""}`);
 }
+
 export async function topUp(fd: FormData) {
   const u = await getUser();
   if (!u || u.role !== "student") redirect("/login");
@@ -140,11 +166,19 @@ export async function topUp(fd: FormData) {
   if (key) {
     const h = await headers();
     const origin = process.env.APP_URL || `${h.get("x-forwarded-proto") || "https"}://${h.get("x-forwarded-host") || h.get("host")}`;
-    const body = new URLSearchParams({ mode: "payment", "line_items[0][price_data][currency]": "usd", "line_items[0][price_data][unit_amount]": String(amount),
-      "line_items[0][price_data][product_data][name]": "Lingorain wallet top-up", "line_items[0][quantity]": "1",
+    const body = new URLSearchParams({
+      mode: "payment", "line_items[0][price_data][currency]": "usd",
+      "line_items[0][price_data][unit_amount]": String(amount),
+      "line_items[0][price_data][product_data][name]": "Lingorain wallet top-up",
+      "line_items[0][quantity]": "1",
       "metadata[user_id]": String(u.id), "metadata[amount]": String(amount),
-      success_url: `${origin}/dashboard?tab=wallet&ok=paid`, cancel_url: `${origin}/dashboard?tab=wallet` });
-    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" }, body });
+      success_url: `${origin}/dashboard?tab=wallet&ok=paid`, cancel_url: `${origin}/dashboard?tab=wallet`,
+    });
+    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
     const data = await res.json() as { url?: string };
     if (!res.ok || !data.url) redirect("/dashboard?tab=wallet&err=generic");
     redirect(data.url);
@@ -156,6 +190,7 @@ export async function topUp(fd: FormData) {
   });
   redirect("/dashboard?tab=wallet&ok=paid");
 }
+
 export async function requestPayout(fd: FormData) {
   const u = await getUser();
   if (!u || u.role !== "teacher") redirect("/login");
@@ -175,7 +210,7 @@ export async function requestPayout(fd: FormData) {
   });
   redirect(ok ? "/dashboard?tab=wallet&ok=payout" : "/dashboard?tab=wallet&err=balance");
 }
-// Backwards-compatible server action. Never affects future bookings.
+
 export async function setLessonPlatform(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
@@ -187,10 +222,12 @@ export async function setLessonPlatform(fd: FormData) {
   revalidatePath("/dashboard");
   redirect(`/classroom/${id}`);
 }
+
 export async function updateProfile(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
-  await db.update(users).set({ name: str(fd, "name", 60) || u.name,
+  await db.update(users).set({
+    name: str(fd, "name", 60) || u.name,
     level: ["A1", "A2", "B1", "B2", "C1", "C2"].includes(str(fd, "level", 2)) ? str(fd, "level", 2) : u.level,
     nativeLang: ["zh", "ja", "en"].includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) : u.nativeLang,
   }).where(eq(users.id, u.id));
@@ -198,14 +235,17 @@ export async function updateProfile(fd: FormData) {
     const start = Math.min(23, Math.max(0, Math.round(Number(fd.get("startHour")) || 9)));
     const end = Math.min(24, Math.max(start + 1, Math.round(Number(fd.get("endHour")) || 21)));
     const days = fd.getAll("workDays").map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6);
-    await db.update(teacherProfiles).set({ headline: str(fd, "headline", 140), bio: str(fd, "bio", 2000),
+    await db.update(teacherProfiles).set({
+      headline: str(fd, "headline", 140), bio: str(fd, "bio", 2000),
       country: ["US", "GB", "CA", "AU", "IE", "NZ", "ZA", "CN", "JP"].includes(str(fd, "country", 2)) ? str(fd, "country", 2) : "US",
       accent: str(fd, "accent", 40), speaks: str(fd, "speaks", 80) || "English", tags: str(fd, "tags", 120),
-      price: Math.min(50000, Math.max(500, Math.round(Number(fd.get("price") || 25) * 100))), startHour: start, endHour: end,
-      tzOffset: Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0))), workDays: days.length ? days.join(",") : "1,2,3,4,5",
+      price: Math.min(50000, Math.max(500, Math.round(Number(fd.get("price") || 25) * 100))),
+      startHour: start, endHour: end,
+      tzOffset: Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0))),
+      workDays: days.length ? days.join(",") : "1,2,3,4,5",
       platformDefault: ["lingo", "meet", "zoom"].includes(str(fd, "platformDefault", 10)) ? str(fd, "platformDefault", 10) : "lingo",
     }).where(eq(teacherProfiles.userId, u.id));
+    updateTag(PUBLIC_TUTORS_TAG);
   }
-  if (u.role === "teacher") updateTag(PUBLIC_TUTORS_TAG);
   redirect("/dashboard?tab=profile&ok=saved");
 }

@@ -16,3 +16,4 @@ artifacts/
 /public/downloads/
 npm-debug.log*
 .DS_Store
+.backup/

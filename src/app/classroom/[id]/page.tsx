@@ -63,16 +63,12 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
         <div className="space-y-5">
-          <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmt(l.startAt, lang)} />
+          <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmt(l.startAt, lang)} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} />
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
           <ClassroomChat lessonId={id} userId={user.id} />
-
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="font-bold text-amber-950">Report a lesson issue</h2>
-            <p className="mt-1 text-sm leading-6 text-amber-900/75">
-              If internet or technical problems disrupt the lesson, report what happened. Support will review it; a report does not automatically guarantee a refund or replacement.
-            </p>
-            {/* ✅ FIX: pass the server action directly — never an inline async arrow */}
+            <p className="mt-1 text-sm leading-6 text-amber-900/75">If internet or technical problems disrupt the lesson, report what happened. Support will review it; a report does not automatically guarantee a refund or replacement.</p>
             <form action={reportLessonIssue as unknown as (fd: FormData) => Promise<void>} className="mt-4 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
               <input type="hidden" name="lessonId" value={id} />
               <select name="category" className="rounded-xl border border-amber-200 bg-white p-3 text-sm">
@@ -86,14 +82,12 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
               <button className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-bold text-amber-950">Send report</button>
             </form>
           </section>
-
           <ReportParticipantForm lessonId={id} targets={reportTargets} />
         </div>
 
         <aside className="space-y-4">
           <div className="rounded-[22px] border border-slate-200 bg-white p-5">
             <h2 className="font-bold text-teal-950">{t.lessonInfo}</h2>
-
             {l.classType === "semi_private" && (
               <div className="mt-3 rounded-xl bg-teal-50 p-3">
                 <p className="text-xs font-bold text-teal-900">Semi-private class · {groupStudents.length}/{l.capacity} students</p>
@@ -104,7 +98,6 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
             )}
-
             <div className="mt-4 flex items-center gap-3">
               <img src={other?.avatar || ""} alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover" />
               <div>
@@ -112,39 +105,19 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
                 <p className="mt-0.5 text-xs text-slate-400">{isTutor ? t.student : t.teacher}</p>
               </div>
             </div>
-
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
-
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              <div className="flex justify-between gap-2">
-                <dt>{t.startsAt}</dt>
-                <dd className="font-medium text-slate-700">{fmt(l.startAt, lang)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt>{c.duration}</dt>
-                <dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd>
-              </div>
-              {l.packageId && (
-                <div className="flex justify-between">
-                  <dt>{c.packageCredit}</dt>
-                  <dd>#{l.packageId}</dd>
-                </div>
-              )}
-              {l.topic && (
-                <div>
-                  <dt className="text-slate-400">{t.topic}</dt>
-                  <dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd>
-                </div>
-              )}
+              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmt(l.startAt, lang)}</dd></div>
+              <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
+              {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
+              {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}
             </dl>
           </div>
-
           <div className="rounded-[22px] bg-teal-50/80 p-5">
             <Icon name="swap" className="text-teal-700" />
             <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Change the classroom"}</h2>
             <p className="mt-2 text-xs leading-6 text-slate-500">{c.switchRules || "The classroom can be changed until the lesson ends."}</p>
           </div>
-
           {history.length > 0 && (
             <div className="rounded-[22px] border border-slate-200 bg-white p-5">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{c.history || "History"}</h2>

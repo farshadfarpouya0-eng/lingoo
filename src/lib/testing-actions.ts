@@ -2,16 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { lessons, sessions, teacherProfiles, users } from "@/db/schema";
+import { lessons, teacherProfiles, users } from "@/db/schema";
 import { createSession, getUser } from "@/lib/auth";
 
 type R = { ok?: boolean; error?: string; id?: number };
 
 const TAG = "[TEST]";
 
-/* ── create a ready-to-join lesson ─────────────────────── */
+function impersonationAllowed() {
+  return process.env.NODE_ENV !== "production" || process.env.ENABLE_ADMIN_IMPERSONATION === "true";
+}
+
 export async function createTestLesson(prev: R, formData: FormData): Promise<R> {
   const me = await getUser();
   if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
@@ -55,15 +58,19 @@ export async function createTestLesson(prev: R, formData: FormData): Promise<R> 
   return { ok: true, id: row.id };
 }
 
-/* ── timing controls ──────────────────────────────────── */
 async function touch(id: number) {
   revalidatePath("/admin/testing");
   revalidatePath(`/classroom/${id}`);
 }
 
-export async function testLessonStartNow(prev: R, formData: FormData): Promise<R> {
+async function adminOnly() {
   const me = await getUser();
-  if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
+  if (!me || me.role !== "admin") return null;
+  return me;
+}
+
+export async function testLessonStartNow(prev: R, formData: FormData): Promise<R> {
+  if (!await adminOnly()) return { ok: false, error: "forbidden" };
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { ok: false, error: "invalid" };
   await db.update(lessons).set({ startAt: new Date(Date.now() - 5 * 60_000), status: "confirmed" }).where(eq(lessons.id, id));
@@ -72,8 +79,7 @@ export async function testLessonStartNow(prev: R, formData: FormData): Promise<R
 }
 
 export async function testLessonDelay(prev: R, formData: FormData): Promise<R> {
-  const me = await getUser();
-  if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
+  if (!await adminOnly()) return { ok: false, error: "forbidden" };
   const id = Number(formData.get("id"));
   const minutes = Math.max(5, Number(formData.get("minutes")) || 30);
   if (!Number.isInteger(id)) return { ok: false, error: "invalid" };
@@ -83,8 +89,7 @@ export async function testLessonDelay(prev: R, formData: FormData): Promise<R> {
 }
 
 export async function testLessonEndNow(prev: R, formData: FormData): Promise<R> {
-  const me = await getUser();
-  if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
+  if (!await adminOnly()) return { ok: false, error: "forbidden" };
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { ok: false, error: "invalid" };
   await db.update(lessons).set({ startAt: new Date(Date.now() - 6 * 60 * 60_000), status: "completed" }).where(eq(lessons.id, id));
@@ -93,8 +98,7 @@ export async function testLessonEndNow(prev: R, formData: FormData): Promise<R> 
 }
 
 export async function testLessonDelete(prev: R, formData: FormData): Promise<R> {
-  const me = await getUser();
-  if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
+  if (!await adminOnly()) return { ok: false, error: "forbidden" };
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id)) return { ok: false, error: "invalid" };
   await db.delete(lessons).where(eq(lessons.id, id));
@@ -102,10 +106,10 @@ export async function testLessonDelete(prev: R, formData: FormData): Promise<R> 
   return { ok: true };
 }
 
-/* ── impersonation (admin-only, demo/testing) ─────────── */
 export async function switchToUser(prev: R, formData: FormData): Promise<R> {
   const me = await getUser();
   if (!me || me.role !== "admin") return { ok: false, error: "forbidden" };
+  if (!impersonationAllowed()) return { ok: false, error: "disabled" };
 
   const targetId = Number(formData.get("id"));
   if (!Number.isInteger(targetId) || targetId === me.id) return { ok: false, error: "invalid" };

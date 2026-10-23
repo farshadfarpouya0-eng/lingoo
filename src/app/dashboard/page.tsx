@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users, learningMaterials, materialPurchases, teacherDocuments, referralLessonCredits, userPresence, lessonParticipants, reviews } from "@/db/schema";
@@ -72,16 +72,30 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       : (isTutor ? eq(lessons.teacherId, user.id) : studentLessonScope))
     .orderBy(asc(lessons.startAt));
 
+  const now = Date.now();
+
   const [[fresh], rows, [tutor], [credits], summary, contacts, weeklySlots, blockedSlots, scheduleBookings, [presenceSetting]] = await Promise.all([
     db.select({ balance: users.balance }).from(users).where(eq(users.id, user.id)),
     needsRows ? (tab === "overview" ? rowQuery.limit(5) : rowQuery) : Promise.resolve([]),
-    isTutor && (tab === "profile" || tab === "wallet" || tab === "schedule") ? db.select().from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : Promise.resolve([]),
+    /* always load the tutor profile so the approval banner can show on every tab */
+    isTutor ? db.select().from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : Promise.resolve([]),
     !isTutor && tab === "overview" ? db.select({ total: sql<number>`coalesce(sum(${lessonPackages.remainingLessons}),0)::int` }).from(lessonPackages).where(eq(lessonPackages.studentId, user.id)) : Promise.resolve([{ total: 0 }]),
-    tab === "overview" || (isTutor && tab === "wallet") ? dashboardSummary(user.id, isTutor) : Promise.resolve({ completedLessons: 0, completedMinutes: 0, students: 0, escrow: 0 }),
+    tab === "overview" || (isTutor && tab === "wallet") ? dashboardSummary(user.id, isTutor) : Promise.resolve({ completedLessons: 0, completedMinutes: 0, students: 0, escrow: 0, grossCompleted: 0 }),
     tab === "messages" ? db.selectDistinct({ id: isTutor ? lessons.studentId : lessons.teacherId }).from(lessons).where(eq(isTutor ? lessons.teacherId : lessons.studentId, user.id)) : Promise.resolve([]),
     isTutor && tab === "schedule" ? db.select({ weekday: teacherWeeklySlots.weekday, startMinute: teacherWeeklySlots.startMinute, endMinute: teacherWeeklySlots.endMinute }).from(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId, user.id)) : Promise.resolve([]),
     isTutor && tab === "schedule" ? db.select().from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, user.id), gte(teacherBlockedSlots.endAt, new Date()))).orderBy(asc(teacherBlockedSlots.startAt)).limit(60) : Promise.resolve([]),
-    isTutor && tab === "schedule" ? db.select({ startAt: lessons.startAt, duration: lessons.duration, status: lessons.status, studentName: other.name }).from(lessons).innerJoin(other, eq(other.id, lessons.studentId)).where(and(eq(lessons.teacherId, user.id), inArray(lessons.status, ["pending", "confirmed"]), gte(lessons.startAt, new Date(Date.now() - 86400_000)))).orderBy(asc(lessons.startAt)).limit(60) : Promise.resolve([]),
+    /* 3 weeks back → 6 weeks ahead, matching the timetable week navigation */
+    isTutor && tab === "schedule"
+      ? db.select({ startAt: lessons.startAt, duration: lessons.duration, status: lessons.status, studentName: other.name })
+          .from(lessons).innerJoin(other, eq(other.id, lessons.studentId))
+          .where(and(
+            eq(lessons.teacherId, user.id),
+            inArray(lessons.status, ["pending", "confirmed", "completed", "cancelled"]),
+            gte(lessons.startAt, new Date(now - 21 * 86400_000)),
+            lte(lessons.startAt, new Date(now + 42 * 86400_000)),
+          ))
+          .orderBy(asc(lessons.startAt)).limit(400)
+      : Promise.resolve([]),
     db.select({ visible: userPresence.visible }).from(userPresence).where(eq(userPresence.userId, user.id)).limit(1),
   ]);
 
@@ -151,7 +165,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   {canOpen ? (
                     <a href={`/api/private-files/material/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white">Open resource ↗</a>
                   ) : (
-                    /* ✅ FIX: pass the server action directly — never an inline async arrow */
                     <form action={buyMaterial as unknown as (fd: FormData) => Promise<void>}>
                       <input type="hidden" name="id" value={m.id} />
                       <button className="rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-bold text-teal-950">Buy resource · ${((m.price || 0) / 100).toFixed(2)}</button>
@@ -186,7 +199,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <ProfileAvatarUploadForm avatar={user.avatar} />
         <ProfileForm user={user} tutor={tutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} />
         {isTutor && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <section id="documents" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-teal-950">Profile completion</h2>
@@ -312,6 +325,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <img src={user.avatar || ""} alt={user.name} width={40} height={40} className="h-10 w-10 rounded-full object-cover ring-4 ring-white" />
         </div>
       </div>
+
+      {isTutor && tutor && !tutor.active && (
+        <div className="mb-6 rounded-[22px] border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-400 text-amber-950"><Icon name="alert" width={18} height={18} /></span>
+            <div>
+              <h2 className="text-sm font-bold text-amber-950">Your tutor profile is waiting for approval</h2>
+              <p className="mt-1 text-xs leading-5 text-amber-900/80">Students can&apos;t see your profile yet. Upload your ID so our team can verify you — we usually review within 24 hours.</p>
+              <Link href="/dashboard?tab=profile#documents" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-amber-950 hover:bg-amber-300">Upload documents →</Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[210px_minmax(0,1fr)]">
         <aside className="min-w-0 lg:sticky lg:top-24">

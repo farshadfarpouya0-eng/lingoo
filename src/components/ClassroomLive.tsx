@@ -21,12 +21,12 @@ const D = {
   link: "Meeting link", linkHint: "Paste your Google Meet or Zoom link",
   save: "Save classroom", saved: "Classroom saved",
   invalidLink: "That doesn't look like a valid Google Meet or Zoom link.",
+  dailyOff: "Daily is not set up on this site yet. Pick Lingo Room, Google Meet or Zoom.",
   closed: "This lesson has ended.", forbidden: "You can't change the classroom for this lesson.",
   pendingTitle: "Waiting for the tutor to confirm",
   pendingText: "Once the tutor confirms this lesson you can pick the classroom.",
   pendingConfirm: "This lesson isn't confirmed yet",
-  opens: "The classroom opens 10 minutes before the lesson",
-  startsAt: "Starts", endsAt: "Ends",
+  startsAt: "Starts",
   live: "Live sync", syncError: "Reconnecting…",
   report: "Report a problem", issueSent: "Problem reported — support will review it.",
   reportHint: "If the video or audio fails, report the problem here.",
@@ -60,6 +60,41 @@ function Timeline({ step }: { step: number }) {
   );
 }
 
+const fmtSpan = (min: number) => (min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`);
+
+/** Tutors may enter 30 minutes early, students 10 — matching roomState() on the server. */
+function Countdown({ startAtMs, durationMinutes, earlyMinutes }: { startAtMs: number; durationMinutes: number; earlyMinutes: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const toStart = startAtMs - now;
+  const toEnd = startAtMs + durationMinutes * 60_000 - now;
+
+  if (toStart <= 0) {
+    if (toEnd > 0) {
+      return (
+        <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-4 py-2 text-sm font-semibold text-red-700">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+          Live now · {Math.floor(toEnd / 60_000)} min left
+        </span>
+      );
+    }
+    return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">This lesson has ended</span>;
+  }
+
+  const m = Math.floor(toStart / 60_000);
+  const opens = Math.max(0, m - earlyMinutes);
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
+      <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+      {opens > 0 ? `Room opens in ${fmtSpan(opens)}` : "Room is opening"} · starts in {fmtSpan(m)}
+    </span>
+  );
+}
+
 function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   lessonId: number; initial: RoomSnapshot; preference: string; onSaved: () => void; isTutor: boolean;
 }) {
@@ -75,6 +110,11 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
     { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: "LINK" },
   ];
 
+  const errorText =
+    result?.error === "link" ? D.invalidLink :
+    result?.error === "daily_unconfigured" ? D.dailyOff :
+    result?.error === "closed" ? D.closed : D.forbidden;
+
   return (
     <form action={action as unknown as (fd: FormData) => Promise<void>} className="rounded-[26px] border border-slate-200 bg-white p-6">
       <input type="hidden" name="lessonId" value={lessonId} />
@@ -83,7 +123,9 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
       <div className="flex items-start gap-3">
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="swap" /></div>
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-teal-950">{initial.platform === "undecided" ? (isTutor ? D.tutorPick : D.pickTitle) : D.switchTitle}</h2>
+          <h2 className="text-xl font-bold tracking-tight text-teal-950">
+            {initial.platform === "undecided" ? (isTutor ? D.tutorPick : D.pickTitle) : D.switchTitle}
+          </h2>
           <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">{isTutor ? D.tutorPickText : D.pickText}</p>
         </div>
       </div>
@@ -122,25 +164,19 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
         </label>
       )}
 
-      {result?.error && (
-        <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">
-          {result.error === "link" ? D.invalidLink : result.error === "closed" ? D.closed : D.forbidden}
-        </p>
-      )}
+      {result?.error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{errorText}</p>}
       {result?.ok && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{D.saved}</p>}
 
-      <button
-        disabled={pending}
-        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50"
-      >
+      <button disabled={pending} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">
         {pending ? "Saving…" : D.save}<Icon name="arrow" width={17} height={17} />
       </button>
     </form>
   );
 }
 
-export default function ClassroomLive({ initial, isTutor, preference, c, startLabel }: {
-  initial: RoomSnapshot; isTutor: boolean; preference: string; c: LearningCopy; startLabel: string;
+export default function ClassroomLive({ initial, isTutor, preference, c, startLabel, startAtMs, durationMinutes }: {
+  initial: RoomSnapshot; isTutor: boolean; preference: string; c: LearningCopy;
+  startLabel: string; startAtMs: number; durationMinutes: number;
 }) {
   const [room, setRoom] = useState(initial);
   const [updated, setUpdated] = useState(false);
@@ -150,6 +186,7 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
   const busy = useRef(false);
   const [failures, setFailures] = useState(0);
   const revision = useRef(initial.revision);
+  const earlyMinutes = isTutor ? 30 : 10;
 
   const refresh = useCallback(async () => {
     if (busy.current) return;
@@ -160,9 +197,14 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
       const data = await r.json() as RoomSnapshot;
       if (data.revision !== revision.current) { revision.current = data.revision; setUpdated(true); }
       setRoom(prev => prev.revision === data.revision && prev.state === data.state && prev.issueReported === data.issueReported && prev.joinUrl === data.joinUrl ? prev : data);
-      setFailures(0); setOffline(false);
-    } catch { setFailures(n => n + 1); setOffline(true); }
-    finally { busy.current = false; }
+      setFailures(0);
+      setOffline(false);
+    } catch {
+      setFailures(n => n + 1);
+      setOffline(true);
+    } finally {
+      busy.current = false;
+    }
   }, [initial.lessonId]);
 
   const pollDelay = roomPollDelay(room.state, offline ? failures : 0);
@@ -172,12 +214,15 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     const visible = () => { if (document.visibilityState === "visible") void refresh(); };
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("focus", visible);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("focus", visible); };
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("focus", visible);
+    };
   }, [refresh, pollDelay]);
 
-  const minutesLeft = initial.state === "open" ? null : null;
   const joinUrl = room.joinUrl;
-  const canJoin = room.state === "open" && room.platform === "lingo" && !!joinUrl;
+  const canJoinLingo = room.state === "open" && room.platform === "lingo" && !!joinUrl;
 
   const step =
     room.state === "closed" ? 5 :
@@ -185,9 +230,10 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     room.state === "open" ? 4 :
     room.state === "early" ? 3 : 1;
 
+  const opensText = `The classroom opens ${earlyMinutes} minutes before the lesson`;
+
   return (
     <div className="space-y-5">
-      {/* timeline + live badge */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-slate-200 bg-white px-5 py-4">
         <Timeline step={step} />
         <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
@@ -210,20 +256,18 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
         </p>
       )}
 
-      {/* chooser */}
       {room.state !== "closed" && (
         <PlatformForm lessonId={room.lessonId} initial={room} preference={preference} onSaved={refresh} isTutor={isTutor} />
       )}
 
-      {/* the room */}
-      {canJoin ? (
+      {canJoinLingo ? (
         <LingoRoom
           joinUrl={joinUrl}
           roomName={`lingorain-${room.lessonId}`}
           displayName={name}
           onNameChange={setName}
           startLabel={startLabel}
-          minutesLeft={minutesLeft}
+          minutesLeft={Math.max(0, Math.round((startAtMs + durationMinutes * 60_000 - Date.now()) / 60_000))}
           isTutor={isTutor}
         />
       ) : room.state === "open" && room.platform !== "undecided" && joinUrl ? (
@@ -237,7 +281,6 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
           </a>
         </section>
       ) : (
-        /* not ready */
         <section className="rounded-[26px] border border-slate-200 bg-white p-10 text-center">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-50 text-teal-700">
             <Icon name={room.state === "closed" ? "check" : room.platform === "undecided" ? "swap" : "clock"} width={28} height={28} />
@@ -246,13 +289,19 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
             {room.state === "closed" ? "Lesson finished" : room.platform === "undecided" ? "Classroom not chosen" : "Not started yet"}
           </p>
           <h2 className="mt-3 text-2xl font-bold text-teal-950">
-            {room.state === "closed" ? D.closed : room.platform === "undecided" ? D.pendingTitle : room.state === "pending" ? D.pendingConfirm : D.opens}
+            {room.state === "closed" ? D.closed : room.platform === "undecided" ? D.pendingTitle : room.state === "pending" ? D.pendingConfirm : opensText}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
-            {room.state === "closed" ? "Thank you for joining. Leave a review from your dashboard."
-              : room.platform === "undecided" ? D.pendingText
-                : "The room will unlock automatically — no need to refresh."}
+            {room.state === "closed"
+              ? "Thank you for joining. Leave a review from your dashboard."
+              : room.platform === "undecided"
+                ? D.pendingText
+                : "The room unlocks automatically — no need to refresh."}
           </p>
+
+          <div className="mt-5 flex justify-center">
+            <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} />
+          </div>
 
           <div className="mx-auto mt-6 grid max-w-md gap-2 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
@@ -260,8 +309,8 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
               <p className="mt-1 text-sm font-semibold text-slate-800">{startLabel}</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{D.endsAt}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-800">—</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Length</p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">{durationMinutes} min</p>
             </div>
           </div>
         </section>

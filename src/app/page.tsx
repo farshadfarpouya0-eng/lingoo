@@ -2,49 +2,373 @@ import Link from "next/link";
 import { getT } from "@/lib/i18n";
 import { HOME } from "@/lib/home-i18n";
 import { LANDING } from "@/lib/landing-i18n";
-import { ensureSeed } from "@/lib/seed";
-import { getFeaturedTeachers } from "@/lib/public-tutors";
-import { loadPublicCatalog, CATALOG_NOTICES } from "@/lib/catalog-recovery";
+import { CATALOG_NOTICES } from "@/lib/catalog-recovery";
+import { getHomeCatalog } from "@/lib/home-catalog";
 import LandingHero from "@/components/LandingHero";
 import SnapRail from "@/components/SnapRail";
 import TeacherCard from "@/components/TeacherCard";
 import Icon, { type IconName } from "@/components/Icon";
+
 export const dynamic = "force-dynamic";
-const goalIcons: IconName[]=["messages","book","book","chart","user","book","video","messages"];
-const kidColors=["#c9867e","#b85e47","#8b74a9","#629074","#c48297","#b88851"];
+
+const goalIcons: IconName[] = ["messages", "book", "book", "chart", "user", "book", "video", "messages"];
+const kidColors = ["#c9867e", "#b85e47", "#8b74a9", "#629074", "#c48297", "#b88851"];
 
 export default async function Home() {
-  const {t,lang}=await getT();
-  const h=HOME[lang],c=LANDING[lang];
-  const catalog=await loadPublicCatalog(async()=>{await ensureSeed();return getFeaturedTeachers();});
-  const featured=catalog.items;
-  return <div className="lingorain-home">
-    <LandingHero c={c}/>
+  const { t, lang } = await getT();
+  const h = HOME[lang], c = LANDING[lang];
+  const catalog = await getHomeCatalog();
+  const featured = catalog.items;
 
-    <section className="home-search-section" aria-labelledby="lesson-search-title"><div className="home-container"><div className="home-search-box"><div className="home-search-heading"><Icon name="settings" width={21} height={21}/><div><h2 id="lesson-search-title">{c.searchTitle}</h2><p>{c.searchSub}</p></div></div><form action="/teachers" className="home-search-form"><label><span>{c.audience}</span><select name="audience" defaultValue=""><option value="">{c.allAges}</option><option value="adults">{c.adultsOption}</option><option value="kids">{c.kidsOption}</option></select></label><label><span>{c.goal}</span><select name="tag" defaultValue=""><option value="">{h.searchGoal}</option>{h.goals.map(g=><option key={g.tag} value={g.tag}>{g.title}</option>)}</select></label><button type="submit">{c.search}<Icon name="arrow" width={18} height={18}/></button></form></div></div></section>
+  return (
+    <div className="lingorain-home">
+      <style>{`
+        .home-trust-strip{background:#f5f7f2;padding:4px 0 26px;}
+        .home-trust-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:16px 0 0;list-style:none;border-top:1px solid #e4ebe6;}
+        .home-trust-stats li{text-align:center;padding:8px 6px;}
+        .home-trust-stats b{display:block;font-size:28px;letter-spacing:-1.2px;font-weight:750;color:#143e37;line-height:1;}
+        .home-trust-stats span{display:block;margin-top:8px;font-size:12px;line-height:1.45;color:#7d8d82;}
+        .home-trust-line{margin:12px 0 0;text-align:center;font-size:12px;letter-spacing:.2px;color:#8a9a8e;}
+        .home-detail-rows .home-detail-row:nth-child(2) .home-detail-image img{filter:brightness(1.28) saturate(.7) contrast(.9);}
+        .home-detail-rows .home-detail-row:nth-child(2) .home-detail-image::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,247,238,.22),rgba(20,62,55,.16));}
+        @media(max-width:640px){
+          .home-trust-stats{grid-template-columns:1fr 1fr;}
+          .home-trust-stats b{font-size:22px;}
+          .home-trust-stats span{font-size:11px;}
+        }
+      `}</style>
 
-    <section className="home-kids-section home-section" id="kids-learning" aria-labelledby="kids-learning-title"><div className="home-container"><div className="home-section-heading kids-section-heading"><div><p className="home-eyebrow">{c.kidsEyebrow}</p><h2 id="kids-learning-title">{c.kidsShort}</h2><p>{c.kidsHint}</p></div><Link href="/teachers?audience=kids&tag=Kids" className="home-text-link">{c.kidsCta}<Icon name="arrow" width={17} height={17}/></Link></div><SnapRail kind="kids" label={c.kidsShort} previous={c.previous} next={c.next} hint={c.swipe}>{h.characters.map((character,i)=><article key={character.name} className="learning-friend" style={{"--friend-color":kidColors[i]} as React.CSSProperties}><div className="learning-friend-image"><img src={character.image} alt={character.alt} width={520} height={650} loading="lazy" decoding="async"/></div><div className="learning-friend-body"><p className="friend-activity">{character.activity}</p><h3>{character.name}</h3><p>{character.text}</p></div></article>)}</SnapRail><p className="kids-section-note">{h.kidsSub}</p></div></section>
+      <LandingHero c={c} />
 
-    <section className="home-goals-section home-section" id="learning-goals" aria-labelledby="learning-goals-title"><div className="home-container"><div className="home-section-heading"><div><p className="home-eyebrow">{c.focus}</p><h2 id="learning-goals-title">{h.goalsTitle}</h2></div><p className="section-heading-description">{h.goalsSub}</p></div><div className="home-goal-grid">{h.goals.map((g,i)=><Link key={g.tag} href={g.tag==="Kids"?"/teachers?audience=kids&tag=Kids":`/teachers?audience=adults&tag=${encodeURIComponent(g.tag)}`} className="home-goal-card"><span className="goal-card-icon"><Icon name={goalIcons[i]||"book"} width={22} height={22}/></span><div><h3>{g.title}</h3><p>{g.text}</p></div><Icon name="arrow" width={17} height={17} className="goal-card-arrow"/></Link>)}</div></div></section>
+      <section className="home-trust-strip" aria-label="Lingorain in numbers">
+        <div className="home-container">
+          <ul className="home-trust-stats">
+            {h.stats.map(([value, label]) => (
+              <li key={label}>
+                <b>{value}</b>
+                <span>{label}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="home-trust-line">{h.trust}</p>
+        </div>
+      </section>
 
-    <section className="home-tutors-section home-section" id="featured-tutors" aria-labelledby="featured-tutors-title"><div className="home-container"><div className="home-section-heading"><div><p className="home-eyebrow">{c.tutorsEyebrow}</p><h2 id="featured-tutors-title">{h.tutorsTitle}</h2><p>{h.tutorsSub}</p></div><Link href="/teachers" className="home-outline-button">{t.viewAll}<Icon name="arrow" width={17} height={17}/></Link></div>{catalog.unavailable?<p role="status" className="catalog-notice">{CATALOG_NOTICES[lang]}</p>:<SnapRail kind="tutors" label={h.tutorsTitle} previous={c.previous} next={c.next} hint={c.swipe}>{featured.map(f=><TeacherCard key={f.id} tr={f} t={t}/>)}</SnapRail>}</div></section>
+      <section className="home-search-section" aria-labelledby="lesson-search-title">
+        <div className="home-container">
+          <div className="home-search-box">
+            <div className="home-search-heading">
+              <Icon name="settings" width={21} height={21} />
+              <div>
+                <h2 id="lesson-search-title">{c.searchTitle}</h2>
+                <p>{c.searchSub}</p>
+              </div>
+            </div>
+            <form action="/teachers" className="home-search-form">
+              <label>
+                <span>{c.audience}</span>
+                <select name="audience" defaultValue="">
+                  <option value="">{c.allAges}</option>
+                  <option value="adults">{c.adultsOption}</option>
+                  <option value="kids">{c.kidsOption}</option>
+                </select>
+              </label>
+              <label>
+                <span>{c.goal}</span>
+                <select name="tag" defaultValue="">
+                  <option value="">{h.searchGoal}</option>
+                  {h.goals.map(g => <option key={g.tag} value={g.tag}>{g.title}</option>)}
+                </select>
+              </label>
+              <button type="submit">
+                {c.search}<Icon name="arrow" width={18} height={18} />
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
 
-    <section className="home-details-section home-section" aria-labelledby="lesson-details-title"><div className="home-container"><div className="home-centered-heading"><p className="home-eyebrow">{c.detailsEyebrow}</p><h2 id="lesson-details-title">{h.detailTitle}</h2><p>{h.detailSub}</p></div><div className="home-detail-rows">{h.details.map((d,i)=><article className={`home-detail-row ${i%2?"detail-row-reverse":""}`} key={d.title}><div className="home-detail-image"><img src={d.image} alt={d.alt} width={1000} height={760} loading="lazy" decoding="async"/><span className="detail-image-label"><Icon name={i===0?"user":i===1?"calendar":"chart"} width={19} height={19}/>{d.kicker}</span></div><div className="home-detail-content"><p className="home-eyebrow">{String(i+1).padStart(2,"0")} / {d.kicker}</p><h3>{d.title}</h3><p>{d.text}</p><ul>{d.bullets.map(b=><li key={b}><Icon name="check" width={17} height={17}/>{b}</li>)}</ul></div></article>)}</div></div></section>
+      <section className="home-kids-section home-section" id="kids-learning" aria-labelledby="kids-learning-title">
+        <div className="home-container">
+          <div className="home-section-heading kids-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.kidsEyebrow}</p>
+              <h2 id="kids-learning-title">{c.kidsShort}</h2>
+              <p>{c.kidsHint}</p>
+            </div>
+            <Link href="/teachers?audience=kids&tag=Kids" className="home-text-link">
+              {c.kidsCta}<Icon name="arrow" width={17} height={17} />
+            </Link>
+          </div>
+          <SnapRail kind="kids" label={c.kidsShort} previous={c.previous} next={c.next} hint={c.swipe}>
+            {h.characters.map((character, i) => (
+              <article key={character.name} className="learning-friend" style={{ "--friend-color": kidColors[i] } as React.CSSProperties}>
+                <div className="learning-friend-image">
+                  <img src={character.image} alt={character.alt} width={520} height={650} loading="lazy" decoding="async" />
+                </div>
+                <div className="learning-friend-body">
+                  <p className="friend-activity">{character.activity}</p>
+                  <h3>{character.name}</h3>
+                  <p>{character.text}</p>
+                </div>
+              </article>
+            ))}
+          </SnapRail>
+          <p className="kids-section-note">{h.kidsSub}</p>
+        </div>
+      </section>
 
-    <section className="home-how-section home-section" id="how-it-works" aria-labelledby="how-title"><div className="home-container"><div className="home-centered-heading"><p className="home-eyebrow">{c.howEyebrow}</p><h2 id="how-title">{h.howTitle}</h2><p>{h.howSub}</p></div><div className="home-step-grid">{h.steps.map((step,i)=><article className="home-step" key={step.title}><span className="step-number">0{i+1}</span><div><h3>{step.title}</h3><p>{step.text}</p></div>{i<2&&<span className="step-connector" aria-hidden="true"/>}</article>)}</div></div></section>
+      <section className="home-goals-section home-section" id="learning-goals" aria-labelledby="learning-goals-title">
+        <div className="home-container">
+          <div className="home-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.focus}</p>
+              <h2 id="learning-goals-title">{h.goalsTitle}</h2>
+            </div>
+            <p className="section-heading-description">{h.goalsSub}</p>
+          </div>
+          <div className="home-goal-grid">
+            {h.goals.map((g, i) => (
+              <Link
+                key={g.tag}
+                href={g.tag === "Kids" ? "/teachers?audience=kids&tag=Kids" : `/teachers?audience=adults&tag=${encodeURIComponent(g.tag)}`}
+                className="home-goal-card"
+              >
+                <span className="goal-card-icon"><Icon name={goalIcons[i] || "book"} width={22} height={22} /></span>
+                <div>
+                  <h3>{g.title}</h3>
+                  <p>{g.text}</p>
+                </div>
+                <Icon name="arrow" width={17} height={17} className="goal-card-arrow" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section className="home-promise-section home-section" aria-labelledby="promise-title"><div className="home-container"><div className="home-centered-heading"><p className="home-eyebrow">{c.promiseEyebrow}</p><h2 id="promise-title">{h.promiseTitle}</h2><p>{h.promiseSub}</p></div><div className="home-promise-grid">{h.promises.map((promise,i)=><article key={promise.title} className="home-promise"><Icon name={(["book","shield","clock","user"] as const)[i]} width={23} height={23}/><p className="promise-value">{promise.value}</p><h3>{promise.title}</h3><p>{promise.text}</p></article>)}</div></div></section>
+      <section className="home-tutors-section home-section" id="featured-tutors" aria-labelledby="featured-tutors-title">
+        <div className="home-container">
+          <div className="home-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.tutorsEyebrow}</p>
+              <h2 id="featured-tutors-title">{h.tutorsTitle}</h2>
+              <p>{h.tutorsSub}</p>
+            </div>
+            <Link href="/teachers" className="home-outline-button">
+              {t.viewAll}<Icon name="arrow" width={17} height={17} />
+            </Link>
+          </div>
+          {catalog.unavailable
+            ? <p role="status" className="catalog-notice">{CATALOG_NOTICES[lang]}</p>
+            : (
+              <SnapRail kind="tutors" label={h.tutorsTitle} previous={c.previous} next={c.next} hint={c.swipe}>
+                {featured.map(f => <TeacherCard key={f.id} tr={f} t={t} />)}
+              </SnapRail>
+            )}
+        </div>
+      </section>
 
-    <section className="home-why-section home-section" aria-labelledby="why-title"><div className="home-container"><div className="home-section-heading"><div><p className="home-eyebrow">{c.whyEyebrow}</p><h2 id="why-title">{h.whyTitle}</h2></div><p className="section-heading-description">{h.whySub}</p></div><div className="home-why-grid">{h.why.map((why,i)=><article key={why.title}><Icon name={(["user","calendar","wallet","book","shield","messages"] as const)[i]} width={22} height={22}/><h3>{why.title}</h3><p>{why.text}</p></article>)}</div></div></section>
+      <section className="home-details-section home-section" aria-labelledby="lesson-details-title">
+        <div className="home-container">
+          <div className="home-centered-heading">
+            <p className="home-eyebrow">{c.detailsEyebrow}</p>
+            <h2 id="lesson-details-title">{h.detailTitle}</h2>
+            <p>{h.detailSub}</p>
+          </div>
+          <div className="home-detail-rows">
+            {h.details.map((d, i) => (
+              <article className={`home-detail-row ${i % 2 ? "detail-row-reverse" : ""}`} key={d.title}>
+                <div className="home-detail-image">
+                  <img src={d.image} alt={d.alt} width={1000} height={760} loading="lazy" decoding="async" />
+                  <span className="detail-image-label">
+                    <Icon name={i === 0 ? "user" : i === 1 ? "calendar" : "chart"} width={19} height={19} />{d.kicker}
+                  </span>
+                </div>
+                <div className="home-detail-content">
+                  <p className="home-eyebrow">{String(i + 1).padStart(2, "0")} / {d.kicker}</p>
+                  <h3>{d.title}</h3>
+                  <p>{d.text}</p>
+                  <ul>{d.bullets.map(b => <li key={b}><Icon name="check" width={17} height={17} />{b}</li>)}</ul>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section className="home-comparison-section home-section" aria-labelledby="compare-title"><div className="home-container"><div className="home-centered-heading"><p className="home-eyebrow">{c.compareEyebrow}</p><h2 id="compare-title">{h.cmpTitle}</h2></div><div className="home-comparison"><div className="comparison-header"><span/><b>{h.cmpUs}</b><b>{h.cmpThem}</b></div>{h.cmpRows.map(([name,us,them])=><div key={name} className="comparison-row"><h3>{name}</h3><div className="comparison-us"><span className="mobile-comparison-label">{h.cmpUs}</span><p><Icon name="check" width={15} height={15}/>{us}</p></div><div className="comparison-other"><span className="mobile-comparison-label">{h.cmpThem}</span><p>{them}</p></div></div>)}</div></div></section>
+      <section className="home-how-section home-section" id="how-it-works" aria-labelledby="how-title">
+        <div className="home-container">
+          <div className="home-centered-heading">
+            <p className="home-eyebrow">{c.howEyebrow}</p>
+            <h2 id="how-title">{h.howTitle}</h2>
+            <p>{h.howSub}</p>
+          </div>
+          <div className="home-step-grid">
+            {h.steps.map((step, i) => (
+              <article className="home-step" key={step.title}>
+                <span className="step-number">0{i + 1}</span>
+                <div>
+                  <h3>{step.title}</h3>
+                  <p>{step.text}</p>
+                </div>
+                {i < 2 && <span className="step-connector" aria-hidden="true" />}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section className="home-stories-section home-section" aria-labelledby="stories-title"><div className="home-container"><div className="home-section-heading"><div><p className="home-eyebrow">{c.storiesEyebrow}</p><h2 id="stories-title">{h.revTitle}</h2></div></div><SnapRail kind="stories" label={h.revTitle} previous={c.previous} next={c.next} hint={c.swipe}>{h.reviews.map(review=><figure key={review.name} className="home-story"><span className="story-quote-mark" aria-hidden="true">“</span><blockquote>{review.text}</blockquote><figcaption><span className="story-avatar">{review.name[0]}</span><div><b>{review.name}</b><span>{review.from} · {review.goal}</span></div></figcaption></figure>)}</SnapRail></div></section>
+      <section className="home-promise-section home-section" aria-labelledby="promise-title">
+        <div className="home-container">
+          <div className="home-centered-heading">
+            <p className="home-eyebrow">{c.promiseEyebrow}</p>
+            <h2 id="promise-title">{h.promiseTitle}</h2>
+            <p>{h.promiseSub}</p>
+          </div>
+          <div className="home-promise-grid">
+            {h.promises.map((promise, i) => (
+              <article key={promise.title} className="home-promise">
+                <Icon name={(["book", "shield", "clock", "user"] as const)[i]} width={23} height={23} />
+                <p className="promise-value">{promise.value}</p>
+                <h3>{promise.title}</h3>
+                <p>{promise.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section className="home-teach-section home-section"><div className="home-container"><div className="home-teach-card"><div className="home-teach-content"><p className="home-eyebrow">{c.teacherEyebrow}</p><h2>{h.ctaTutorTitle}</h2><p>{h.ctaTutorText}</p><ul>{h.ctaTutorPoints.map(point=><li key={point}><Icon name="check" width={16} height={16}/>{point}</li>)}</ul><Link href="/register?role=teacher" className="home-filled-button">{h.ctaTutorBtn}<Icon name="arrow" width={17} height={17}/></Link></div><img src="/images/teacher-onboarding.webp" alt="An English tutor preparing an online lesson" width={1000} height={800} loading="lazy" decoding="async"/></div></div></section>
+      <section className="home-why-section home-section" aria-labelledby="why-title">
+        <div className="home-container">
+          <div className="home-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.whyEyebrow}</p>
+              <h2 id="why-title">{h.whyTitle}</h2>
+            </div>
+            <p className="section-heading-description">{h.whySub}</p>
+          </div>
+          <div className="home-why-grid">
+            {h.why.map((why, i) => (
+              <article key={why.title}>
+                <Icon name={(["user", "calendar", "wallet", "book", "shield", "messages"] as const)[i]} width={22} height={22} />
+                <h3>{why.title}</h3>
+                <p>{why.text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section id="faq" className="home-faq-section home-section" aria-labelledby="faq-title"><div className="home-container home-faq-layout"><div className="home-faq-heading"><p className="home-eyebrow">{c.faqEyebrow}</p><h2 id="faq-title">{h.faqTitle}</h2><Link href="/teachers" className="home-text-link">{t.findTeachers}<Icon name="arrow" width={16} height={16}/></Link></div><div className="home-faq-list">{h.faq.map(([q,a])=><details key={q}><summary>{q}<span className="faq-plus" aria-hidden="true">+</span></summary><p>{a}</p></details>)}</div></div></section>
+      <section className="home-comparison-section home-section" aria-labelledby="compare-title">
+        <div className="home-container">
+          <div className="home-centered-heading">
+            <p className="home-eyebrow">{c.compareEyebrow}</p>
+            <h2 id="compare-title">{h.cmpTitle}</h2>
+          </div>
+          <div className="home-comparison">
+            <div className="comparison-header">
+              <span />
+              <b>{h.cmpUs}</b>
+              <b>{h.cmpThem}</b>
+            </div>
+            {h.cmpRows.map(([name, us, them]) => (
+              <div key={name} className="comparison-row">
+                <h3>{name}</h3>
+                <div className="comparison-us">
+                  <span className="mobile-comparison-label">{h.cmpUs}</span>
+                  <p><Icon name="check" width={15} height={15} />{us}</p>
+                </div>
+                <div className="comparison-other">
+                  <span className="mobile-comparison-label">{h.cmpThem}</span>
+                  <p>{them}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-    <section className="home-final-section"><div className="home-container"><div className="home-final-card"><div><p className="home-eyebrow">{c.finalEyebrow}</p><h2>{h.finalTitle}</h2></div><div className="home-final-actions"><Link href="/teachers?audience=adults" className="home-filled-button">{c.adultCta}<Icon name="arrow" width={17} height={17}/></Link><Link href="/teachers?audience=kids&tag=Kids" className="home-outline-button">{c.kidsCta}<Icon name="arrow" width={17} height={17}/></Link></div></div></div></section>
-  </div>;
+      <section className="home-stories-section home-section" aria-labelledby="stories-title">
+        <div className="home-container">
+          <div className="home-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.storiesEyebrow}</p>
+              <h2 id="stories-title">{h.revTitle}</h2>
+            </div>
+          </div>
+          <SnapRail kind="stories" label={h.revTitle} previous={c.previous} next={c.next} hint={c.swipe}>
+            {h.reviews.map(review => (
+              <figure key={review.name} className="home-story">
+                <span className="story-quote-mark" aria-hidden="true">&ldquo;</span>
+                <blockquote>{review.text}</blockquote>
+                <figcaption>
+                  <span className="story-avatar">{review.name[0]}</span>
+                  <div>
+                    <b>{review.name}</b>
+                    <span>{review.from} · {review.goal}</span>
+                  </div>
+                </figcaption>
+              </figure>
+            ))}
+          </SnapRail>
+        </div>
+      </section>
+
+      <section className="home-teach-section home-section">
+        <div className="home-container">
+          <div className="home-teach-card">
+            <div className="home-teach-content">
+              <p className="home-eyebrow">{c.teacherEyebrow}</p>
+              <h2>{h.ctaTutorTitle}</h2>
+              <p>{h.ctaTutorText}</p>
+              <ul>{h.ctaTutorPoints.map(point => <li key={point}><Icon name="check" width={16} height={16} />{point}</li>)}</ul>
+              <Link href="/register?role=teacher" className="home-filled-button">
+                {h.ctaTutorBtn}<Icon name="arrow" width={17} height={17} />
+              </Link>
+            </div>
+            <img src="/images/teacher-onboarding.webp" alt="An English tutor preparing an online lesson" width={1000} height={800} loading="lazy" decoding="async" />
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" className="home-faq-section home-section" aria-labelledby="faq-title">
+        <div className="home-container home-faq-layout">
+          <div className="home-faq-heading">
+            <p className="home-eyebrow">{c.faqEyebrow}</p>
+            <h2 id="faq-title">{h.faqTitle}</h2>
+            <Link href="/teachers" className="home-text-link">
+              {t.findTeachers}<Icon name="arrow" width={16} height={16} />
+            </Link>
+          </div>
+          <div className="home-faq-list">
+            {h.faq.map(([q, a]) => (
+              <details key={q}>
+                <summary>{q}<span className="faq-plus" aria-hidden="true">+</span></summary>
+                <p>{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="home-final-section">
+        <div className="home-container">
+          <div className="home-final-card">
+            <div>
+              <p className="home-eyebrow">{c.finalEyebrow}</p>
+              <h2>{h.finalTitle}</h2>
+            </div>
+            <div className="home-final-actions">
+              <Link href="/teachers?audience=adults" className="home-filled-button">
+                {c.adultCta}<Icon name="arrow" width={17} height={17} />
+              </Link>
+              <Link href="/teachers?audience=kids&tag=Kids" className="home-outline-button">
+                {c.kidsCta}<Icon name="arrow" width={17} height={17} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }
