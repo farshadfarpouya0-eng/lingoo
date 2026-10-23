@@ -21,6 +21,7 @@ import { dashboardSummary, upcomingForUser } from "@/lib/dashboard-summary";
 import { tzFor } from "@/lib/time";
 import { buyMaterial } from "@/lib/feature-actions";
 import TeacherDocumentUploadForm from "@/components/TeacherDocumentUploadForm";
+import InteractiveCourseReader from "@/components/InteractiveCourseReader";
 import ReferralPanel from "@/components/ReferralPanel";
 import PresencePrivacySetting from "@/components/PresencePrivacySetting";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
@@ -141,43 +142,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       db.select().from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
       db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(eq(materialPurchases.userId, user.id)),
     ]);
-    const owned = new Set(purchases.map(p => p.materialId));
     content = (
-      <section className="space-y-5">
-        <div>
-          <h2 className="text-2xl font-bold text-teal-950">Learning library</h2>
-          <p className="mt-2 text-sm text-slate-500">Browse textbooks, audio and worksheets. Free resources open immediately; paid resources require a successful purchase.</p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {materials.map(m => {
-            const canOpen = m.isFree || owned.has(m.id) || isTutor;
-            return (
-              <article key={m.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-5">
-                {m.coverUrl && <img src={m.coverUrl} alt="" className="mb-4 h-36 w-full rounded-xl object-cover" />}
-                <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase text-teal-800">{m.kind}</span>
-                  <span className="text-xs font-bold text-teal-800">{m.isFree ? "FREE" : `$${(m.price / 100).toFixed(2)}`}</span>
-                </div>
-                <h3 className="mt-3 text-lg font-bold text-teal-950">{m.title}</h3>
-                <p className="mt-1 text-xs text-slate-400">{m.language} · {m.level}</p>
-                <p className="mt-3 text-sm leading-6 text-slate-600">{m.description || "Learning resource from Lingorain."}</p>
-                <div className="mt-4">
-                  {canOpen ? (
-                    <a href={`/api/private-files/material/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex rounded-xl bg-teal-800 px-4 py-2.5 text-sm font-bold text-white">Open resource ↗</a>
-                  ) : (
-                    <form action={buyMaterial as unknown as (fd: FormData) => Promise<void>}>
-                      <input type="hidden" name="id" value={m.id} />
-                      <button className="rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-bold text-teal-950">Buy resource · ${((m.price || 0) / 100).toFixed(2)}</button>
-                      <p className="mt-2 text-xs text-slate-400">Charged from your Lingorain balance.</p>
-                    </form>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        {!materials.length && <p className="rounded-2xl border bg-white p-8 text-center text-sm text-slate-400">No materials have been published yet.</p>}
-      </section>
+      <InteractiveCourseReader
+        materials={materials}
+        ownedIds={purchases.map(p => p.materialId)}
+        isTutor={isTutor}
+        buyAction={buyMaterial as unknown as (fd: FormData) => Promise<void>}
+      />
     );
   } else if (tab === "packages") {
     content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
