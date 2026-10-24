@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { learningMaterials } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { updateMaterialStatus } from "@/lib/feature-actions";
 import MaterialUploadForm from "@/components/MaterialUploadForm";
-import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -20,32 +20,29 @@ async function deleteMaterial(fd: FormData) {
   revalidatePath("/dashboard");
 }
 
-function summarizeCourse(fileUrl: string) {
-  try {
-    if (fileUrl && fileUrl.trim().startsWith("{")) {
-      const parsed = JSON.parse(fileUrl);
-      const count = Array.isArray(parsed.units) ? parsed.units.length : 1;
-      const audioCount = Array.isArray(parsed.units) ? parsed.units.filter((u: any) => !!u?.audioUrl).length : 0;
-      const mode = parsed.mode === "self" ? "Self-Study" : parsed.mode === "tutor" ? "Tutor-Led" : "Self-Study + Tutor";
-      return `${count} lesson${count === 1 ? "" : "s"} · ${audioCount} audio track${audioCount === 1 ? "" : "s"} · ${mode}`;
-    }
-  } catch {}
-  return "1 lesson · Standard resource";
-}
-
 export default async function AdminMaterials() {
   const user = await getUser();
   if (!user || user.role !== "admin") redirect("/login");
-  const rows = await db.select().from(learningMaterials).orderBy(desc(learningMaterials.createdAt)).limit(200);
+
+  /* ⚡ only lightweight columns — fileUrl/coverUrl contain base64 media and must never
+     be loaded in the list, otherwise each menu click downloads tens of megabytes. */
+  const rows = await db.select({
+    id: learningMaterials.id,
+    title: learningMaterials.title,
+    kind: learningMaterials.kind,
+    language: learningMaterials.language,
+    level: learningMaterials.level,
+    price: learningMaterials.price,
+    isFree: learningMaterials.isFree,
+    published: learningMaterials.published,
+  }).from(learningMaterials).orderBy(desc(learningMaterials.createdAt)).limit(200);
 
   return (
     <>
       <div className="mb-6">
         <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Learning library · Neon DB</p>
         <h1 className="mt-1 text-3xl font-black text-teal-950">Textbooks &amp; Audio Courses</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Create multi-lesson interactive textbooks with automatic audio playback. Stored directly in Neon PostgreSQL; protected in-site reader (no download for students).
-        </p>
+        <p className="mt-2 text-sm text-slate-500">Create multi-lesson interactive textbooks with automatic audio playback. Stored directly in Neon PostgreSQL.</p>
       </div>
 
       <MaterialUploadForm />
@@ -55,32 +52,20 @@ export default async function AdminMaterials() {
         <div className="divide-y divide-slate-100">
           {rows.map(m => (
             <div key={m.id} className="flex flex-wrap items-center gap-3 py-4">
-              {m.coverUrl && (
-                <img src={m.coverUrl} alt="" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />
-              )}
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800">{m.title}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {m.kind} · {m.language} · {m.level} · {m.isFree ? "Free" : `Paid · $${(m.price / 100).toFixed(2)}`} · {m.published ? "Published" : "Draft"}
-                </p>
-                <p className="mt-0.5 text-[11px] font-semibold text-teal-700">{summarizeCourse(m.fileUrl)}</p>
+                <p className="mt-1 text-xs text-slate-500">{m.kind} · {m.language} · {m.level} · {m.isFree ? "Free" : `Paid · $${(m.price / 100).toFixed(2)}`} · {m.published ? "Published" : "Draft"}</p>
               </div>
-
               <form action={updateMaterialStatus as unknown as (fd: FormData) => Promise<void>} className="flex items-center gap-2">
                 <input type="hidden" name="id" value={m.id} />
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                   <input type="checkbox" name="published" defaultChecked={m.published} className="accent-teal-700" /> Published
                 </label>
-                <button className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
-                  Save status
-                </button>
+                <button className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">Save</button>
               </form>
-
               <form action={deleteMaterial}>
                 <input type="hidden" name="id" value={m.id} />
-                <button className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100">
-                  Delete
-                </button>
+                <button className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100">Delete</button>
               </form>
             </div>
           ))}

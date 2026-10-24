@@ -139,7 +139,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   if (tab === "materials") {
     const [materials, purchases] = await Promise.all([
-      db.select().from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
+      db.select({ id: learningMaterials.id, title: learningMaterials.title, kind: learningMaterials.kind, language: learningMaterials.language, level: learningMaterials.level, description: learningMaterials.description, price: learningMaterials.price, isFree: learningMaterials.isFree, published: learningMaterials.published }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
       db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(eq(materialPurchases.userId, user.id)),
     ]);
     content = (
