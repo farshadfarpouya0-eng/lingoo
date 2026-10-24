@@ -45,7 +45,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const user = await getUser();
   if (!user) redirect("/login");
   if (user.role === "admin") redirect("/admin");
-  await settleLessons(user.id);
+  await settleLessons(user.id).catch((e) => console.error("[dashboard] settle:", e));
   const { t, lang } = await getT();
   const c = LEARNING[lang];
   const sp = await searchParams;

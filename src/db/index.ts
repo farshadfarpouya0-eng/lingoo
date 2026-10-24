@@ -1,28 +1,51 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as schema from "./schema";
 
-// Only local development may fall back to a local database. Production, preview and
-// build fail loudly if DATABASE_URL is missing instead of silently connecting to localhost.
-const databaseUrl = process.env.DATABASE_URL
-  || (process.env.NODE_ENV === "development" ? "postgres://postgres:postgres@localhost:5432/postgres" : undefined);
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-
-function integerOption(value: string | undefined, fallback: number, min: number, max: number) {
-  const n = Number(value);
-  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+/**
+ * Singleton pool for Neon.
+ *
+ * Neon's pooler drops idle clients after a few minutes. Without an `error`
+ * listener, node-postgres emits an unhandled `'error'` event on the pool,
+ * which can kill the Node process and make /admin and /dashboard show
+ * "This page could not load".
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __lingorainPool: Pool | undefined;
 }
-const globalForDb = globalThis as typeof globalThis & { __arenaNextJsPostgresqlPool?: Pool };
 
-// A tiny pool per warm serverless instance, backed by the provider's pooled
-// endpoint. TLS is controlled by the provider's connection-string parameters.
-// Do not disable certificate checks for external databases.
-export const pool = globalForDb.__arenaNextJsPostgresqlPool ?? new Pool({
-  connectionString: databaseUrl,
-  max: integerOption(process.env.DB_POOL_MAX, 2, 1, 20),
-  connectionTimeoutMillis: integerOption(process.env.DB_CONNECT_TIMEOUT_MS, 15000, 1000, 60000),
-  idleTimeoutMillis: 10000,
-  allowExitOnIdle: true,
-  keepAlive: true,
-});
-globalForDb.__arenaNextJsPostgresqlPool = pool;
-export const db = drizzle(pool);
+const envConnectionString = process.env.DATABASE_URL || process.env.DATABASE_DIRECT_URL;
+
+if (!envConnectionString) {
+  throw new Error("DATABASE_URL is not set. Add your Neon connection string.");
+}
+
+// Narrowed non-optional value captured for use in the factory below.
+const connectionString: string = envConnectionString;
+
+function createPool(): Pool {
+  const pool = new Pool({
+    connectionString,
+    max: 3,
+    idleTimeoutMillis: 25_000,
+    connectionTimeoutMillis: 15_000,
+    allowExitOnIdle: false,
+    ssl: connectionString.includes("sslmode=") ? undefined : { rejectUnauthorized: false },
+  });
+
+  // Never let a dropped idle connection crash the server process.
+  pool.on("error", (err) => {
+    console.error("[pg pool] idle client error:", err.message);
+  });
+
+  return pool;
+}
+
+if (!global.__lingorainPool) {
+  global.__lingorainPool = createPool();
+}
+
+export const pool = global.__lingorainPool;
+export const db = drizzle(pool, { schema });
+export type DB = typeof db;

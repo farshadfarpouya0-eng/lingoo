@@ -15,7 +15,7 @@ const lessonStatus: Record<string, string> = { completed: "bg-emerald-100 text-e
 export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string }> }) {
   const user = await getUser();
   if (!user || user.role !== "admin") redirect("/login");
-  await settleLessons();
+  await settleLessons().catch((e) => console.error("[admin] settle:", e));
   const { t, lang } = await (await import("@/lib/i18n")).getT();
   const { ok } = await searchParams;
 
