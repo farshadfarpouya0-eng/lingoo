@@ -1,7 +1,11 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL || "postgres://postgres:postgres@localhost:5432/postgres";
+// Only local development may fall back to a local database. Production, preview and
+// build fail loudly if DATABASE_URL is missing instead of silently connecting to localhost.
+const databaseUrl = process.env.DATABASE_URL
+  || (process.env.NODE_ENV === "development" ? "postgres://postgres:postgres@localhost:5432/postgres" : undefined);
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 function integerOption(value: string | undefined, fallback: number, min: number, max: number) {
   const n = Number(value);

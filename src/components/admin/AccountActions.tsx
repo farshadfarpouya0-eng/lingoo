@@ -59,7 +59,7 @@ export function ChangeRole({ id, current }: { id: number; current: string }) {
       >
         {pending ? "…" : "Save role"}
       </button>
-      {state.error === "self" && <span role="alert" className="text-[11px] text-red-600">You can't demote yourself</span>}
+      {state.error === "self" && <span role="alert" className="text-[11px] text-red-600">You can&apos;t demote yourself</span>}
       {state.error === "bad_role" && <span role="alert" className="text-[11px] text-red-600">Invalid role</span>}
       {state.ok && <span role="status" className="text-[11px] text-emerald-700">Role saved</span>}
     </form>

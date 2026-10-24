@@ -41,6 +41,7 @@ export function validateHostedEnvironment(provider) {
   if (!process.env.CRON_SECRET && !process.env.REMINDER_CRON_SECRET) warnings.push("Lesson reminder endpoint is disabled until CRON_SECRET (for Vercel Cron) or REMINDER_CRON_SECRET (for a custom scheduler) is configured.");
   if (process.env.TRUST_PROXY_HEADERS !== "true") warnings.push("IP-based throttling uses a shared fallback bucket. Only set TRUST_PROXY_HEADERS=true when the trusted ingress strips client-supplied forwarding headers and sets authoritative values.");
   if (process.env.ENABLE_DEMO_DATA === "true") problems.push("ENABLE_DEMO_DATA=true is not allowed in hosted deployments because demo accounts use a known password. Demo fixtures are local-database-only.");
+  if (process.env.ENABLE_ADMIN_IMPERSONATION === "true") warnings.push("ENABLE_ADMIN_IMPERSONATION=true lets any admin sign in as any user. Keep it off in production unless you are actively testing.");
   if (process.env.ENABLE_DEMO_PAYMENTS === "true") problems.push("ENABLE_DEMO_PAYMENTS=true is not allowed in hosted deployments. Simulated top-ups could mint wallet credit.");
   if (!process.env.JITSI_DOMAIN) warnings.push(`Lingo Room uses public Jitsi. ${provider} does not host the video service.`);
   for (const warning of warnings) console.warn(`[deployment warning] ${warning}`);

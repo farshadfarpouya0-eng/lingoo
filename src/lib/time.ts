@@ -67,3 +67,6 @@ export function weekdayName(weekday: number, lang: Lang, style: "short" | "long"
   // 2024-01-07 was a Sunday (weekday 0).
   return new Intl.DateTimeFormat(loc(lang), { weekday: style, timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, 7 + weekday)));
 }
+
+/** Current time in ms. Kept as a helper so render code does not call Date.now() inline. */
+export const nowMs = () => Date.now();

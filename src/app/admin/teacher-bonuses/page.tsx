@@ -26,7 +26,7 @@ export default async function TeacherBonusesPage({ searchParams }: { searchParam
         <label className="text-sm font-semibold text-slate-700">Minimum verified reviews<input name="minReviews" type="number" step="1" min="0" max="1000" required defaultValue={policy.minReviews} className="mt-2 w-full rounded-xl border border-slate-200 p-3"/><span className="mt-1 block text-xs font-normal text-slate-400">0–1,000 reviews</span></label>
         <label className="text-sm font-semibold text-slate-700">Bonus (% of lesson gross)<input name="percent" type="number" step="0.5" min="0" max="10" required defaultValue={policy.percent} className="mt-2 w-full rounded-xl border border-slate-200 p-3"/><span className="mt-1 block text-xs font-normal text-slate-400">0–10%; platform retains at least 5%</span></label>
       </div>
-      <div className="rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600"><b className="text-teal-950">Example:</b> on a $20 lesson, the normal teacher share is $17. With a 5% eligible bonus, the teacher receives an additional $1, for $18 total; the platform retains $2 before other costs. Eligibility is based on the teacher's rating and review count at settlement time.</div>
+      <div className="rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600"><b className="text-teal-950">Example:</b> on a $20 lesson, the normal teacher share is $17. With a 5% eligible bonus, the teacher receives an additional $1, for $18 total; the platform retains $2 before other costs. Eligibility is based on the teacher&apos;s rating and review count at settlement time.</div>
       <button className="rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white">Save bonus policy</button>
     </form>
   </>;

@@ -39,7 +39,7 @@ export default async function AdminAccounts() {
         <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Admin</p>
         <h1 className="mt-1 text-3xl font-black text-teal-950">Accounts</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          Change any user's password or role, and create new accounts — including admins.
+          Change any user&apos;s password or role, and create new accounts — including admins.
         </p>
       </div>
 

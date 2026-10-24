@@ -83,10 +83,7 @@ export default function InteractiveCourseReader({
   /* ⭐ Auto-play audio whenever a user opens a book or switches to Lesson 1, 2, ... */
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentUnit?.audioUrl) {
-      setIsPlaying(false);
-      return;
-    }
+    if (!audio || !currentUnit?.audioUrl) return;
     audio.load();
     if (autoPlay) {
       audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
@@ -226,6 +223,7 @@ export default function InteractiveCourseReader({
                     src={currentUnit.audioUrl}
                     controls
                     controlsList="nodownload noplaybackrate"
+                    onLoadStart={() => setIsPlaying(false)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onEnded={() => setIsPlaying(false)}

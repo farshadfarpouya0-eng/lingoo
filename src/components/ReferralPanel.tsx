@@ -1,16 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createReferralLink, claimReferralReward } from "@/lib/feature-actions";
 
 export default function ReferralPanel({ code, qualified, rewardChoices, credits25, credits50 }: {
   code: string | null; qualified: number; rewardChoices: number; credits25: number; credits50: number;
 }) {
   const [copied, setCopied] = useState(false);
-  const [origin, setOrigin] = useState("");
+  const origin = useSyncExternalStore(() => () => {}, () => window.location.origin, () => "");
   const [selected, setSelected] = useState("25");
   const [error, setError] = useState("");
   const path = code ? `/register?ref=${encodeURIComponent(code)}` : "";
-  useEffect(() => { setOrigin(window.location.origin); }, []);
   async function copy() {
     if (!path) return;
     try { await navigator.clipboard.writeText(`${window.location.origin}${path}`); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }

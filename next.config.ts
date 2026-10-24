@@ -29,9 +29,6 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
   reactStrictMode: true,
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   /* ⭐ smaller server bundles — drizzle-orm is the heaviest import */
   experimental: {
     optimizePackageImports: ["drizzle-orm"],

@@ -3,14 +3,14 @@ import { lessons } from "@/db/schema";
 import { leaveReview, updateLesson } from "@/lib/actions";
 import type { T, Lang } from "@/lib/i18n";
 import type { LearningCopy } from "@/lib/learning-i18n";
-import { fmt } from "@/lib/time";
+import { fmt, nowMs } from "@/lib/time";
 import { money } from "@/lib/package-pricing";
 import Icon from "./Icon";
 import CancelLessonButton from "./CancelLessonButton";
 export type LessonRowData = { l: typeof lessons.$inferSelect; otherName: string; otherAvatar: string | null; otherId: number; reviewedByMe?: boolean };
 const statusColor: Record<string,string> = {pending:"bg-amber-50 text-amber-700",confirmed:"bg-sky-50 text-sky-700",completed:"bg-teal-50 text-teal-700",cancelled:"bg-slate-100 text-slate-400"};
 export function DashboardLessonRow({ row: x, isTutor, t, c, lang }: { row: LessonRowData; isTutor: boolean; t: T; c: LearningCopy; lang: Lang }) {
-  const now=Date.now(), start=x.l.startAt.getTime(), end=start+x.l.duration*60_000;
+  const now=nowMs(), start=x.l.startAt.getTime(), end=start+x.l.duration*60_000;
   const active=["pending","confirmed"].includes(x.l.status);
   const roomLabel=x.l.platform==="meet"?c.roomMeet:x.l.platform==="zoom"?c.roomZoom:x.l.platform==="lingo"?c.roomLingo:c.pendingPlatform;
   const late=!isTutor&&x.l.status==="confirmed"&&start-now<12*3600_000;

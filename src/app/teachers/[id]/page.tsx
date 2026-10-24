@@ -7,7 +7,7 @@ import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
 import { getUser } from "@/lib/auth";
 import { teacherQuery } from "@/lib/queries";
-import { buildSlots, formatMinutes, tzFor, weekdayName } from "@/lib/time";
+import { buildSlots, formatMinutes, nowMs, tzFor, weekdayName } from "@/lib/time";
 import { sendMessage } from "@/lib/actions";
 import { FLAGS } from "@/components/TeacherCard";
 import BookingPanel from "@/components/BookingPanel";
@@ -30,7 +30,7 @@ export default async function TeacherPage({ params, searchParams }: {
   const [booked, revs, prev, credits, weeklySlots, blockedSlots] = await Promise.all([
     db.select({ s: lessons.startAt, duration: lessons.duration }).from(lessons).where(and(
       user ? or(eq(lessons.teacherId, tid), eq(lessons.studentId, user.id)) : eq(lessons.teacherId, tid),
-      ne(lessons.status, "cancelled"), gt(lessons.startAt, new Date(Date.now() - 3600_000)),
+      ne(lessons.status, "cancelled"), gt(lessons.startAt, new Date(nowMs() - 3600_000)),
     )),
     db.select({ rating: reviews.rating, comment: reviews.comment, name: users.name, avatar: users.avatar }).from(reviews)
       .innerJoin(users, eq(users.id, reviews.studentId)).where(eq(reviews.teacherId, tid)).orderBy(desc(reviews.createdAt)).limit(10),
@@ -41,7 +41,7 @@ export default async function TeacherPage({ params, searchParams }: {
     db.select({ s: teacherBlockedSlots.startAt, e: teacherBlockedSlots.endAt }).from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, tid), gt(teacherBlockedSlots.endAt, new Date()))),
   ]);
   const groupLessons = await db.select({ id: lessons.id, studentId: lessons.studentId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity })
-    .from(lessons).where(and(eq(lessons.teacherId, tid), eq(lessons.classType, "semi_private"), inArray(lessons.status, ["pending", "confirmed"]), gt(lessons.startAt, new Date()), gt(lessons.startAt, new Date(Date.now() - 1000))));
+    .from(lessons).where(and(eq(lessons.teacherId, tid), eq(lessons.classType, "semi_private"), inArray(lessons.status, ["pending", "confirmed"]), gt(lessons.startAt, new Date()), gt(lessons.startAt, new Date(nowMs() - 1000))));
   const groupIds = groupLessons.map(g => g.id);
   const groupMembers = groupIds.length ? await db.select({ lessonId: lessonParticipants.lessonId, studentId: lessonParticipants.studentId })
     .from(lessonParticipants).where(and(inArray(lessonParticipants.lessonId, groupIds), inArray(lessonParticipants.status, ["booked", "attended"]))) : [];

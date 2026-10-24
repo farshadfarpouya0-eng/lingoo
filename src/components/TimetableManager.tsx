@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import { addBlockedSlot, deleteBlockedSlot, saveWeeklyTimetable } from "@/lib/timetable-actions";
-import { formatMinutes, weekdayName } from "@/lib/time";
+import { formatMinutes, nowMs, weekdayName } from "@/lib/time";
 import type { Lang, T } from "@/lib/i18n";
 import Icon from "./Icon";
 
@@ -79,7 +79,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
   const from = useMemo(() => weekStartUtc(tzOffset, weekOffset), [tzOffset, weekOffset]);
   const to = from + 7 * DAY;
   const { cells, perDay } = useMemo(() => paintWeek(booked, tzOffset, from, to), [booked, tzOffset, from, to]);
-  const todayLocalDay = new Date(Date.now() + tzOffset * 3600_000).getUTCDay();
+  const todayLocalDay = new Date(nowMs() + tzOffset * 3600_000).getUTCDay();
 
   const days = [1, 2, 3, 4, 5, 6, 0];
   const sign = tzOffset >= 0 ? "+" : "";
@@ -150,7 +150,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
   }, [selected]);
 
   const upcoming = useMemo(() => {
-    const now = Date.now();
+    const now = nowMs();
     return booked.filter(b => ["pending", "confirmed"].includes(b.status) && b.startAt.getTime() + b.duration * 60_000 > now);
   }, [booked]);
 

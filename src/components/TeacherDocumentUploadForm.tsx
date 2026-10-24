@@ -52,7 +52,7 @@ export default function TeacherDocumentUploadForm() {
     <label className="text-sm font-medium text-slate-700">Private document upload (PDF/JPEG/PNG/WebP, max 25 MB)
       <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png,.webp" className="mt-2 block w-full rounded-xl border p-3 text-sm" />
     </label>
-    <p className="sm:col-span-2 text-xs leading-5 text-slate-500">Documents are stored privately and remain pending until an administrator reviews them. Never upload somebody else's identity document.</p>
+    <p className="sm:col-span-2 text-xs leading-5 text-slate-500">Documents are stored privately and remain pending until an administrator reviews them. Never upload somebody else&apos;s identity document.</p>
     {state && <p role={state.ok ? "status" : "alert"} className={`rounded-xl p-3 text-sm sm:col-span-2 ${state.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{state.ok ? "Document submitted for review." : state.error || "Upload failed."}</p>}
     <button type="submit" disabled={pending} className="rounded-xl bg-teal-800 px-4 py-3 text-sm font-bold text-white disabled:opacity-60 sm:col-span-2">{pending ? "Uploading and submitting…" : "Submit document for review"}</button>
   </form>;
