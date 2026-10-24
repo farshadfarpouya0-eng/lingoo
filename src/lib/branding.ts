@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -5,7 +6,6 @@ import { siteSettings } from "@/db/schema";
 import type { Lang } from "./i18n";
 
 export const BRANDING_KEY = "branding";
-/** Max length of the stored logo value (an uploaded logo is a base64 data URL). */
 export const LOGO_MAX = 300_000;
 
 export type Localized = Record<Lang, string>;
@@ -38,6 +38,11 @@ export const DEFAULT_BRANDING: Branding = {
 
 const LANGS: Lang[] = ["en", "zh", "ja"];
 const DATA_LOGO = /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/;
+
+/* branding changes rarely → keep it warm per instance for 60s */
+const TTL_MS = 60_000;
+let cachedAt = 0;
+let cachedValue: Branding | null = null;
 
 function readString(v: unknown, fallback: string, max: number): string {
   if (typeof v !== "string") return fallback;
@@ -86,16 +91,21 @@ export function parseBranding(raw: unknown): Branding {
   };
 }
 
-/** Raw branding (the admin form needs the real stored logo). Falls back to defaults on any DB error. */
-export async function getBranding(): Promise<Branding> {
+/** Per-request dedupe + 60-second in-memory cache so the layout and the hero share one query. */
+export const getBranding = cache(async (): Promise<Branding> => {
+  if (cachedValue && Date.now() - cachedAt < TTL_MS) return cachedValue;
+
   try {
     const [row] = await db.select({ value: siteSettings.value }).from(siteSettings)
       .where(eq(siteSettings.key, BRANDING_KEY)).limit(1);
-    return parseBranding(row?.value);
+    const parsed = parseBranding(row?.value);
+    cachedValue = parsed;
+    cachedAt = Date.now();
+    return parsed;
   } catch {
     return DEFAULT_BRANDING;
   }
-}
+});
 
 /** An uploaded logo is served from /api/brand-logo with a content hash, so pages stay small and cache well. */
 export function publicLogoSrc(logoUrl: string): string {
