@@ -74,6 +74,7 @@ export async function getIntegrationConfig() {
       url: publicValue("supabaseUrl", "SUPABASE_URL").replace(/\/$/, ""),
       serviceRoleKey: secretValue("supabaseServiceRoleKey", "SUPABASE_SERVICE_ROLE_KEY"),
       bucket: publicValue("supabaseBucket", "SUPABASE_STORAGE_BUCKET", "lingorain-private"),
+      keySource: persisted.encryptedSecrets.supabaseServiceRoleKey ? "admin" as const : process.env.SUPABASE_SERVICE_ROLE_KEY ? "env" as const : "none" as const,
     },
     payments: {
       provider: "stripe" as const,
@@ -125,7 +126,7 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
   const key = encryptionKey(); void key;
   const pub = { ...persisted.publicConfig };
   const sec = { ...persisted.encryptedSecrets };
-  const val = (k: string, max = 500) => String(fd.get(k) ?? "").trim().slice(0, max);
+  const val = (k: string, max = 500) => String(fd.get(k) ?? "").trim().replace(/^[A-Z0-9_]+=/, "").replace(/^\"|\"$/g, "").slice(0, max);
   const saveSecret = (field: string, storageKey: string, max = 500) => {
     if (fd.get(`clear_${field}`) === "on") { delete sec[storageKey]; return; }
     const raw = val(field, max);
@@ -152,7 +153,14 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
         if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(bucket)) throw new Error("Invalid bucket name.");
         pub.supabaseBucket = bucket;
       }
-      saveSecret("supabaseServiceRoleKey", "supabaseServiceRoleKey", 1000);
+      const roleKey = val("supabaseServiceRoleKey", 1000);
+      if (roleKey) {
+        if (roleKey.startsWith("sb_publishable_") || roleKey.startsWith("sb_anon_")) throw new Error("That is a publishable (anon) key. Supabase Storage requires the service_role secret key from Settings → API → Legacy anon, service_role API keys.");
+        let payload: Record<string, unknown> = {};
+        try { payload = JSON.parse(Buffer.from(roleKey.split(".")[1] || "", "base64").toString("utf8")); } catch {}
+        if (payload.role && payload.role !== "service_role") throw new Error("This key has role \"" + String(payload.role) + "\". Use the service_role secret key instead.");
+        sec.supabaseServiceRoleKey = encryptSecret(roleKey);
+      }
       break;
     }
     case "payments":
