@@ -256,7 +256,7 @@ export async function testIntegrationProvider(provider: Provider) {
   if (provider === "storage") {
     const bucket = await response.json() as { public?: boolean; file_size_limit?: number | null };
     if (bucket.public === true) throw new Error("Bucket is public. Protected Lingorain files require a private bucket.");
-    if (typeof bucket.file_size_limit !== "number" || bucket.file_size_limit < 1 || bucket.file_size_limit > 25 * 1024 * 1024) throw new Error("Bucket file-size limit must be set to 25 MiB or less.");
+    if (typeof bucket.file_size_limit !== "number" || bucket.file_size_limit < 1 || bucket.file_size_limit > 50 * 1024 * 1024) throw new Error("Bucket file-size limit must be set to 50 MiB or less.");
   }
   return true;
 }
