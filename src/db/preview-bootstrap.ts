@@ -1,11 +1,34 @@
-import { getTableName, SQL, sql } from "drizzle-orm";
-import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
+import { getTableName, is, SQL, sql } from "drizzle-orm";
+import { getTableConfig, PgDialect, PgTable } from "drizzle-orm/pg-core";
 import { db } from "./index";
-import { lessonPackages, lessonPlatformEvents, lessons, messages, payouts, reviews, sessions, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "./schema";
+import * as schema from "./schema";
 import { embeddedSandboxPreview } from "../lib/preview-frame-policy";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-const tables: PgTable[] = [users, sessions, teacherProfiles, teacherWeeklySlots, teacherBlockedSlots, lessonPackages, lessons, lessonPlatformEvents, reviews, messages, transactions, payouts];
+/**
+ * Every table exported from schema.ts, ordered so a table is created after the tables its
+ * foreign keys point to. (This used to be a hand-written list, so any table added later, such as
+ * site_settings, was never created in the preview and saving admin settings failed.)
+ */
+function orderedTables(): PgTable[] {
+  const all = Object.values(schema as Record<string, unknown>).filter((value): value is PgTable => is(value, PgTable));
+  const byName = new Map(all.map(table => [getTableName(table), table]));
+  const ordered: PgTable[] = [];
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (table: PgTable) => {
+    const name = getTableName(table);
+    if (state.get(name)) return; // already placed, or a cycle (self references are fine inside CREATE TABLE)
+    state.set(name, "visiting");
+    for (const foreign of getTableConfig(table).foreignKeys) {
+      const target = byName.get(getTableName(foreign.reference().foreignTable));
+      if (target) visit(target);
+    }
+    state.set(name, "done");
+    ordered.push(table);
+  };
+  all.forEach(visit);
+  return ordered;
+}
 const dialect = new PgDialect();
 const ident = (value: string) => `"${value.replaceAll('"', '""')}"`;
 function expression(value: SQL) {
@@ -18,6 +41,7 @@ function defaultValue(value: unknown): string {
   if (typeof value === "string") return `'${value.replaceAll("'", "''")}'`;
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) return `'${JSON.stringify(value).replaceAll("'", "''")}'`;
   throw new Error("Unsupported sandbox column default.");
 }
 
@@ -30,7 +54,7 @@ export async function applyPreviewSchema(tx: Transaction) {
     if (!columnsByTable.has(name)) columnsByTable.set(name, new Set());
     columnsByTable.get(name)!.add(String(row.column_name));
   }
-  for (const table of tables) {
+  for (const table of orderedTables()) {
     const config = getTableConfig(table);
     const columns = config.columns.map(column => {
       let definition = `${ident(column.name)} ${column.getSQLType()}`;

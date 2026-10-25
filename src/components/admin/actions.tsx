@@ -35,11 +35,13 @@ export function CreateTutorForm() {
   return (
     <form action={action as unknown as (fd: FormData) => Promise<void>} className="rounded-2xl bg-slate-50 p-4">
       <h3 className="mb-3 text-sm font-bold text-teal-950">Add tutor</h3>
-      {state?.ok === false && <p className="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-600">Please enter a name and a valid email.</p>}
+      {state?.error && <p role="alert" className="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-600">{state.error === "email" ? "This email is already used by another account." : "Please enter a name and a valid email."}</p>}
+      {state?.ok && <p role="status" className="mb-2 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">Tutor added.</p>}
       <div className="grid gap-2 sm:grid-cols-2">
         <input name="name" required placeholder="Full name" className={input} />
         <input name="email" type="email" required placeholder="email@example.com" className={input} />
       </div>
+      <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600"><input type="checkbox" name="active" className="h-4 w-4 accent-teal-600" />Activate immediately (visible to students)</label>
       <button disabled={pending} className="mt-3 rounded-xl bg-teal-800 px-5 py-2 text-sm font-bold text-white hover:bg-teal-900 disabled:opacity-50">
         {pending ? "Adding…" : "Add tutor"}
       </button>
@@ -53,6 +55,7 @@ export function DeleteTutor({ id }: { id: number }) {
     <form action={action as unknown as (fd: FormData) => Promise<void>} onSubmit={e => { if (!confirm("Delete this tutor? This cannot be undone.")) e.preventDefault(); }}>
       <input type="hidden" name="id" value={id} />
       <button disabled={pending} className={btnDanger}>{pending ? "…" : "Delete"}</button>
+      {state?.error === "in_use" && <span role="alert" className="ml-2 text-[11px] text-red-600">Has lessons or payments. Hide or suspend instead.</span>}
     </form>
   );
 }

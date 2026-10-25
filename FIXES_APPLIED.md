@@ -23,3 +23,39 @@
 - `InteractiveCourseReader`: no synchronous `setState` in an effect; playing state resets on `loadstart`.
 - `ReferralPanel`: origin is read with `useSyncExternalStore` instead of `setState` in an effect.
 - `MobileMenu`: internal anchors use `next/link`.
+
+## Admin → Integrations: storage settings were not being saved
+Root cause: in the preview/sandbox environment (E2B + local Postgres) the database is created by
+`src/db/preview-bootstrap.ts` from a hand-written list of 12 tables. `site_settings` (where integration
+settings are stored) and every other table added later were never created, so saving failed.
+- `preview-bootstrap.ts` now creates **every** table exported from `schema.ts`, in foreign-key order
+  (28 tables / 231 columns, verified against a fresh database).
+- Saving no longer reads with a swallowed error: if the read fails the save stops instead of overwriting every
+  saved provider with an empty config.
+- Values that are too long are rejected with a message instead of being silently truncated
+  (a cut-off service-role key "saved" fine and then failed every request).
+- Storage URL must be `supabase.co` or `*.supabase.co` (it used to accept any host ending in "supabase.co").
+- Save / test results are now shown **inside the card you used** and the page jumps to it
+  (before, the message appeared only at the top of a very long page).
+- Database errors are replaced by a readable message; SQL text and parameters are no longer put in the URL.
+- Clearer messages for a bad URL and bad bucket name.
+
+## Admin: tutors could never be activated, and students/tutors were mostly read-only
+Root cause: `/admin/tutors` linked to `?edit=ID` but never rendered `TeacherEditForm`, so the only "Active/Public"
+checkbox was unreachable. New tutors are created hidden (`active = false`); verifying their ID only sets the
+"certified" badge, it never activates them. `adminSetTeacherApproval` existed but nothing called it.
+- **Admin → Tutors**: new one-click **Activate / Hide** button on every row, a "waiting for approval" banner,
+  filter tabs (All / Waiting for approval / Active), and an ID-document badge (verified / waiting / rejected / none).
+  Waiting tutors are listed first. "Add tutor" has an "Activate immediately" checkbox.
+- **Edit tutor** (the Edit button now works): name, email, photo, native language, headline, bio, price, rating,
+  reviews, lessons taught, country, accent, languages, topics, working hours/days/timezone, payout method/account,
+  Active, Certified, Suspended. Shows Saved / error messages (duplicate email, bad photo link, ...).
+- **Edit student**: name, email, level, native language, photo, Suspended (previously everything was read-only
+  except the balance). Balance adjustment and delete are still there.
+- Suspension can now be set from these forms (before, only moderation cases could do it).
+- Deleting a tutor/student who still has lessons or payments is refused with a clear message. Before, deleting a
+  tutor removed the profile first and then failed, leaving a half-deleted tutor.
+- The "Add tutor" form no longer shows an error message before you type anything.
+- The tutor dashboard banner now says the truth: profiles go live when an admin approves them.
+- Editors only touch the matching role (the student editor cannot change a tutor and vice versa); admin accounts
+  cannot be edited there; all of it requires an admin session.

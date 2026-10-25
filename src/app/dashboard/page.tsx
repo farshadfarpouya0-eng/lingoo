@@ -45,7 +45,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const user = await getUser();
   if (!user) redirect("/login");
   if (user.role === "admin") redirect("/admin");
-  await settleLessons(user.id).catch((e) => console.error("[dashboard] settle:", e));
+  await settleLessons(user.id);
   const { t, lang } = await getT();
   const c = LEARNING[lang];
   const sp = await searchParams;
@@ -139,7 +139,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   if (tab === "materials") {
     const [materials, purchases] = await Promise.all([
-      db.select({ id: learningMaterials.id, title: learningMaterials.title, kind: learningMaterials.kind, language: learningMaterials.language, level: learningMaterials.level, description: learningMaterials.description, price: learningMaterials.price, isFree: learningMaterials.isFree, published: learningMaterials.published }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
+      db.select().from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
       db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(eq(materialPurchases.userId, user.id)),
     ]);
     content = (
@@ -303,7 +303,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-400 text-amber-950"><Icon name="alert" width={18} height={18} /></span>
             <div>
               <h2 className="text-sm font-bold text-amber-950">Your tutor profile is waiting for approval</h2>
-              <p className="mt-1 text-xs leading-5 text-amber-900/80">Students can&apos;t see your profile yet. Upload your ID so our team can verify you — we usually review within 24 hours.</p>
+              <p className="mt-1 text-xs leading-5 text-amber-900/80">Students can&apos;t see your profile yet. Our team activates new tutors by hand. Uploading your ID helps us verify you faster, but your profile only goes live once an admin approves it.</p>
               <Link href="/dashboard?tab=profile#documents" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-amber-950 hover:bg-amber-300">Upload documents →</Link>
             </div>
           </div>

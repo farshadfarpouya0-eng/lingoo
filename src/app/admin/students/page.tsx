@@ -21,14 +21,14 @@ export default async function AdminStudents({ searchParams }: { searchParams: Pr
 
   if (edit) {
     const id = Number(edit);
-    const [row] = await db.select({ id: users.id, name: users.name, email: users.email, balance: users.balance, level: users.level, suspended: users.suspended })
+    const [row] = await db.select({ id: users.id, name: users.name, email: users.email, avatar: users.avatar, nativeLang: users.nativeLang, balance: users.balance, level: users.level, suspended: users.suspended })
       .from(users).where(and(eq(users.role, "student"), eq(users.id, id)));
     if (!row) redirect("/admin/students");
-    const r: StudentRow = { id: row.id, name: row.name, email: row.email, balance: row.balance, level: row.level ?? "A1", suspended: row.suspended };
+    const r: StudentRow = { id: row.id, name: row.name, email: row.email, avatar: row.avatar ?? "", nativeLang: row.nativeLang ?? "en", balance: row.balance, level: row.level ?? "A1", suspended: row.suspended };
     return (
       <>
         <div className="mb-5"><Link href="/admin/students" className="text-sm font-semibold text-teal-700">← Back to students</Link><h1 className="mt-2 text-3xl font-black text-teal-950">Edit student</h1></div>
-        <div className="rounded-3xl border border-slate-200 bg-white p-5"><StudentEditForm row={r} t={t} /></div>
+        <div className="rounded-3xl border border-slate-200 bg-white p-5"><StudentEditForm key={r.id} row={r} t={t} /></div>
       </>
     );
   }

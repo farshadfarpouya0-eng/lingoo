@@ -44,38 +44,123 @@ export async function createTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
   }).returning().catch(() => [null as (typeof users.$inferSelect | null)]);
   if (!u) return { ok: false, error: "email" };
   const [tp] = await db.select({ id: teacherProfiles.userId }).from(teacherProfiles).where(eq(teacherProfiles.userId, u.id));
-  if (!tp) await db.insert(teacherProfiles).values({ userId: u.id, active: false, workDays: "1,2,3,4,5" });
+  if (!tp) await db.insert(teacherProfiles).values({ userId: u.id, active: fd.get("active") === "on", workDays: "1,2,3,4,5" });
   revalidateAll();
   return { ok: true, id: u.id };
 }
 
-export async function updateTeacher(_p: unknown, fd: FormData) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const LANGS = ["zh", "ja", "en"];
+const intIn = (v: FormDataEntryValue | null, min: number, max: number, fallback: number) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && String(v ?? "").trim() !== "" ? Math.max(min, Math.min(max, n)) : fallback;
+};
+function isUniqueViolation(error: unknown) {
+  const e = error as { code?: string; cause?: { code?: string } } | null;
+  return (e?.cause?.code ?? e?.code) === "23505";
+}
+function isForeignKeyViolation(error: unknown) {
+  const e = error as { code?: string; cause?: { code?: string } } | null;
+  return (e?.cause?.code ?? e?.code) === "23503";
+}
+/** Avatars are an https URL or one of our own /api/avatars/... routes. */
+const validAvatar = (v: string) => /^https:\/\/[^\s]+$/.test(v) || /^\/api\/avatars\/\d+$/.test(v);
+
+/** One-click approve / hide for a tutor's public profile (the Activate button in Admin → Tutors). */
+export async function setTeacherActive(fd: FormData): Promise<void> {
   await requireAdmin();
   const id = Number(fd.get("id"));
-  if (!Number.isInteger(id)) return { error: "id" };
-  const name = str(fd, "name", 60);
-  const avatar = str(fd, "avatar", 500);
-  await db.update(users).set({
-    ...(name ? { name } : {}),
-    ...(avatar ? { avatar } : {}),
-  }).where(and(eq(users.id, id), sql`${users.role} <> 'admin'`));
-  await db.update(teacherProfiles).set({
-    headline: str(fd, "headline", 140),
-    bio: str(fd, "bio", 4000),
-    country: ["US", "GB", "CA", "AU", "IE", "NZ", "ZA", "CN", "JP"].includes(str(fd, "country", 2)) ? str(fd, "country", 2) : "US",
-    accent: str(fd, "accent", 40),
-    speaks: str(fd, "speaks", 120) || "English",
-    tags: str(fd, "tags", 200),
-    price: Math.max(0, Math.min(50000, Math.round(Number(fd.get("price") || 25) * 100))),
-    rating: Math.min(5, Math.max(0, Number(fd.get("rating") || 5))),
-    startHour: Math.max(0, Math.min(23, Number(fd.get("startHour") || 9))),
-    endHour: Math.max(1, Math.min(24, Number(fd.get("endHour") || 21))),
-    tzOffset: Math.max(-12, Math.min(14, Number(fd.get("tzOffset") || 0))),
-    workDays: (fd.getAll("workDays") as unknown as string[]).filter(Boolean).join(",") || "1,2,3,4,5",
-    certified: fd.get("certified") === "on",
-    active: fd.get("active") === "on",
-  }).where(eq(teacherProfiles.userId, id));
+  if (!Number.isInteger(id) || id < 1) return;
+  const active = fd.get("active") === "1";
+  await db.update(teacherProfiles).set({ active }).where(eq(teacherProfiles.userId, id));
   revalidateAll();
+  revalidatePath("/admin/tutors");
+}
+
+export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  const id = Number(fd.get("id"));
+  if (!Number.isInteger(id) || id < 1) return { ok: false, error: "id" };
+  const [target] = await db.select({ role: users.role, avatar: users.avatar }).from(users).where(eq(users.id, id));
+  if (!target || target.role !== "teacher") return { ok: false, error: "not_found" };
+
+  const name = str(fd, "name", 60);
+  if (!name) return { ok: false, error: "name" };
+  const email = str(fd, "email", 254).toLowerCase();
+  if (!EMAIL_RE.test(email)) return { ok: false, error: "email" };
+  const avatar = str(fd, "avatar", 500);
+  if (avatar && avatar !== target.avatar && !validAvatar(avatar)) return { ok: false, error: "avatar" };
+  const nativeLang = LANGS.includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) : "en";
+  const startHour = intIn(fd.get("startHour"), 0, 23, 9);
+  const endHour = Math.max(startHour + 1, intIn(fd.get("endHour"), 1, 24, 21));
+  const rating = Number(fd.get("rating"));
+
+  try {
+    await db.transaction(async tx => {
+      await tx.update(users).set({
+        name, email, nativeLang,
+        ...(avatar ? { avatar } : {}),
+        suspended: fd.get("suspended") === "on",
+      }).where(and(eq(users.id, id), eq(users.role, "teacher")));
+      await tx.update(teacherProfiles).set({
+        headline: str(fd, "headline", 140),
+        bio: str(fd, "bio", 4000),
+        country: ["US", "GB", "CA", "AU", "IE", "NZ", "ZA", "CN", "JP"].includes(str(fd, "country", 2)) ? str(fd, "country", 2) : "US",
+        accent: str(fd, "accent", 40),
+        speaks: str(fd, "speaks", 120) || "English",
+        tags: str(fd, "tags", 200),
+        price: Math.max(0, Math.min(50000, Math.round(Number(fd.get("price") || 25) * 100))),
+        rating: Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 5,
+        reviewsCount: intIn(fd.get("reviewsCount"), 0, 1_000_000, 0),
+        lessonsCount: intIn(fd.get("lessonsCount"), 0, 1_000_000, 0),
+        startHour, endHour,
+        tzOffset: intIn(fd.get("tzOffset"), -12, 14, 0),
+        workDays: (fd.getAll("workDays") as unknown as string[]).filter(Boolean).join(",") || "1,2,3,4,5",
+        payoutMethod: str(fd, "payoutMethod", 60),
+        payoutAccount: str(fd, "payoutAccount", 200),
+        certified: fd.get("certified") === "on",
+        active: fd.get("active") === "on",
+      }).where(eq(teacherProfiles.userId, id));
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) return { ok: false, error: "email_taken" };
+    throw error;
+  }
+  revalidateAll();
+  revalidatePath("/admin/tutors");
+  revalidatePath(`/teachers/${id}`);
+  return { ok: true };
+}
+
+export async function updateStudent(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  const id = Number(fd.get("id"));
+  if (!Number.isInteger(id) || id < 1) return { ok: false, error: "id" };
+  const [target] = await db.select({ role: users.role, avatar: users.avatar }).from(users).where(eq(users.id, id));
+  if (!target || target.role !== "student") return { ok: false, error: "not_found" };
+  const name = str(fd, "name", 60);
+  if (!name) return { ok: false, error: "name" };
+  const email = str(fd, "email", 254).toLowerCase();
+  if (!EMAIL_RE.test(email)) return { ok: false, error: "email" };
+  const avatar = str(fd, "avatar", 500);
+  if (avatar && avatar !== target.avatar && !validAvatar(avatar)) return { ok: false, error: "avatar" };
+  const level = str(fd, "level", 2);
+  const nativeLang = str(fd, "nativeLang", 2);
+  try {
+    await db.update(users).set({
+      name, email,
+      level: LEVELS.includes(level) ? level : "A1",
+      nativeLang: LANGS.includes(nativeLang) ? nativeLang : "en",
+      ...(avatar ? { avatar } : {}),
+      suspended: fd.get("suspended") === "on",
+    }).where(and(eq(users.id, id), eq(users.role, "student")));
+  } catch (error) {
+    if (isUniqueViolation(error)) return { ok: false, error: "email_taken" };
+    throw error;
+  }
+  revalidateAll();
+  revalidatePath("/admin/students");
   return { ok: true };
 }
 
@@ -85,8 +170,16 @@ export async function deleteTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
   if (!Number.isInteger(id)) return { ok: false, error: "id" };
   const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, id));
   if (!u || u.role === "admin") return { ok: false, error: "admin" };
-  await db.delete(teacherProfiles).where(eq(teacherProfiles.userId, id));
-  await db.delete(users).where(eq(users.id, id));
+  try {
+    // One transaction: if the account is still referenced (lessons, payments) nothing is deleted.
+    await db.transaction(async tx => {
+      await tx.delete(teacherProfiles).where(eq(teacherProfiles.userId, id));
+      await tx.delete(users).where(eq(users.id, id));
+    });
+  } catch (error) {
+    if (isForeignKeyViolation(error)) return { ok: false, error: "in_use" };
+    throw error;
+  }
   revalidateAll();
   return { ok: true };
 }
@@ -134,7 +227,11 @@ export async function deleteStudent(_p: unknown, fd: FormData): Promise<{ ok?: b
   if (!Number.isInteger(id)) return { ok: false, error: "id" };
   const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, id));
   if (!u || u.role === "admin") return { ok: false, error: "admin" };
-  await db.delete(users).where(eq(users.id, id));
+  try { await db.delete(users).where(eq(users.id, id)); }
+  catch (error) {
+    if (isForeignKeyViolation(error)) return { ok: false, error: "in_use" };
+    throw error;
+  }
   revalidateAll();
   return { ok: true };
 }

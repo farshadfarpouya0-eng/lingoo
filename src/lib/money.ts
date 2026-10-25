@@ -189,8 +189,7 @@ export async function settleLessons(arg?: number | { force?: boolean }) {
         and ${lessons.startAt} + ${lessons.duration} * interval '1 minute' < ${graceCutoff})
   )`;
 
-  let stale: (typeof lessons.$inferSelect)[] = [];
-  try { stale = await db.select().from(lessons).where(due).orderBy(lessons.startAt).limit(100); } catch (e) { console.error("[settleLessons]", e); return; }
+  const stale = await db.select().from(lessons).where(due).orderBy(lessons.startAt).limit(100);
 
   for (const l of stale) {
     const endsAt = l.startAt.getTime() + l.duration * 60_000;
