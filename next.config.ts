@@ -17,7 +17,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://randomuser.me https://api.dicebear.com https://images.pexels.com https://*.supabase.co",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://inqqalenhwgisbjxgnef.supabase.co wss://inqqalenhwgisbjxgnef.supabase.co",
   `frame-src https://meet.jit.si https://8x8.vc${jitsiHost ? ` https://${jitsiHost}` : ""}`,
   ...(!sandboxPreview ? ["frame-ancestors 'none'"] : []),
   "base-uri 'self'",
