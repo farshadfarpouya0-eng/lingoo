@@ -15,7 +15,7 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://randomuser.me https://api.dicebear.com https://images.pexels.com",
+  "img-src 'self' data: blob: https://randomuser.me https://api.dicebear.com https://images.pexels.com https://*.supabase.co",
   "font-src 'self' data:",
   "connect-src 'self'",
   `frame-src https://meet.jit.si https://8x8.vc${jitsiHost ? ` https://${jitsiHost}` : ""}`,
