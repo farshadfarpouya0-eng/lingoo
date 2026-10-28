@@ -181,6 +181,13 @@ export const teacherDocuments = pgTable("teacher_documents", {
   fileUrl: text("file_url").notNull(), status: text("status").notNull().default("pending"), optionalCredential: boolean("optional_credential").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(), reviewedAt: timestamp("reviewed_at"),
 }, t => [index("teacher_documents_user_idx").on(t.teacherId, t.status)]);
+export const classroomWorkspaceStates = pgTable("classroom_workspace_states", {
+  lessonId: integer("lesson_id").primaryKey().references(() => lessons.id, { onDelete: "cascade" }),
+  state: jsonb("state").notNull().default(sql`'{}'::jsonb`),
+  updatedBy: integer("updated_by").notNull().references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, t => [index("classroom_workspace_updated_idx").on(t.updatedAt)]);
+
 export const lessonChatMessages = pgTable("lesson_chat_messages", {
   id: serial("id").primaryKey(), lessonId: integer("lesson_id").notNull().references(() => lessons.id, { onDelete: "cascade" }),
   senderId: integer("sender_id").notNull().references(() => users.id), body: text("body").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),

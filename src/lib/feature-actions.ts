@@ -37,12 +37,13 @@ export async function createMaterial(fd: FormData) {
   const price = Math.round(rawPrice * 100);
   if (!title || !["textbook", "audio", "worksheet"].includes(kind)) return { ok: false, error: "Enter a title and select a supported material type." };
   if (!isFree && price < 1) return { ok: false, error: "Paid materials must have a price greater than zero." };
-  let parsed: { mode?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
+  let parsed: { mode?: string; pdfRef?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
   try { parsed = JSON.parse(rawPayload); } catch { return { ok: false, error: "Course lessons are invalid. Please review the course and retry." }; }
   if (!parsed || !Array.isArray(parsed.units) || parsed.units.length < 1 || parsed.units.length > 100) return { ok: false, error: "Add between 1 and 100 lessons." };
   if (!["both", "self", "tutor"].includes(String(parsed.mode || "both"))) return { ok: false, error: "Choose a valid study mode." };
   const refs: string[] = [];
   if (coverUrl) refs.push(coverUrl);
+  if (parsed.pdfRef) refs.push(parsed.pdfRef);
   for (const unit of parsed.units) {
     if (!unit || typeof unit.title !== "string" || unit.title.trim().length < 1 || unit.title.length > 180 || typeof unit.content !== "string" || unit.content.length > 30000) return { ok: false, error: "One of the lessons has an invalid title or too much text." };
     for (const ref of [unit.audioRef, unit.imageRef]) if (ref) refs.push(ref);
@@ -50,6 +51,7 @@ export async function createMaterial(fd: FormData) {
     if (unit.audioUrl || unit.imageUrl) return { ok: false, error: "Please re-upload lesson media using the private uploader." };
   }
   if (coverUrl && !coverUrl.startsWith("storage://")) return { ok: false, error: "Cover image must be uploaded to private storage." };
+  if (parsed.pdfRef && !parsed.pdfRef.startsWith("storage://")) return { ok: false, error: "Textbook PDF must be uploaded to private storage." };
   if (refs.some(ref => !ref.startsWith("storage://"))) return { ok: false, error: "All uploaded course files must use private storage." };
   if (kind === "audio" && !parsed.units.some(u => u.audioRef)) return { ok: false, error: "Add at least one audio track to an audio course." };
   try {
@@ -60,11 +62,12 @@ export async function createMaterial(fd: FormData) {
       checked.add(ref);
       const audioExtensions = ["mp3", "wav", "ogg", "m4a", "aac"];
       if (ref === coverUrl && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Cover images must be JPEG, PNG, or WebP.");
+      if (ref === parsed.pdfRef && file.extension !== "pdf") throw new Error("The textbook file must be a PDF.");
       if (parsed.units.some(u => u.audioRef === ref) && !audioExtensions.includes(file.extension)) throw new Error("Audio tracks must use an audio file format.");
       if (parsed.units.some(u => u.imageRef === ref) && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Lesson images must be JPEG, PNG, or WebP.");
     }
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Private upload validation failed." }; }
-  const fileUrl = JSON.stringify({ mode: parsed.mode || "both", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
+  const fileUrl = JSON.stringify({ mode: parsed.mode || "both", pdfRef: parsed.pdfRef || "", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
   try {
     await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind,
       language: val(fd, "language", 50) || "English", level: val(fd, "level", 20) || "A1", fileUrl,

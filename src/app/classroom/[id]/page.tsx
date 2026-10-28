@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { and, desc, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { lessonPlatformEvents, lessons, teacherProfiles, users } from "@/db/schema";
+import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, materialPurchases } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -16,6 +16,7 @@ import ReportParticipantForm from "@/components/ReportParticipantForm";
 import { reportLessonIssue } from "@/lib/feature-actions";
 import { canAccessLesson, activeLessonStudentIds } from "@/lib/lesson-access";
 import Icon from "@/components/Icon";
+import ClassroomTeachingWorkspace from "@/components/ClassroomTeachingWorkspace";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Classroom", robots: { index: false, follow: false } };
@@ -38,6 +39,10 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const snapshot = await classroomSnapshot(user.id, id, user.name);
   const courseLessons = await db.select({ id: lessons.id, startAt: lessons.startAt, status: lessons.status }).from(lessons).where(and(eq(lessons.studentId, l.studentId), eq(lessons.teacherId, l.teacherId))).orderBy(asc(lessons.startAt));
   const sessionNumber = Math.max(1, courseLessons.findIndex(x => x.id === l.id) + 1);
+  const publishedMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description, isFree: learningMaterials.isFree }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
+  const purchased = user.role === "student" ? await db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(and(eq(materialPurchases.userId, user.id), eq(materialPurchases.status, "paid"))) : [];
+  const purchasedIds = new Set(purchased.map(x => x.materialId));
+  const teachingMaterials = publishedMaterials.filter(m => user.role === "teacher" || user.role === "admin" || m.isFree || purchasedIds.has(m.id)).map(({ isFree: _isFree, ...m }) => m);
   const history = await db.select().from(lessonPlatformEvents).where(eq(lessonPlatformEvents.lessonId, id)).orderBy(desc(lessonPlatformEvents.createdAt), desc(lessonPlatformEvents.id)).limit(6);
   const labels: Record<string, string> = {
     undecided: c.pendingBadge || "Not chosen",
@@ -63,6 +68,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
         <div className="space-y-5">
+          <ClassroomTeachingWorkspace lessonId={id} books={teachingMaterials} isTutor={isTutor} userId={user.id} />
           <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmt(l.startAt, lang)} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} />
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
           <ClassroomChat lessonId={id} userId={user.id} />

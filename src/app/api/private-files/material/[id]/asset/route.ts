@@ -22,7 +22,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const asset = url.searchParams.get("asset");
   let reference = "";
   if (asset === "cover") reference = material.coverUrl || "";
-  else {
+  else if (asset === "pdf") {
+    try { const parsed = JSON.parse(material.fileUrl); reference = String(parsed.pdfRef || ""); } catch { return Response.json({ error: "Not found" }, { status: 404 }); }
+  } else {
     const unitIndex = Number(url.searchParams.get("unit"));
     const type = url.searchParams.get("type");
     if (!Number.isSafeInteger(unitIndex) || unitIndex < 0 || !["audio", "image"].includes(type || "")) return Response.json({ error: "Not found" }, { status: 404 });

@@ -27,6 +27,7 @@ export default function MaterialUploadForm() {
   const [mode, setMode] = useState<"both" | "self" | "tutor">("both");
   const [kind, setKind] = useState<"textbook" | "audio" | "worksheet">("textbook");
   const [coverRef, setCoverRef] = useState("");
+  const [pdfRef, setPdfRef] = useState("");
   const [units, setUnits] = useState<CourseUnit[]>([{ title: "Lesson 1: Introduction & Dialogue", content: "", audioRef: "", imageRef: "" }]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -34,11 +35,11 @@ export default function MaterialUploadForm() {
     const r = await createMaterial(fd);
     if (r?.ok) {
       setUnits([{ title: "Lesson 1: Introduction & Dialogue", content: "", audioRef: "", imageRef: "" }]);
-      setCoverRef(""); router.refresh();
+      setCoverRef(""); setPdfRef(""); router.refresh();
     }
     return r;
   }, null as { ok?: boolean; error?: string } | null);
-  const payload = JSON.stringify({ mode, units });
+  const payload = JSON.stringify({ mode, pdfRef, units });
   const updateUnit = (idx: number, patch: Partial<CourseUnit>) => setUnits(prev => prev.map((u, i) => i === idx ? { ...u, ...patch } : u));
   const handleUpload = async (file: File | undefined, cb: (ref: string) => void, materialKind: "textbook" | "audio" | "worksheet") => {
     if (!file) return;
@@ -51,7 +52,7 @@ export default function MaterialUploadForm() {
   };
 
   return <form action={action as unknown as (fd: FormData) => Promise<void>} className="rounded-3xl border border-slate-200 bg-white p-6 space-y-5">
-    <div><h2 className="text-lg font-bold text-teal-950">Create Interactive Textbook / Audio Course</h2><p className="mt-1 text-xs text-slate-500">Lesson text and settings are saved in Neon. Audio, images and covers are uploaded to private storage, so large files do not pass through a server action or get embedded as base64.</p></div>
+    <div><h2 className="text-lg font-bold text-teal-950">Create Interactive Textbook / Audio Course</h2><p className="mt-1 text-xs text-slate-500">Lesson text and settings are saved in Neon. The main PDF, audio, images and covers are uploaded to private storage, so large files do not pass through a server action or get embedded as base64.</p></div>
     <input type="hidden" name="fileUrl" value={payload} /><input type="hidden" name="coverUrl" value={coverRef} />
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <label className="text-xs font-bold text-slate-600 sm:col-span-2">Course / Textbook Title<input name="title" required maxLength={140} placeholder="e.g. Daily English Conversation Vol. 1" className={input}/></label>
@@ -60,6 +61,7 @@ export default function MaterialUploadForm() {
       <label className="text-xs font-bold text-slate-600">Language<select name="language" defaultValue="en" className={input}><option value="en">English</option><option value="zh">Chinese Support</option><option value="ja">Japanese Support</option></select></label>
       <label className="text-xs font-bold text-slate-600">Level<select name="level" defaultValue="B1" className={input}>{["A1","A2","B1","B2","C1","C2"].map(l=><option key={l}>{l}</option>)}</select></label>
       <label className="text-xs font-bold text-slate-600">Price (USD; e.g. 9.99)<input name="price" type="number" step="0.01" min="0" defaultValue="0" className={input}/></label>
+      <label className="text-xs font-bold text-slate-600 sm:col-span-2">📘 Main textbook PDF (optional, max 25 MB)<input type="file" accept="application/pdf,.pdf" onChange={e=>handleUpload(e.target.files?.[0],setPdfRef,"textbook")} className="mt-1.5 block w-full text-xs"/>{pdfRef&&<span className="text-[11px] text-emerald-700">✓ PDF uploaded privately</span>}</label>
       <label className="text-xs font-bold text-slate-600">Cover image (optional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>handleUpload(e.target.files?.[0],setCoverRef,"textbook")} className="mt-1.5 block w-full text-xs"/>{coverRef&&<span className="text-[11px] text-emerald-700">✓ Cover uploaded privately</span>}</label>
     </div>
     <label className="block text-xs font-bold text-slate-600">Short Summary<textarea name="description" rows={2} maxLength={500} placeholder="What will students learn in this textbook?" className={input}/></label>
