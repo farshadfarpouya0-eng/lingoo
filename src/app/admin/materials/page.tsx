@@ -8,6 +8,8 @@ import MaterialUploadForm from "@/components/MaterialUploadForm";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
+// File verification and Neon writes can take longer on serverless deployments.
+export const maxDuration = 60;
 
 async function deleteMaterial(fd: FormData) {
   "use server";
@@ -25,7 +27,7 @@ function summarizeCourse(fileUrl: string) {
     if (fileUrl && fileUrl.trim().startsWith("{")) {
       const parsed = JSON.parse(fileUrl);
       const count = Array.isArray(parsed.units) ? parsed.units.length : 1;
-      const audioCount = Array.isArray(parsed.units) ? parsed.units.filter((u: any) => !!u?.audioUrl).length : 0;
+      const audioCount = Array.isArray(parsed.units) ? parsed.units.filter((u: any) => !!(u?.audioRef || u?.audioUrl)).length : 0;
       const mode = parsed.mode === "self" ? "Self-Study" : parsed.mode === "tutor" ? "Tutor-Led" : "Self-Study + Tutor";
       return `${count} lesson${count === 1 ? "" : "s"} · ${audioCount} audio track${audioCount === 1 ? "" : "s"} · ${mode}`;
     }
@@ -44,7 +46,7 @@ export default async function AdminMaterials() {
         <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Learning library · Neon DB</p>
         <h1 className="mt-1 text-3xl font-black text-teal-950">Textbooks &amp; Audio Courses</h1>
         <p className="mt-2 text-sm text-slate-500">
-          Create multi-lesson interactive textbooks with automatic audio playback. Stored directly in Neon PostgreSQL; protected in-site reader (no download for students).
+          Create interactive textbooks with audio and images. Lesson metadata is stored in Neon; media files are kept in private storage and served only to authorized users.
         </p>
       </div>
 
@@ -56,7 +58,7 @@ export default async function AdminMaterials() {
           {rows.map(m => (
             <div key={m.id} className="flex flex-wrap items-center gap-3 py-4">
               {m.coverUrl && (
-                <img src={m.coverUrl} alt="" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />
+                <img src={m.coverUrl?.startsWith("storage://") ? `/api/private-files/material/${m.id}/asset?asset=cover` : m.coverUrl} alt="" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />
               )}
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800">{m.title}</p>

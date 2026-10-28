@@ -14,8 +14,11 @@ function demoAllowed(flag: string | undefined) {
 export function demoDataEnabled() { return demoAllowed(process.env.ENABLE_DEMO_DATA); }
 export function demoPaymentsEnabled() { return demoAllowed(process.env.ENABLE_DEMO_PAYMENTS); }
 export function classroomSecret() {
-  const secret = process.env.SESSION_SECRET;
+  // Use the dedicated session secret first. Older deployments may only have the
+  // integration encryption key configured; it is also a stable, high-entropy
+  // secret and can safely derive deterministic classroom room IDs.
+  const secret = process.env.SESSION_SECRET || process.env.INTEGRATION_ENCRYPTION_KEY;
   if (secret && secret.length >= 32) return secret;
   if (localDatabaseConfigured()) return process.env.DATABASE_URL || "local-classroom-only";
-  throw new Error("A stable SESSION_SECRET of at least 32 characters is required for hosted classrooms.");
+  throw new Error("Hosted classrooms require SESSION_SECRET (recommended) or INTEGRATION_ENCRYPTION_KEY, with at least 32 characters. Configure it in Vercel → Project Settings → Environment Variables, then redeploy.");
 }

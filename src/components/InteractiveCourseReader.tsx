@@ -9,6 +9,8 @@ export type CourseUnit = {
   content: string;
   audioUrl?: string;
   imageUrl?: string;
+  audioRef?: string;
+  imageRef?: string;
 };
 
 export type MaterialItem = {
@@ -29,11 +31,14 @@ export function parseUnits(m: MaterialItem): { mode: "both" | "self" | "tutor"; 
   try {
     if (m.fileUrl && m.fileUrl.trim().startsWith("{")) {
       const parsed = JSON.parse(m.fileUrl);
+      const units: CourseUnit[] = Array.isArray(parsed.units) && parsed.units.length > 0 ? parsed.units : [{ title: "Lesson 1", content: m.description || "" }];
       return {
         mode: parsed.mode || "both",
-        units: Array.isArray(parsed.units) && parsed.units.length > 0
-          ? parsed.units
-          : [{ title: "Lesson 1", content: m.description || "", audioUrl: "" }],
+        units: units.map((unit, index) => ({
+          ...unit,
+          audioUrl: unit.audioRef ? `/api/private-files/material/${m.id}/asset?unit=${index}&type=audio` : (unit.audioUrl || ""),
+          imageUrl: unit.imageRef ? `/api/private-files/material/${m.id}/asset?unit=${index}&type=image` : (unit.imageUrl || ""),
+        })),
       };
     }
   } catch {}
@@ -44,8 +49,8 @@ export function parseUnits(m: MaterialItem): { mode: "both" | "self" | "tutor"; 
       {
         title: "Lesson 1 · " + m.title,
         content: m.description || "Read the text below carefully and listen to the pronunciation track.",
-        audioUrl: isAudio ? m.fileUrl : "",
-        imageUrl: !isAudio && m.fileUrl ? m.fileUrl : m.coverUrl || "",
+        audioUrl: isAudio ? (m.fileUrl.startsWith("storage://") ? `/api/private-files/material/${m.id}` : m.fileUrl) : "",
+        imageUrl: !isAudio && m.fileUrl ? (m.fileUrl.startsWith("storage://") ? `/api/private-files/material/${m.id}` : m.fileUrl) : (m.coverUrl?.startsWith("storage://") ? `/api/private-files/material/${m.id}/asset?asset=cover` : m.coverUrl || ""),
       },
     ],
   };
@@ -326,7 +331,7 @@ export default function InteractiveCourseReader({
               <div>
                 {m.coverUrl && (
                   <img
-                    src={m.coverUrl}
+                    src={m.coverUrl?.startsWith("storage://") ? `/api/private-files/material/${m.id}/asset?asset=cover` : m.coverUrl}
                     alt={m.title}
                     draggable={false}
                     className="mb-4 h-40 w-full rounded-2xl object-cover pointer-events-none"

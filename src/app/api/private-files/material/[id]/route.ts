@@ -20,6 +20,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     ));
     if (!purchase) return Response.json({ error: "Purchase required" }, { status: 403 });
   }
+  // Interactive courses keep lesson metadata in Neon and media in private storage.
+  // The individual asset route checks entitlement and only serves references embedded in this material.
+  if (material.fileUrl.trim().startsWith("{")) return Response.json({ error: "This is an interactive course; request a protected lesson asset instead." }, { status: 400 });
   // Older rows may contain public URLs. Refuse to redirect because such a URL can
   // bypass purchase gating once shared. Re-upload legacy files to private storage.
   if (!material.fileUrl.startsWith("storage://")) {

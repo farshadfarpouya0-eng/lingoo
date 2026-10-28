@@ -28,37 +28,52 @@ export async function saveProfileAvatar(fd: FormData) {
 export async function createMaterial(fd: FormData) {
   const admin = await requireAdmin();
   const title = val(fd, "title", 160), kind = val(fd, "kind", 30);
-  const fileRef = val(fd, "fileRef", 2000);
+  const rawPayload = String(fd.get("fileUrl") || "");
+  if (rawPayload.length > 900_000) return { ok: false, error: "Course text is too large. Reduce the text content or split it into multiple courses." };
+  const coverUrl = val(fd, "coverUrl", 2000);
   const isFree = fd.get("isFree") === "on";
   const rawPrice = Number(fd.get("price") || 0);
-  if (!Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 10000000) {
-    return { ok: false, error: "Price must be a valid non-negative amount no greater than 10,000,000 cents." };
-  }
-  const price = Math.round(rawPrice);
-  const coverUrl = val(fd, "coverUrl", 1500);
-  if (!title || !fileRef.startsWith("storage://") || !["textbook", "audio", "worksheet"].includes(kind)) {
-    return { ok: false, error: "Enter a title, upload a supported file, and select a material type." };
-  }
+  if (!Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 100000) return { ok: false, error: "Price must be between $0 and $100,000." };
+  const price = Math.round(rawPrice * 100);
+  if (!title || !["textbook", "audio", "worksheet"].includes(kind)) return { ok: false, error: "Enter a title and select a supported material type." };
   if (!isFree && price < 1) return { ok: false, error: "Paid materials must have a price greater than zero." };
-  if (coverUrl) {
-    try { const cover = new URL(coverUrl); if (cover.protocol !== "https:" || cover.username || cover.password) throw new Error(); }
-    catch { return { ok: false, error: "Cover image must be a valid HTTPS URL." }; }
+  let parsed: { mode?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
+  try { parsed = JSON.parse(rawPayload); } catch { return { ok: false, error: "Course lessons are invalid. Please review the course and retry." }; }
+  if (!parsed || !Array.isArray(parsed.units) || parsed.units.length < 1 || parsed.units.length > 100) return { ok: false, error: "Add between 1 and 100 lessons." };
+  if (!["both", "self", "tutor"].includes(String(parsed.mode || "both"))) return { ok: false, error: "Choose a valid study mode." };
+  const refs: string[] = [];
+  if (coverUrl) refs.push(coverUrl);
+  for (const unit of parsed.units) {
+    if (!unit || typeof unit.title !== "string" || unit.title.trim().length < 1 || unit.title.length > 180 || typeof unit.content !== "string" || unit.content.length > 30000) return { ok: false, error: "One of the lessons has an invalid title or too much text." };
+    for (const ref of [unit.audioRef, unit.imageRef]) if (ref) refs.push(ref);
+    // Do not accept arbitrary URLs or data URLs in new courses; all lesson media must be private storage references.
+    if (unit.audioUrl || unit.imageUrl) return { ok: false, error: "Please re-upload lesson media using the private uploader." };
   }
+  if (coverUrl && !coverUrl.startsWith("storage://")) return { ok: false, error: "Cover image must be uploaded to private storage." };
+  if (refs.some(ref => !ref.startsWith("storage://"))) return { ok: false, error: "All uploaded course files must use private storage." };
+  if (kind === "audio" && !parsed.units.some(u => u.audioRef)) return { ok: false, error: "Add at least one audio track to an audio course." };
   try {
-    const checked = await validateUploadedPrivateFile(fileRef, "materials", admin.id, "material");
-    const audioExtensions = ["mp3", "wav", "ogg", "m4a", "aac"];
-    if (kind === "audio" && !audioExtensions.includes(checked.extension)) return { ok: false, error: "Audio materials must use an audio file format." };
-    if (kind !== "audio" && audioExtensions.includes(checked.extension)) return { ok: false, error: "Choose Audio as the material type for audio files." };
+    const checked = new Set<string>();
+    for (const ref of refs) {
+      if (checked.has(ref)) continue;
+      const file = await validateUploadedPrivateFile(ref, "materials", admin.id, "material");
+      checked.add(ref);
+      const audioExtensions = ["mp3", "wav", "ogg", "m4a", "aac"];
+      if (ref === coverUrl && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Cover images must be JPEG, PNG, or WebP.");
+      if (parsed.units.some(u => u.audioRef === ref) && !audioExtensions.includes(file.extension)) throw new Error("Audio tracks must use an audio file format.");
+      if (parsed.units.some(u => u.imageRef === ref) && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Lesson images must be JPEG, PNG, or WebP.");
+    }
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Private upload validation failed." }; }
-  const fileUrl = fileRef;
+  const fileUrl = JSON.stringify({ mode: parsed.mode || "both", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
   try {
     await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind,
       language: val(fd, "language", 50) || "English", level: val(fd, "level", 20) || "A1", fileUrl,
       coverUrl, isFree, price: isFree ? 0 : price, published: fd.get("published") === "on", createdBy: admin.id });
-  } catch { return { ok: false, error: "The file was uploaded but the material record could not be saved. Remove the orphaned upload from private storage and retry." }; }
+  } catch { return { ok: false, error: "The course files uploaded, but the course record could not be saved. Please retry or remove orphaned files from private storage." }; }
   revalidatePath("/admin/materials"); revalidatePath("/dashboard?tab=materials");
   return { ok: true };
 }
+
 export async function buyMaterial(fd:FormData){
   const user=await getUser(); if(!user||user.role!=="student") return {ok:false,error:"Students must sign in to purchase materials."};
   const id=Number(fd.get("id")); if(!Number.isInteger(id)||id<1)return {ok:false,error:"Invalid material."};

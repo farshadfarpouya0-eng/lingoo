@@ -59,3 +59,13 @@ checkbox was unreachable. New tutors are created hidden (`active = false`); veri
 - The tutor dashboard banner now says the truth: profiles go live when an admin approves them.
 - Editors only touch the matching role (the student editor cannot change a tutor and vice versa); admin accounts
   cannot be edited there; all of it requires an admin session.
+
+
+## Follow-up fixes — 2026-10-28
+- Dashboard lesson cards now format each lesson in the teacher's configured UTC offset, matching the teacher timetable instead of formatting all English-language users in UTC+8.
+- Rebuilt the textbook/audio upload flow: files upload directly to private Supabase Storage via signed upload tickets; Neon stores lesson text and private storage references rather than base64 audio. Added protected per-material asset streaming with purchase checks and byte-range support.
+- Fixed the material creation contract: the server now accepts the interactive-course JSON payload, validates each private asset, and supports free/paid material pricing in USD. Added the missing `isFree` checkbox and updated the cover-image preview paths.
+- Updated Content Security Policy `connect-src` for signed uploads to Supabase Storage. The configured Supabase bucket still needs to allow the deployed origin in its CORS settings.
+- Fixed admin sandbox classroom access: test lessons can be opened by an admin for room checks; admin room access and Daily test tokens are restricted to `[TEST]` lessons. Added `/admin/rooms` as a redirect alias to `/admin/testing`.
+- Password reset inputs in the admin account UI are masked.
+- Verification: TypeScript/TSX transpile syntax check passed for 144 source/config files. Full typecheck, lint, production build and live DB/provider tests remain unverified because npm dependency installation could not complete in this environment.

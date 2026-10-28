@@ -159,11 +159,32 @@ export async function validateUploadedPrivateFile(reference: string, folder: "ma
   if (!mime) throw new Error("Unsupported uploaded file extension.");
   if (kind === "document" && !["pdf", "jpg", "png", "webp"].includes(extension)) throw new Error("Teacher documents must be PDF, JPEG, PNG, or WebP.");
   if (kind === "avatar" && !["jpg", "png", "webp"].includes(extension)) throw new Error("Profile pictures must be JPEG, PNG, or WebP.");
-  const response = await fetchPrivateFile(reference);
-  const bytes = await readBounded(response, MAX_FILE_BYTES);
-  if (kind === "avatar" && bytes.length > 5 * 1024 * 1024) throw new Error("Profile pictures must be no larger than 5 MB.");
+  // Only inspect the first 8 KiB. Downloading the entire audio/PDF back from
+  // storage during a Server Action made large uploads slow and could exceed the
+  // serverless function's execution window. Supabase Storage supports Range.
+  const response = await fetchPrivateFile(reference, "bytes=0-8191");
+  if (response.status !== 206 && response.status !== 200) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Could not verify the uploaded file. Please retry the upload.");
+  }
+  const contentRange = response.headers.get("content-range");
+  const totalFromRange = contentRange?.match(/\/(\d+)$/)?.[1];
+  const advertisedSize = totalFromRange ? Number(totalFromRange) : Number(response.headers.get("content-length") || 0);
+  if (advertisedSize > MAX_FILE_BYTES) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Uploaded file exceeds the 25 MB limit.");
+  }
+  // A 200 response may mean the storage service ignored Range. Refuse to read a
+  // large object in full just to validate its signature.
+  if (response.status === 200 && advertisedSize > 8192) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Storage did not support partial file verification. Check the Supabase Storage configuration and retry.");
+  }
+  const bytes = await readBounded(response, 8192);
+  const actualSize = advertisedSize || bytes.length;
+  if (kind === "avatar" && actualSize > 5 * 1024 * 1024) throw new Error("Profile pictures must be no larger than 5 MB.");
   if (!bytes.length || !hasValidSignature(bytes, mime)) throw new Error("Uploaded file content does not match its expected file type.");
-  return { mime, extension, size: bytes.length };
+  return { mime, extension, size: actualSize };
 }
 
 export async function uploadPrivateFile(file: File, folder: "materials" | "teacher-documents" | "avatars", ownerId: number, kind: FileKind) {

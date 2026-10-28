@@ -11,15 +11,16 @@ export const runtime = "nodejs";
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getUser();
-  if (!user || !["teacher", "student"].includes(user.role)) return Response.json({ error: "Sign in as a class participant." }, { status: 401 });
+  if (!user || !["teacher", "student", "admin"].includes(user.role)) return Response.json({ error: "Sign in as a class participant." }, { status: 401 });
   const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id < 1 || !(await canAccessLesson(id, user.id))) return Response.json({ error: "Lesson not found." }, { status: 404 });
-  const [lesson] = await db.select({ id: lessons.id, teacherId: lessons.teacherId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity, platform: lessons.platform }).from(lessons).where(eq(lessons.id, id)).limit(1);
+  const [lesson] = await db.select({ id: lessons.id, teacherId: lessons.teacherId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity, platform: lessons.platform, topic: lessons.topic }).from(lessons).where(eq(lessons.id, id)).limit(1);
+  if (user.role === "admin" && !lesson?.topic.startsWith("[TEST]")) return Response.json({ error: "Admin tokens are restricted to sandbox lessons." }, { status: 403 });
   if (!lesson || lesson.platform !== "daily") return Response.json({ error: "Daily is not selected for this lesson." }, { status: 409 });
   try {
     const snapshot = await classroomSnapshot(user.id, id, user.name);
     if (snapshot.state !== "open") return Response.json({ error: "The room is not open yet." }, { status: 403 });
-    const joinUrl = await createDailyToken({ lesson, userId: user.id, displayName: user.name, isTeacher: lesson.teacherId === user.id });
+    const joinUrl = await createDailyToken({ lesson, userId: user.id, displayName: user.name, isTeacher: lesson.teacherId === user.id || user.role === "admin" });
     return Response.json({ joinUrl }, { headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not prepare a secure video room.";

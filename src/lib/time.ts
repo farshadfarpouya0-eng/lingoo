@@ -6,6 +6,13 @@ const loc = (lang: Lang) => lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : 
 export function fmt(d: Date, lang: Lang, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) {
   return new Intl.DateTimeFormat(loc(lang), { ...opts, timeZone: tzFor(lang).tz }).format(d);
 }
+
+/** Format an instant in a teacher's configured fixed UTC offset (same basis as TimetableManager). */
+export function fmtAtOffset(d: Date, lang: Lang, offset: number, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }) {
+  const shifted = new Date(d.getTime() + offset * 3_600_000);
+  return new Intl.DateTimeFormat(loc(lang), { ...opts, timeZone: "UTC", hourCycle: "h23", hour12: undefined }).format(shifted);
+}
+
 export type WeeklySlot = { weekday: number; startMinute: number; endMinute: number };
 export type BlockedRange = { start: number; end: number };
 export type TeacherAvail = {

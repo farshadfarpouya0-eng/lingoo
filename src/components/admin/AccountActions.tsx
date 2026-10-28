@@ -19,7 +19,7 @@ export function ResetPassword({ id }: { id: number }) {
       <input type="hidden" name="id" value={id} />
       <input
         name="password"
-        type="text"
+        type="password"
         value={pw}
         onChange={e => setPw(e.target.value)}
         minLength={8}
@@ -78,7 +78,7 @@ export function CreateUserForm() {
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <input name="name" required placeholder="Full name" className={input} />
         <input name="email" type="email" required placeholder="email@example.com" className={input} />
-        <input name="password" type="text" required minLength={8} placeholder="Password (min 8)" className={input} />
+        <input name="password" type="password" required minLength={8} placeholder="Password (min 8)" className={input} />
         <select name="role" defaultValue="student" className={input} aria-label="Role">
           <option value="student">student</option>
           <option value="teacher">teacher</option>

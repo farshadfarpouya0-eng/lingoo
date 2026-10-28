@@ -36,9 +36,11 @@ export async function classroomSnapshot(actorId: number, lessonId: number, displ
     platformUpdatedAt: lessons.platformUpdatedAt, platformIssueAt: lessons.platformIssueAt,
   }).from(lessons).where(eq(lessons.id, lessonId));
   if (!l || !(await canAccessLesson(lessonId, actorId))) throw new Error("forbidden");
-  const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
   const [actor] = await db.select({ role: users.role, suspended: users.suspended }).from(users).where(eq(users.id, actorId));
-  const actorRole = actor?.role === "teacher" ? "teacher" : actor?.role === "student" ? "student" : null;
+  const isAdminSandbox = actor?.role === "admin" && (await db.select({ topic: lessons.topic }).from(lessons).where(eq(lessons.id, lessonId)).limit(1))[0]?.topic.startsWith("[TEST]");
+  if (actor?.role === "admin" && !isAdminSandbox) throw new Error("forbidden");
+  const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
+  const actorRole = actor?.role === "teacher" || isAdminSandbox ? "teacher" : actor?.role === "student" ? "student" : null;
   if (!actor || actor.suspended || !actorRole) throw new Error("forbidden");
   const state = roomState(l, actorRole);
   let joinUrl = "";

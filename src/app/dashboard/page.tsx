@@ -65,9 +65,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     ? or(eq(lessons.studentId, user.id), inArray(lessons.id, groupLessonIds))
     : eq(lessons.studentId, user.id);
 
-  const rowQuery = db.select({ l: lessons, otherName: other.name, otherAvatar: other.avatar, otherId: other.id })
+  const rowQuery = db.select({ l: lessons, otherName: other.name, otherAvatar: other.avatar, otherId: other.id, teacherTzOffset: teacherProfiles.tzOffset })
     .from(lessons)
     .innerJoin(other, eq(other.id, isTutor ? lessons.studentId : lessons.teacherId))
+    .leftJoin(teacherProfiles, eq(teacherProfiles.userId, lessons.teacherId))
     .where(tab === "overview"
       ? (isTutor ? upcomingForUser(user.id, true) : and(studentLessonScope, inArray(lessons.status, ["pending", "confirmed"])))
       : (isTutor ? eq(lessons.teacherId, user.id) : studentLessonScope))

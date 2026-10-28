@@ -26,10 +26,10 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id < 1) notFound();
   const [l] = await db.select().from(lessons).where(eq(lessons.id, id));
-  if (!l || !(await canAccessLesson(id, user.id))) notFound();
+  if (!l || !(await canAccessLesson(id, user.id)) || (user.role === "admin" && !l.topic.startsWith("[TEST]"))) notFound();
   const { t, lang } = await getT();
   const c = LEARNING[lang];
-  const isTutor = user.id === l.teacherId;
+  const isTutor = user.role === "admin" ? l.topic.startsWith("[TEST]") : user.id === l.teacherId;
   const [other] = await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, isTutor ? l.studentId : l.teacherId));
   const groupStudentIds = l.classType === "semi_private" ? await activeLessonStudentIds(l.id, l.studentId, l.classType) : [l.studentId];
   const groupStudents = groupStudentIds.length ? await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(inArray(users.id, groupStudentIds)) : [];
