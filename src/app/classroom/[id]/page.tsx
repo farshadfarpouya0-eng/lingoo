@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { and, desc, eq, asc, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, materialPurchases, lessonPackages, lessonParticipants } from "@/db/schema";
+import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, lessonPackages, lessonParticipants } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -54,10 +54,9 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const sessionNumber = Math.max(1, courseLessons.findIndex(x => x.id === l.id) + 1);
   const [packageRow] = coursePackageId ? await db.select({ totalLessons: lessonPackages.totalLessons }).from(lessonPackages).where(eq(lessonPackages.id, coursePackageId)).limit(1) : [];
   const sessionTotal = packageRow?.totalLessons ?? courseLessons.length;
-  const publishedMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, category: learningMaterials.category, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description, isFree: learningMaterials.isFree }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
-  const purchased = user.role === "student" ? await db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(and(eq(materialPurchases.userId, user.id), eq(materialPurchases.status, "paid"))) : [];
-  const purchasedIds = new Set(purchased.map(x => x.materialId));
-  const teachingMaterials = publishedMaterials.filter(m => user.role === "teacher" || user.role === "admin" || m.isFree || purchasedIds.has(m.id)).map(({ isFree: _isFree, ...m }) => m);
+  // Textbooks and audio are admin-managed teaching assets. They are available
+  // inside the classroom only; students never get a standalone library view.
+  const teachingMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, category: learningMaterials.category, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
   const history = await db.select().from(lessonPlatformEvents).where(eq(lessonPlatformEvents.lessonId, id)).orderBy(desc(lessonPlatformEvents.createdAt), desc(lessonPlatformEvents.id)).limit(6);
   const labels: Record<string, string> = {
     undecided: c.pendingBadge || "Not chosen",
@@ -141,17 +140,18 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
               <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")}</dd></div>
+              <div className="flex justify-between gap-2"><dt>Ends</dt><dd className="font-medium text-slate-700">{fmtAtZone(new Date(l.startAt.getTime() + l.duration * 60_000), lang, user.timeZone || "UTC")}</dd></div>
               <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
               {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
               {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}
             </dl>
           </div>
-          <div className="rounded-[22px] bg-teal-50/80 p-5">
+          {isTutor && <div className="rounded-[22px] bg-teal-50/80 p-5">
             <Icon name="swap" className="text-teal-700" />
-            <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Change the classroom"}</h2>
-            <p className="mt-2 text-xs leading-6 text-slate-500">{c.switchRules || "The classroom can be changed until the lesson ends."}</p>
-          </div>
-          {history.length > 0 && (
+            <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Classroom settings"}</h2>
+            <p className="mt-2 text-xs leading-6 text-slate-500">LingoRoom is the default. Google Meet or Zoom are backup options if the main classroom has technical problems.</p>
+          </div>}
+          {isTutor && history.length > 0 && (
             <div className="rounded-[22px] border border-slate-200 bg-white p-5">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{c.history || "History"}</h2>
               <div className="mt-3 space-y-3">

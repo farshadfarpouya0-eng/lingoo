@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { learningMaterials, materialPurchases } from "@/db/schema";
+import { learningMaterials } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { fetchPrivateFile, privateFileContentType, privateFileExtension } from "@/lib/private-storage";
 
@@ -13,13 +13,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const id = Number((await params).id);
   if (!Number.isSafeInteger(id) || id < 1) return Response.json({ error: "Not found" }, { status: 404 });
   const [material] = await db.select().from(learningMaterials).where(eq(learningMaterials.id, id));
+  // Standalone material downloads are no longer a student feature. Students
+  // receive selected content only through an authorized live classroom.
+  if (user.role !== "admin" && user.role !== "teacher") return Response.json({ error: "Not found" }, { status: 404 });
   if (!material || (!material.published && user.role !== "admin")) return Response.json({ error: "Not found" }, { status: 404 });
-  if (user.role !== "admin" && user.role !== "teacher" && !material.isFree) {
-    const [purchase] = await db.select({ id: materialPurchases.id }).from(materialPurchases).where(and(
-      eq(materialPurchases.materialId, material.id), eq(materialPurchases.userId, user.id), eq(materialPurchases.status, "paid"),
-    ));
-    if (!purchase) return Response.json({ error: "Purchase required" }, { status: 403 });
-  }
   // Interactive courses keep lesson metadata in Neon and media in private storage.
   // The individual asset route checks entitlement and only serves references embedded in this material.
   if (material.fileUrl.trim().startsWith("{")) return Response.json({ error: "This is an interactive course; request a protected lesson asset instead." }, { status: 400 });

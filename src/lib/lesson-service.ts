@@ -47,7 +47,7 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
     if (input.groupLessonId) {
       const [found] = await tx.select().from(lessons).where(eq(lessons.id, input.groupLessonId)).for("update");
       if (!found || found.teacherId !== input.teacherId || found.classType !== "semi_private" ||
-        !activeLessonStatuses.includes(found.status as (typeof activeLessonStatuses)[number]) ||
+        found.status !== "pending" ||
         found.startAt.getTime() !== input.startAt.getTime() || found.duration !== duration ||
         found.capacity < 2 || found.capacity > 4) throw new Error("group_unavailable");
       group = found;
@@ -105,7 +105,7 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
         const [created] = await tx.insert(lessons).values({
           studentId, teacherId: input.teacherId, startAt: input.startAt, duration,
           status: "pending", classType: "semi_private", capacity: 4, price, trial: false,
-          topic: (input.topic || "").trim().slice(0, 200), platform: "undecided", meetingUrl: "",
+          topic: (input.topic || "").trim().slice(0, 200), platform: "lingo", meetingUrl: "",
         }).returning({ id: lessons.id });
         lessonId = created.id;
         await tx.insert(lessonParticipants).values({ lessonId, studentId, paidAmount: price, status: "booked" });
@@ -146,7 +146,7 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
     const [lesson] = await tx.insert(lessons).values({
       studentId, teacherId: input.teacherId, startAt: input.startAt, duration, price, trial: !!input.trial,
       packageId, rewardCreditId, classType: "private", capacity: 1,
-      topic: (input.topic || "").trim().slice(0, 200), platform: "undecided", meetingUrl: "",
+      topic: (input.topic || "").trim().slice(0, 200), platform: "lingo", meetingUrl: "",
     }).returning();
 
     const transactionType = packageId ? "package_booking" : usedReferralCredit ? "referral_credit_booking" : "booking";

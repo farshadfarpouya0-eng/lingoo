@@ -2,7 +2,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { learningMaterials, lessonReports, materialPurchases, transactions, users, teacherDocuments, lessons, referrals, referralRewards, referralLessonCredits, adminAuditLogs } from "@/db/schema";
+import { learningMaterials, lessonReports, transactions, users, teacherDocuments, lessons, referrals, referralRewards, referralLessonCredits, adminAuditLogs } from "@/db/schema";
 import { ensureReferralCode } from "@/lib/referral-service";
 import { validateUploadedPrivateFile } from "@/lib/private-storage";
 import { getUser, requireAdmin } from "@/lib/auth";
@@ -31,18 +31,13 @@ export async function createMaterial(fd: FormData) {
   const rawPayload = String(fd.get("fileUrl") || "");
   if (rawPayload.length > 900_000) return { ok: false, error: "Course text is too large. Reduce the text content or split it into multiple courses." };
   const coverUrl = val(fd, "coverUrl", 2000);
-  const isFree = fd.get("isFree") === "on";
-  const rawPrice = Number(fd.get("price") || 0);
-  if (!Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 100000) return { ok: false, error: "Price must be between $0 and $100,000." };
-  const price = Math.round(rawPrice * 100);
+  const isFree = true; // Teaching assets are provided through teacher-led lessons.
   if (!title || !["textbook", "audio", "worksheet"].includes(kind)) return { ok: false, error: "Enter a title and select a supported material type." };
   const allowedCategories = ["general", "conversation", "natural_conversation", "ielts", "toefl", "toeic", "business_english", "kids", "grammar", "vocabulary", "pronunciation", "academic_english", "travel_english", "reading_writing", "exam_prep"];
   if (!allowedCategories.includes(category)) return { ok: false, error: "Choose a supported course category." };
-  if (!isFree && price < 1) return { ok: false, error: "Paid materials must have a price greater than zero." };
-  let parsed: { mode?: string; pdfRef?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
+  let parsed: { pdfRef?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
   try { parsed = JSON.parse(rawPayload); } catch { return { ok: false, error: "Course lessons are invalid. Please review the course and retry." }; }
   if (!parsed || !Array.isArray(parsed.units) || parsed.units.length < 1 || parsed.units.length > 100) return { ok: false, error: "Add between 1 and 100 lessons." };
-  if (!["both", "self", "tutor"].includes(String(parsed.mode || "both"))) return { ok: false, error: "Choose a valid study mode." };
   const refs: string[] = [];
   if (coverUrl) refs.push(coverUrl);
   if (parsed.pdfRef) refs.push(parsed.pdfRef);
@@ -69,31 +64,16 @@ export async function createMaterial(fd: FormData) {
       if (parsed.units.some(u => u.imageRef === ref) && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Lesson images must be JPEG, PNG, or WebP.");
     }
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Private upload validation failed." }; }
-  const fileUrl = JSON.stringify({ mode: parsed.mode || "both", pdfRef: parsed.pdfRef || "", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
+  const fileUrl = JSON.stringify({ pdfRef: parsed.pdfRef || "", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
   try {
     await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind, category,
       language: val(fd, "language", 50) || "English", level: val(fd, "level", 20) || "A1", fileUrl,
-      coverUrl, isFree, price: isFree ? 0 : price, published: fd.get("published") === "on", createdBy: admin.id });
+      coverUrl, isFree, price: 0, published: fd.get("published") === "on", createdBy: admin.id });
   } catch { return { ok: false, error: "The course files uploaded, but the course record could not be saved. Please retry or remove orphaned files from private storage." }; }
   revalidatePath("/admin/materials"); revalidatePath("/dashboard?tab=materials");
   return { ok: true };
 }
 
-export async function buyMaterial(fd:FormData){
-  const user=await getUser(); if(!user||user.role!=="student") return {ok:false,error:"Students must sign in to purchase materials."};
-  const id=Number(fd.get("id")); if(!Number.isInteger(id)||id<1)return {ok:false,error:"Invalid material."};
-  try { await db.transaction(async tx=>{
-    const [m]=await tx.select().from(learningMaterials).where(and(eq(learningMaterials.id,id),eq(learningMaterials.published,true)));
-    if(!m)throw new Error("Material unavailable."); if(m.isFree)throw new Error("This material is free; open it directly.");
-    const [existing]=await tx.select({id:materialPurchases.id}).from(materialPurchases).where(and(eq(materialPurchases.materialId,id),eq(materialPurchases.userId,user.id)));
-    if(existing) return;
-    const [updated]=await tx.update(users).set({balance:sql`${users.balance} - ${m.price}`}).where(and(eq(users.id,user.id),sql`${users.balance} >= ${m.price}`)).returning({id:users.id});
-    if(!updated)throw new Error("Insufficient balance.");
-    await tx.insert(materialPurchases).values({materialId:id,userId:user.id,amount:m.price,status:"paid"});
-    await ledger(tx, user.id, "material_purchase", -m.price, `Purchased learning material #${id}`, undefined, `material:${id}:${user.id}`);
-  }); } catch(e){return {ok:false,error:e instanceof Error?e.message:"Purchase failed."};}
-  revalidatePath("/dashboard?tab=materials"); revalidatePath("/dashboard?tab=wallet"); return {ok:true};
-}
 export async function reportLessonIssue(fd:FormData){
   const user=await getUser(); if(!user)return {ok:false,error:"Sign in first."}; const id=Number(fd.get("lessonId"));
   if(!Number.isInteger(id)||id<1)return {ok:false,error:"Invalid lesson."};

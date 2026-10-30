@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { classroomWorkspaceStates, learningMaterials, materialPurchases } from "@/db/schema";
+import { classroomWorkspaceStates, learningMaterials } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { canAccessLesson } from "@/lib/lesson-access";
 import { classroomSnapshot } from "@/lib/room-service";
@@ -85,12 +85,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const state = validateState(raw);
   if (!state) return Response.json({ error: "Invalid classroom state" }, { status: 400 });
   if (state.bookId !== null && state.bookId !== undefined) {
-    const [material] = await db.select({ id: learningMaterials.id, published: learningMaterials.published, isFree: learningMaterials.isFree }).from(learningMaterials).where(eq(learningMaterials.id, state.bookId)).limit(1);
+    const [material] = await db.select({ id: learningMaterials.id, published: learningMaterials.published }).from(learningMaterials).where(eq(learningMaterials.id, state.bookId)).limit(1);
     if (!material || !material.published) return Response.json({ error: "Book unavailable" }, { status: 403 });
-    if (!material.isFree && auth.user.role !== "teacher" && auth.user.role !== "admin") {
-      const [purchase] = await db.select({ id: materialPurchases.id }).from(materialPurchases).where(and(eq(materialPurchases.materialId, state.bookId), eq(materialPurchases.userId, auth.user.id), eq(materialPurchases.status, "paid"))).limit(1);
-      if (!purchase) return Response.json({ error: "Purchase required" }, { status: 403 });
-    }
   }
   const expectedRevisionRaw = Number((raw as Record<string, unknown>).expectedRevision ?? 0);
   if (!Number.isSafeInteger(expectedRevisionRaw) || expectedRevisionRaw < 0) return Response.json({ error: "Invalid workspace revision" }, { status: 400 });
@@ -99,10 +95,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .where(eq(classroomWorkspaceStates.lessonId, auth.lessonId)).for("update").limit(1);
     const currentRevision = previous?.revision ?? 0;
     if (currentRevision !== expectedRevisionRaw) return { conflict: true as const, revision: currentRevision, state: previous?.state ?? {} };
-    if (auth.user.role !== "teacher" && auth.user.role !== "admin" && previous?.state && typeof previous.state === "object") {
-      const oldState = previous.state as Record<string, unknown>;
+    if (auth.user.role !== "teacher" && auth.user.role !== "admin") {
+      const oldState = (previous?.state && typeof previous.state === "object") ? previous.state as Record<string, unknown> : {};
+      // Teacher controls the selected book, PDF page, audio playback and board.
+      // Students can submit their answer, but cannot steer the shared lesson.
+      state.bookId = typeof oldState.bookId === "number" ? oldState.bookId : null;
+      state.page = typeof oldState.page === "number" ? oldState.page : 1;
+      state.unitIndex = typeof oldState.unitIndex === "number" ? oldState.unitIndex : 0;
+      state.audioTime = typeof oldState.audioTime === "number" ? oldState.audioTime : 0;
+      state.audioPlaying = oldState.audioPlaying === true;
+      state.boardStrokes = Array.isArray(oldState.boardStrokes) ? oldState.boardStrokes as typeof state.boardStrokes : [];
+      state.question = typeof oldState.question === "string" ? oldState.question : "";
       state.feedback = typeof oldState.feedback === "string" ? oldState.feedback : "";
-      state.question = typeof oldState.question === "string" ? oldState.question : state.question;
     }
     const now = new Date();
     if (!previous) {

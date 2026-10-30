@@ -28,7 +28,7 @@ function summarizeCourse(fileUrl: string) {
       const parsed = JSON.parse(fileUrl);
       const count = Array.isArray(parsed.units) ? parsed.units.length : 1;
       const audioCount = Array.isArray(parsed.units) ? parsed.units.filter((u: any) => !!(u?.audioRef || u?.audioUrl)).length : 0;
-      const mode = parsed.mode === "self" ? "Self-Study" : parsed.mode === "tutor" ? "Tutor-Led" : "Self-Study + Tutor";
+      const mode = "Teacher-led";
       return `${count} lesson${count === 1 ? "" : "s"} · ${audioCount} audio track${audioCount === 1 ? "" : "s"} · ${mode}`;
     }
   } catch {}
@@ -43,7 +43,7 @@ export default async function AdminMaterials() {
   return (
     <>
       <div className="mb-6">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Learning library · Neon DB</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Teaching content · Neon DB</p>
         <h1 className="mt-1 text-3xl font-black text-teal-950">Textbooks &amp; Audio Courses</h1>
         <p className="mt-2 text-sm text-slate-500">
           Create interactive textbooks with audio and images. Lesson metadata is stored in Neon; media files are kept in private storage and served only to authorized users.
@@ -63,7 +63,7 @@ export default async function AdminMaterials() {
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800">{m.title}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {m.category.replaceAll("_", " ")} · {m.kind} · {m.language} · {m.level} · {m.isFree ? "Free" : `Paid · $${(m.price / 100).toFixed(2)}`} · {m.published ? "Published" : "Draft"}
+                  {m.category.replaceAll("_", " ")} · {m.kind} · {m.language} · {m.level} · Teacher-led · {m.published ? "Published" : "Draft"}
                 </p>
                 <p className="mt-0.5 text-[11px] font-semibold text-teal-700">{summarizeCourse(m.fileUrl)}</p>
               </div>

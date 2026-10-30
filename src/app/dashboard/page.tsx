@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users, learningMaterials, materialPurchases, teacherDocuments, referralLessonCredits, userPresence, lessonParticipants, reviews } from "@/db/schema";
+import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users, teacherDocuments, referralLessonCredits, userPresence, lessonParticipants, reviews } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -18,9 +18,7 @@ import DashboardRefresh from "@/components/DashboardRefresh";
 import Icon, { type IconName } from "@/components/Icon";
 import { dashboardSummary, upcomingForUser } from "@/lib/dashboard-summary";
 import { isValidTimeZone, tzFor } from "@/lib/time";
-import { buyMaterial } from "@/lib/feature-actions";
 import TeacherDocumentUploadForm from "@/components/TeacherDocumentUploadForm";
-import InteractiveCourseReader from "@/components/InteractiveCourseReader";
 import ReferralPanel from "@/components/ReferralPanel";
 import PresencePrivacySetting from "@/components/PresencePrivacySetting";
 import TeacherProfileProgress from "@/components/TeacherProfileProgress";
@@ -49,8 +47,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const c = LEARNING[lang];
   const sp = await searchParams;
   const isTutor = user.role === "teacher";
-  const requested = sp.tab || (isTutor ? "overview" : "packages");
-  const tab = ["overview", "packages", "lessons", "schedule", "messages", "wallet", "profile", "materials"].includes(requested) && !(isTutor && requested === "packages") && (!isTutor && requested !== "schedule" || isTutor) ? requested : "overview";
+  const requested = sp.tab || "overview";
+  const allowedTabs = ["overview", "packages", "lessons", "schedule", "messages", "wallet", "profile"];
+  const tab = allowedTabs.includes(requested) && !(isTutor && requested === "packages") && (!isTutor && requested !== "schedule" || isTutor) ? requested : "overview";
 
   const other = alias(users, "other");
   const needsRows = tab === "overview" || tab === "lessons";
@@ -144,11 +143,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     return packages.map(x => ({ ...x, completed: Number(countByPackage.get(x.pack.id)?.completed || 0), booked: Number(countByPackage.get(x.pack.id)?.booked || 0) }));
   })() : [];
 
-  const nav: { key: string; label: string; icon: IconName }[] = [
+  const nav: { key: string; label: string; icon: IconName; href?: string }[] = [
     { key: "overview", label: t.overview, icon: "chart" },
+    ...(!isTutor ? [{ key: "find", label: t.findTeachers, icon: "search" as IconName, href: "/teachers" }] : []),
     ...(!isTutor ? [{ key: "packages", label: c.packages, icon: "box" as IconName }] : []),
     { key: "lessons", label: t.myLessons, icon: "calendar" },
-    { key: "materials", label: "Learning library", icon: "book" },
     ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }] : []),
     { key: "messages", label: t.messages, icon: "messages" },
     { key: "wallet", label: t.wallet, icon: "wallet" },
@@ -157,20 +156,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   let content: React.ReactNode;
 
-  if (tab === "materials") {
-    const [materials, purchases] = await Promise.all([
-      db.select().from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200),
-      db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(eq(materialPurchases.userId, user.id)),
-    ]);
-    content = (
-      <InteractiveCourseReader
-        materials={materials}
-        ownedIds={purchases.map(p => p.materialId)}
-        isTutor={isTutor}
-        buyAction={buyMaterial as unknown as (fd: FormData) => Promise<void>}
-      />
-    );
-  } else if (tab === "packages") {
+  if (tab === "packages") {
     content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
@@ -217,6 +203,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </div>
           ))}
         </div>
+
+        {!isTutor && (
+          <Link href="/teachers" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] border border-teal-100 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-4">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="search" width={24} height={24} /></span>
+              <div>
+                <h2 className="text-lg font-bold text-teal-950">{t.findTeachers}</h2>
+                <p className="mt-1 text-xs text-slate-500">{t.topic}</p>
+              </div>
+            </div>
+            <span className="flex items-center gap-2 text-xs font-semibold text-teal-800">{t.viewAll}<Icon name="arrow" width={16} height={16} /></span>
+          </Link>
+        )}
 
         {!isTutor && (
           <Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6">
@@ -319,7 +318,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <aside className="min-w-0 lg:sticky lg:top-24">
           <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:gap-1.5">
             {nav.map(item => (
-              <Link key={item.key} href={`/dashboard?tab=${item.key}`} aria-current={tab === item.key ? "page" : undefined} className={`flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-xs font-semibold transition ${tab === item.key ? "bg-[#123e39] text-white shadow-sm" : "text-slate-500 hover:bg-white hover:text-teal-800"}`}>
+              <Link key={item.key} href={item.href || `/dashboard?tab=${item.key}`} aria-current={item.href ? undefined : tab === item.key ? "page" : undefined} className={`flex shrink-0 items-center gap-3 whitespace-nowrap rounded-xl px-4 py-3 text-xs font-semibold transition ${tab === item.key ? "bg-[#123e39] text-white shadow-sm" : "text-slate-500 hover:bg-white hover:text-teal-800"}`}>
                 <Icon name={item.icon} width={17} height={17} className={tab === item.key ? "text-teal-200" : "text-slate-400"} />
                 {item.label}
                 {item.key === "packages" && <span className={`ml-auto rounded px-1.5 py-0.5 text-[9px] ${tab === "packages" ? "bg-white/15 text-teal-100" : "bg-teal-50 text-teal-700"}`}>−15%</span>}

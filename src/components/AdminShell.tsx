@@ -9,7 +9,7 @@ const items: NavItem[] = [
   { key: "/admin/revenue", label: "Revenue", icon: "M3 3v18h18M7 15l5-6 4 3 5-7", hint: "Profit & loss" },
   { key: "/admin/branding", label: "Branding", icon: "M4 7h16v12H4zM4 11h16M8 7V5h8v2", hint: "Logo & hero text" },
   { key: "/admin/content", label: "Content", icon: "M4 5h16M4 12h16M4 19h10", hint: "Text & images" },
-  { key: "/admin/materials", label: "Textbooks & audio", icon: "M4 4h16v16H4zM8 8h8M8 12h8", hint: "Learning library" },
+  { key: "/admin/materials", label: "Textbooks & audio", icon: "M4 4h16v16H4zM8 8h8M8 12h8", hint: "Classroom teaching assets" },
   { key: "/admin/reports", label: "Lesson reports", icon: "M12 9v4m0 4h.01M10 3h4l8 16H2z", hint: "Review issues" },
   { key: "/admin/moderation", label: "Safety & appeals", icon: "M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z", hint: "Cases and appeals" },
   { key: "/admin/documents", label: "Teacher documents", icon: "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6", hint: "Verify teachers" },

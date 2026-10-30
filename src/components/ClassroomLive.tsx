@@ -9,16 +9,16 @@ import Icon from "./Icon";
 import LingoRoom from "./LingoRoom";
 
 const D = {
-  pickTitle: "Choose your classroom",
-  pickText: "Pick where this lesson runs. You can change it until the lesson ends.",
-  tutorPick: "Waiting for the student to pick a classroom",
-  tutorPickText: "The student chooses the platform. You can still change it here.",
-  switchTitle: "Change the classroom",
+  pickTitle: "LingoRoom is your classroom",
+  pickText: "LingoRoom is the default classroom. Your tutor may switch to Google Meet or Zoom if a technical issue occurs.",
+  tutorPick: "Choose a backup classroom if needed",
+  tutorPickText: "LingoRoom is the default. Switch to Google Meet or Zoom only if LingoRoom is unavailable or unstable.",
+  switchTitle: "Classroom settings",
   lingo: "Lingo Room", lingoDesc: "Runs right here — no install, no account.",
-  daily: "Daily secure room", dailyDesc: "Private video room with optional consent-based cloud recording.",
+  daily: "Daily secure room", dailyDesc: "Private video room.",
   meet: "Google Meet", meetDesc: "Opens in a new tab. Set up by your tutor.",
   zoom: "Zoom", zoomDesc: "Opens in Zoom. Set up by your tutor.",
-  tutorOnly: "Only your tutor can use Google Meet or Zoom. Pick Lingo Room.",
+  tutorOnly: "Only your tutor can change the classroom.",
   link: "Meeting link", linkHint: "Paste your Google Meet or Zoom link",
   save: "Save classroom", saved: "Classroom saved",
   invalidLink: "That doesn't look like a valid Google Meet or Zoom link.",
@@ -102,9 +102,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   lessonId: number; initial: RoomSnapshot; preference: string; onSaved: () => void; isTutor: boolean;
 }) {
   const allowed = (p: string) => isTutor || p === "lingo";
-  const startPlatform = initial.platform === "undecided"
-    ? (allowed(preference) ? preference : "lingo")
-    : initial.platform;
+  const startPlatform = initial.platform === "undecided" ? "lingo" : initial.platform;
 
   const [platform, setPlatform] = useState<string>(startPlatform);
   const [link, setLink] = useState(initial.meetingUrl);
@@ -112,10 +110,9 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   useEffect(() => { if (result?.ok) onSaved(); }, [result, onSaved]);
 
   const cards: { key: Platform; code: string; title: string; desc: string; tag: string }[] = [
-    { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: "FREE" },
-    { key: "daily", code: "DY", title: D.daily, desc: D.dailyDesc, tag: isTutor ? "RECORDING" : "TUTOR" },
-    { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: isTutor ? "LINK" : "TUTOR" },
-    { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: isTutor ? "LINK" : "TUTOR" },
+    { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: "DEFAULT" },
+    { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: "BACKUP" },
+    { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: "BACKUP" },
   ];
 
   const errorText =
@@ -139,7 +136,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
         {cards.map(card => {
           const on = platform === card.key;
           const locked = !allowed(card.key);
@@ -181,9 +178,9 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
       {result?.error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{errorText}</p>}
       {result?.ok && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{D.saved}</p>}
 
-      <button disabled={pending} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">
+      {isTutor && <button disabled={pending} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">
         {pending ? "Saving…" : D.save}<Icon name="arrow" width={17} height={17} />
-      </button>
+      </button>}
     </form>
   );
 }
@@ -290,8 +287,8 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
         </p>
       )}
 
-      {room.state !== "closed" && (
-        <PlatformForm lessonId={room.lessonId} initial={room} preference={preference} onSaved={refresh} isTutor={isTutor} />
+      {isTutor && room.state !== "closed" && room.state !== "pending" && (
+        <PlatformForm lessonId={room.lessonId} initial={room} preference="lingo" onSaved={refresh} isTutor={isTutor} />
       )}
 
       {room.state === "open" && room.platform === "lingo" && room.joinUrl ? (
@@ -350,12 +347,12 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
             {room.state === "closed"
               ? "Thank you for joining. Leave a review from your dashboard."
-              : room.platform === "undecided"
-                ? D.pendingText
+              : room.state === "pending"
+                ? "Your tutor must confirm this booking before the classroom is available."
                 : "The room unlocks automatically — no need to refresh."}
           </p>
 
-          {room.state !== "closed" && (
+          {room.state !== "closed" && room.state !== "pending" && (
             <div className="mt-5 flex justify-center">
               <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} />
             </div>
