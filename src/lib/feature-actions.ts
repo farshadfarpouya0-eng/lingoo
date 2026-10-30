@@ -35,9 +35,10 @@ export async function createMaterial(fd: FormData) {
   if (!title || !["textbook", "audio", "worksheet"].includes(kind)) return { ok: false, error: "Enter a title and select a supported material type." };
   const allowedCategories = ["general", "conversation", "natural_conversation", "ielts", "toefl", "toeic", "business_english", "kids", "grammar", "vocabulary", "pronunciation", "academic_english", "travel_english", "reading_writing", "exam_prep"];
   if (!allowedCategories.includes(category)) return { ok: false, error: "Choose a supported course category." };
-  let parsed: { pdfRef?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
+  let parsed: { pdfRef?: string; pageCount?: number | null; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
   try { parsed = JSON.parse(rawPayload); } catch { return { ok: false, error: "Course lessons are invalid. Please review the course and retry." }; }
   if (!parsed || !Array.isArray(parsed.units) || parsed.units.length < 1 || parsed.units.length > 100) return { ok: false, error: "Add between 1 and 100 lessons." };
+  if (parsed.pageCount != null && (!Number.isSafeInteger(parsed.pageCount) || parsed.pageCount < 1 || parsed.pageCount > 10000)) return { ok: false, error: "PDF page count must be between 1 and 10,000." };
   const refs: string[] = [];
   if (coverUrl) refs.push(coverUrl);
   if (parsed.pdfRef) refs.push(parsed.pdfRef);
@@ -64,7 +65,7 @@ export async function createMaterial(fd: FormData) {
       if (parsed.units.some(u => u.imageRef === ref) && !["jpg", "png", "webp"].includes(file.extension)) throw new Error("Lesson images must be JPEG, PNG, or WebP.");
     }
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Private upload validation failed." }; }
-  const fileUrl = JSON.stringify({ pdfRef: parsed.pdfRef || "", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
+  const fileUrl = JSON.stringify({ pdfRef: parsed.pdfRef || "", pageCount: parsed.pageCount || null, units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
   try {
     await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind, category,
       language: val(fd, "language", 50) || "English", level: val(fd, "level", 20) || "A1", fileUrl,

@@ -28,6 +28,7 @@ export default function MaterialUploadForm() {
   const [kind, setKind] = useState<"textbook" | "audio" | "worksheet">("textbook");
   const [coverRef, setCoverRef] = useState("");
   const [pdfRef, setPdfRef] = useState("");
+  const [pageCount, setPageCount] = useState(0);
   const [units, setUnits] = useState<CourseUnit[]>([{ title: "Lesson 1: Introduction & Dialogue", content: "", audioRef: "", imageRef: "" }]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -35,11 +36,11 @@ export default function MaterialUploadForm() {
     const r = await createMaterial(fd);
     if (r?.ok) {
       setUnits([{ title: "Lesson 1: Introduction & Dialogue", content: "", audioRef: "", imageRef: "" }]);
-      setCoverRef(""); setPdfRef(""); router.refresh();
+      setCoverRef(""); setPdfRef(""); setPageCount(0); router.refresh();
     }
     return r;
   }, null as { ok?: boolean; error?: string } | null);
-  const payload = JSON.stringify({ pdfRef, units });
+  const payload = JSON.stringify({ pdfRef, pageCount: pageCount > 0 ? pageCount : null, units });
   const updateUnit = (idx: number, patch: Partial<CourseUnit>) => setUnits(prev => prev.map((u, i) => i === idx ? { ...u, ...patch } : u));
   const handleUpload = async (file: File | undefined, cb: (ref: string) => void, materialKind: "textbook" | "audio" | "worksheet") => {
     if (!file) return;
@@ -60,7 +61,7 @@ export default function MaterialUploadForm() {
       <label className="text-xs font-bold text-slate-600">Course category<select name="category" defaultValue="general" className={input}><option value="general">General English</option><option value="conversation">Conversation</option><option value="natural_conversation">Natural Conversation</option><option value="ielts">IELTS Preparation</option><option value="toefl">TOEFL Preparation</option><option value="toeic">TOEIC Preparation</option><option value="business_english">Business English</option><option value="kids">English for Kids</option><option value="grammar">Grammar</option><option value="vocabulary">Vocabulary</option><option value="pronunciation">Pronunciation</option><option value="academic_english">Academic English</option><option value="travel_english">Travel English</option><option value="reading_writing">Reading &amp; Writing</option><option value="exam_prep">Other Exam Preparation</option></select></label>
       <label className="text-xs font-bold text-slate-600">Language<select name="language" defaultValue="en" className={input}><option value="en">English</option><option value="zh">Chinese Support</option><option value="ja">Japanese Support</option></select></label>
       <label className="text-xs font-bold text-slate-600">Level<select name="level" defaultValue="B1" className={input}>{["A1","A2","B1","B2","C1","C2"].map(l=><option key={l}>{l}</option>)}</select></label>
-      <label className="text-xs font-bold text-slate-600 sm:col-span-2">📘 Main textbook PDF (optional, max 25 MB)<input type="file" accept="application/pdf,.pdf" onChange={e=>handleUpload(e.target.files?.[0],setPdfRef,"textbook")} className="mt-1.5 block w-full text-xs"/>{pdfRef&&<span className="text-[11px] text-emerald-700">✓ PDF uploaded privately</span>}</label>
+      <label className="text-xs font-bold text-slate-600 sm:col-span-2">📘 Main textbook PDF (optional, max 25 MB)<input type="file" accept="application/pdf,.pdf" onChange={e=>handleUpload(e.target.files?.[0],setPdfRef,"textbook")} className="mt-1.5 block w-full text-xs"/>{pdfRef&&<span className="text-[11px] text-emerald-700">✓ PDF uploaded privately</span>}<span className="mt-2 block">PDF page count (optional)<input type="number" min="1" max="10000" value={pageCount || ""} onChange={e=>setPageCount(Math.max(0,Math.min(10000,Number(e.target.value)||0)))} placeholder="e.g. 120" className={input}/></span></label>
       <label className="text-xs font-bold text-slate-600">Cover image (optional)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>handleUpload(e.target.files?.[0],setCoverRef,"textbook")} className="mt-1.5 block w-full text-xs"/>{coverRef&&<span className="text-[11px] text-emerald-700">✓ Cover uploaded privately</span>}</label>
     </div>
     <label className="block text-xs font-bold text-slate-600">Short Summary<textarea name="description" rows={2} maxLength={500} placeholder="What will students learn in this textbook?" className={input}/></label>

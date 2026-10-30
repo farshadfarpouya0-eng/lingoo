@@ -22,42 +22,13 @@ const tool = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-s
 
 export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange, startLabel, minutesLeft, isTutor, lessonId, books, userId }: Props) {
   const [joined, setJoined] = useState(false);
-  const [camOn, setCamOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
-  const [devices, setDevices] = useState<{ cam: boolean; mic: boolean }>({ cam: false, mic: false });
-  const [deviceError, setDeviceError] = useState("");
   const [tab, setTab] = useState<"plan" | "people" | "notes" | "tools" | "chat">("plan");
   const [notes, setNotes] = useState("");
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  /* ── device check ───────────────────────────────── */
-  useEffect(() => {
-    if (joined) return;
-    let cancelled = false;
-    navigator.mediaDevices?.getUserMedia({ video: true, audio: true })
-      .then(s => {
-        if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
-        streamRef.current = s;
-        setDevices({ cam: s.getVideoTracks().length > 0, mic: s.getAudioTracks().length > 0 });
-        if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); }
-      })
-      .catch(() => setDeviceError("Camera or microphone unavailable — you can still join and turn them on later."));
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    };
-  }, [joined]);
-
-  /* ── toggle cam / mic (local preview only) ─────── */
-  useEffect(() => {
-    streamRef.current?.getVideoTracks().forEach(t => (t.enabled = camOn));
-  }, [camOn]);
-  useEffect(() => {
-    streamRef.current?.getAudioTracks().forEach(t => (t.enabled = micOn));
-  }, [micOn]);
+  // Keep pre-join lightweight: request camera/microphone only after the user
+  // enters the live provider iframe, avoiding background permission prompts.
+  useEffect(() => () => { /* provider iframe owns its media tracks */ }, []);
 
   const toggleFullscreen = useCallback(() => {
     const el = boxRef.current;
@@ -79,25 +50,10 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
         </header>
 
         <div className="grid gap-6 p-6 lg:grid-cols-[1.2fr_1fr]">
-          {/* camera preview */}
-          <div className="relative aspect-video overflow-hidden rounded-2xl bg-slate-950">
-            <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
-            {!devices.cam && (
-              <div className="absolute inset-0 grid place-items-center text-center">
-                <div>
-                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white/10 text-white"><Icon name="user" width={26} height={26} /></div>
-                  <p className="mt-3 text-xs text-white/60">Camera is off</p>
-                </div>
-              </div>
-            )}
-            <div className="absolute bottom-3 left-3 flex gap-2">
-              <button type="button" onClick={() => setCamOn(v => !v)} className={`${tool} ${camOn ? "bg-white/90 text-slate-900" : "bg-red-500 text-white"}`}>
-                <Icon name="video" width={15} height={15} />{camOn ? "Camera on" : "Camera off"}
-              </button>
-              <button type="button" onClick={() => setMicOn(v => !v)} className={`${tool} ${micOn ? "bg-white/90 text-slate-900" : "bg-red-500 text-white"}`}>
-                <Icon name="messages" width={15} height={15} />{micOn ? "Mic on" : "Muted"}
-              </button>
-            </div>
+          <div className="flex aspect-video flex-col items-center justify-center rounded-2xl bg-[#0f2a28] px-6 text-center text-white">
+            <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white/10"><Icon name="video" width={30} height={30} /></span>
+            <p className="mt-4 text-sm font-bold">Your classroom is ready</p>
+            <p className="mt-2 max-w-xs text-xs leading-5 text-white/65">Camera and microphone access is requested only when you enter the live classroom.</p>
           </div>
 
           {/* join form */}
@@ -114,11 +70,11 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
             <dl className="mt-5 space-y-2 text-xs text-slate-500">
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <dt>Camera</dt>
-                <dd className={devices.cam ? "text-emerald-700 font-semibold" : "text-slate-400"}>{devices.cam ? "Ready" : "Not detected"}</dd>
+                <dd className="font-semibold text-slate-500">Checked on entry</dd>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <dt>Microphone</dt>
-                <dd className={devices.mic ? "text-emerald-700 font-semibold" : "text-slate-400"}>{devices.mic ? "Ready" : "Not detected"}</dd>
+                <dd className="font-semibold text-slate-500">Checked on entry</dd>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                 <dt>Starts</dt>
@@ -126,13 +82,9 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
               </div>
             </dl>
 
-            {deviceError && <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">{deviceError}</p>}
-
             <button
               type="button"
               onClick={() => {
-                streamRef.current?.getTracks().forEach(t => t.stop());
-                streamRef.current = null;
                 setJoined(true);
               }}
               className="mt-5 inline-flex items-center justify-center gap-3 rounded-xl bg-teal-800 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-teal-900"
@@ -271,19 +223,7 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
 
           </div>
 
-          <footer className="border-t border-slate-100 p-3">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setMicOn(v => !v)} className={`${tool} flex-1 justify-center ${micOn ? "bg-slate-100 text-slate-700" : "bg-red-50 text-red-600"}`}>
-                <Icon name="messages" width={15} height={15} />{micOn ? "Mute" : "Unmute"}
-              </button>
-              <button type="button" onClick={() => setCamOn(v => !v)} className={`${tool} flex-1 justify-center ${camOn ? "bg-slate-100 text-slate-700" : "bg-red-50 text-red-600"}`}>
-                <Icon name="video" width={15} height={15} />{camOn ? "Stop video" : "Start video"}
-              </button>
-            </div>
-            <p className="mt-2 text-center text-[10px] text-slate-400">
-              Camera / mic in the panel are controlled inside the room too.
-            </p>
-          </footer>
+
         </aside>
       </div>
     </section>
