@@ -100,7 +100,10 @@ export default async function AdminRevenue() {
   const marketing = acc("platform_marketing").debit - acc("platform_marketing").credit;
   const fees = acc("platform_fees").debit - acc("platform_fees").credit;
   const netProfit = revenue - marketing - fees;
-  const pendingPayout = pt.get("pending") ?? { amount: 0, count: 0 };
+  const pendingPayout = ["pending", "approved", "processing"].reduce((sum, status) => {
+    const row = pt.get(status) ?? { amount: 0, count: 0 };
+    return { amount: sum.amount + row.amount, count: sum.count + row.count };
+  }, { amount: 0, count: 0 });
   const paidPayout = pt.get("paid") ?? { amount: 0, count: 0 };
   const tutorEarnings = tx("earning").amount + tx("performance_bonus").amount;
 
@@ -114,7 +117,7 @@ export default async function AdminRevenue() {
   const obligations = [
     { label: "Held in escrow", value: money(lt.escrow), hint: `${lt.active} pending lessons`, icon: "clock" as const },
     { label: "Wallet liabilities", value: money(wallet), hint: "money users can still spend", icon: "wallet" as const },
-    { label: "Pending payouts", value: money(pendingPayout.amount), hint: `${pendingPayout.count} withdrawal requests`, icon: "alert" as const },
+    { label: "Outstanding payouts", value: money(pendingPayout.amount), hint: `${pendingPayout.count} pending, approved or processing`, icon: "alert" as const },
     { label: "Withdrawals paid", value: money(paidPayout.amount), hint: `${paidPayout.count} paid out`, icon: "shield" as const },
   ];
 

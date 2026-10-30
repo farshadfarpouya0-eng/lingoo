@@ -1,3 +1,5 @@
+> **Current hosting direction (2026-10-30):** This document contains historical performance and Netlify-oriented planning. The current Lingorain deployment target is **Vercel + Neon**. Do not follow old Netlify region/build recommendations as current instructions. Use the root `DEPLOYMENT.md` and `docs/vercel-deployment.md` for the current setup. Region and plan choices must be checked against the actual Neon and Vercel projects; no fixed Singapore region is enforced in the current `vercel.json`.
+
 # Lingorain performance plan
 
 ## Free versus paid Neon: cost is a choice, not an application requirement

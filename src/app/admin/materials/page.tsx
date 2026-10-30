@@ -63,7 +63,7 @@ export default async function AdminMaterials() {
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800">{m.title}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {m.kind} · {m.language} · {m.level} · {m.isFree ? "Free" : `Paid · $${(m.price / 100).toFixed(2)}`} · {m.published ? "Published" : "Draft"}
+                  {m.category.replaceAll("_", " ")} · {m.kind} · {m.language} · {m.level} · {m.isFree ? "Free" : `Paid · $${(m.price / 100).toFixed(2)}`} · {m.published ? "Published" : "Draft"}
                 </p>
                 <p className="mt-0.5 text-[11px] font-semibold text-teal-700">{summarizeCourse(m.fileUrl)}</p>
               </div>

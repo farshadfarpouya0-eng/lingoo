@@ -40,12 +40,12 @@ export default async function AdminTutors({ searchParams }: { searchParams: Sear
       id: users.id, name: users.name, email: users.email, avatar: users.avatar, nativeLang: users.nativeLang, suspended: users.suspended, balance: users.balance,
       active: teacherProfiles.active, certified: teacherProfiles.certified, rating: teacherProfiles.rating, reviewsCount: teacherProfiles.reviewsCount,
       lessonsCount: teacherProfiles.lessonsCount, price: teacherProfiles.price, startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour,
-      tzOffset: teacherProfiles.tzOffset, workDays: teacherProfiles.workDays, headline: teacherProfiles.headline, bio: teacherProfiles.bio,
+      tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone, workDays: teacherProfiles.workDays, headline: teacherProfiles.headline, bio: teacherProfiles.bio,
       country: teacherProfiles.country, accent: teacherProfiles.accent, speaks: teacherProfiles.speaks, tags: teacherProfiles.tags,
-      payoutMethod: teacherProfiles.payoutMethod, payoutAccount: teacherProfiles.payoutAccount, idStatus: idStatusSql,
+      payoutMethod: teacherProfiles.payoutMethod, idStatus: idStatusSql,
     }).from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId)).where(and(eq(users.id, id), eq(users.role, "teacher")));
     if (!r) redirect("/admin/tutors");
-    const row: TRow = { ...r, avatar: r.avatar ?? "", nativeLang: r.nativeLang ?? "en" };
+    const row: TRow = { ...r, avatar: r.avatar ?? "", nativeLang: r.nativeLang ?? "en", payoutAccount: "" };
     return (
       <>
         <div className="mb-5"><Link href="/admin/tutors" className="text-sm font-semibold text-teal-700">← Back to tutors</Link><h1 className="mt-2 text-3xl font-black text-teal-950">Edit tutor · {row.name}</h1></div>

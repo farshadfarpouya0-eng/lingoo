@@ -62,7 +62,6 @@ export function CreateTestLesson({
             <option value="lingo">Lingo Room</option>
             <option value="meet">Google Meet</option>
             <option value="zoom">Zoom</option>
-            <option value="daily">Daily</option>
           </select>
         </label>
 

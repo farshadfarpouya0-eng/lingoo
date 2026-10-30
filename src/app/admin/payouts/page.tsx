@@ -4,8 +4,10 @@ import { db } from "@/db";
 import { payouts, users } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
-import { fmt } from "@/lib/time";
+import { fmtAtZone } from "@/lib/time";
 import { PayoutActions } from "@/components/admin/actions";
+import PayoutAccountReveal from "@/components/admin/PayoutAccountReveal";
+import { maskPayoutAccount } from "@/lib/payout-crypto";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Payouts" };
@@ -19,7 +21,7 @@ export default async function AdminPayouts() {
     .from(payouts).innerJoin(users, eq(users.id, payouts.teacherId))
     .orderBy(desc(payouts.createdAt)).limit(100);
   const [[pending]] = await Promise.all([
-    db.select({ n: sql<number>`count(*)::int` }).from(payouts).where(eq(payouts.status, "pending")),
+    db.select({ n: sql<number>`count(*)::int` }).from(payouts).where(sql`${payouts.status} in ('pending','approved','processing')`),
   ]);
   return (
     <>
@@ -33,13 +35,15 @@ export default async function AdminPayouts() {
             <div key={p.id} className="flex flex-wrap items-center gap-3 py-3">
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800">{name} <span className="text-xs text-slate-400">{email}</span></p>
-                <p className="text-sm text-slate-500">{usd(p.amount)} · {p.method}: <code className="text-xs">{p.account}</code> · {fmt(p.createdAt, lang)}</p>
+                <p className="text-sm text-slate-500">{usd(p.amount)} · {p.method}: <code className="text-xs">{maskPayoutAccount(p.account)}</code> · {fmtAtZone(p.createdAt, lang, user.timeZone || "UTC")}</p>
                 {p.note && <p className="text-xs text-slate-400">Note: {p.note}</p>}
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${p.status === "paid" ? "bg-emerald-100 text-emerald-800" : p.status === "rejected" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-800"}`}>
-                {p.status === "paid" ? t.payout_paid : p.status === "rejected" ? t.payout_rejected : t.payout_pending}
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${p.status === "paid" ? "bg-emerald-100 text-emerald-800" : p.status === "rejected" ? "bg-red-100 text-red-600" : p.status === "processing" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-800"}`}>
+                {p.status === "paid" ? t.payout_paid : p.status === "rejected" ? t.payout_rejected : p.status}
               </span>
-              {p.status === "pending" && <PayoutActions id={p.id} />}
+              {p.providerReference && <p className="w-full text-xs text-slate-400">Transfer ref: {p.providerReference}</p>}
+              {p.reviewedAt && <p className="w-full text-xs text-slate-400">Reviewed: {fmtAtZone(p.reviewedAt, lang, user.timeZone || "UTC")}</p>}
+              { ["pending", "approved", "processing"].includes(p.status) && <><PayoutAccountReveal payoutId={p.id} /><PayoutActions id={p.id} status={p.status} /></>}
             </div>
           ))}
           {!rows.length && <p className="py-8 text-center text-sm text-slate-400">No payout requests yet.</p>}

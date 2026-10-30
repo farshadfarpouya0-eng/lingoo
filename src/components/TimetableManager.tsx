@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import { addBlockedSlot, deleteBlockedSlot, saveWeeklyTimetable } from "@/lib/timetable-actions";
-import { formatMinutes, nowMs, weekdayName } from "@/lib/time";
+import { formatMinutes, nowMs, weekdayName, zonedParts, zonedLocalToUtc, isValidTimeZone } from "@/lib/time";
 import type { Lang, T } from "@/lib/i18n";
 import Icon from "./Icon";
 
@@ -27,16 +27,17 @@ function rangesToSet(ranges: InitialSlot[]): Set<string> {
   return set;
 }
 
-/** UTC timestamp of Monday 00:00 in the tutor's local time, shifted by whole weeks. */
-function weekStartUtc(tzOffset: number, weekOffset: number) {
-  const local = new Date(Date.now() + tzOffset * 3600_000);
-  const back = (local.getUTCDay() + 6) % 7;
-  const midnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
-  return midnight - back * DAY - tzOffset * 3600_000 + weekOffset * 7 * DAY;
+/** UTC instant corresponding to Monday 00:00 in the selected IANA time zone. */
+function weekStartUtc(timeZone: string, weekOffset: number) {
+  const p = zonedParts(new Date(), timeZone);
+  const back = (p.weekday + 6) % 7;
+  const monday = new Date(Date.UTC(p.year, p.month - 1, p.day - back + weekOffset * 7));
+  const date = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth()+1).padStart(2,"0")}-${String(monday.getUTCDate()).padStart(2,"0")}`;
+  return zonedLocalToUtc(date, "00:00", timeZone)?.getTime() ?? Date.now();
 }
 
 /** Paint only the lessons that fall inside the selected week. */
-function paintWeek(booked: BookedItem[], tzOffset: number, from: number, to: number) {
+function paintWeek(booked: BookedItem[], timeZone: string, from: number, to: number) {
   const cells = new Map<string, CellInfo>();
   const perDay = new Map<number, number>();
 
@@ -49,25 +50,25 @@ function paintWeek(booked: BookedItem[], tzOffset: number, from: number, to: num
     let first = true;
     for (let t = s; t < e; t += 30 * 60_000) {
       if (t < from || t >= to) { first = false; continue; }
-      const local = new Date(t + tzOffset * 3600_000);
-      const key = cellKey(local.getUTCDay(), local.getUTCHours() * 2 + (local.getUTCMinutes() >= 30 ? 1 : 0));
+      const local = zonedParts(new Date(t), timeZone);
+      const key = cellKey(local.weekday, local.hour * 2 + (local.minute >= 30 ? 1 : 0));
       const prev = cells.get(key);
       if (!prev || RANK[kind] > RANK[prev.kind]) cells.set(key, { kind, name: b.studentName, startsHere: first });
       first = false;
     }
 
     if (kind !== "cancelled" && s >= from && s < to) {
-      const wd = new Date(s + tzOffset * 3600_000).getUTCDay();
+      const wd = zonedParts(new Date(s), timeZone).weekday;
       perDay.set(wd, (perDay.get(wd) ?? 0) + 1);
     }
   }
   return { cells, perDay };
 }
 
-const localStamp = (d: Date, tzOffset: number) => new Date(d.getTime() + tzOffset * 3600_000).toISOString();
+const localStamp = (d: Date, timeZone: string) => { const p=zonedParts(d,timeZone); return `${p.year}-${String(p.month).padStart(2,"0")}-${String(p.day).padStart(2,"0")}T${String(p.hour).padStart(2,"0")}:${String(p.minute).padStart(2,"0")}`; };
 
-export default function TimetableManager({ teacherId, tzOffset, initialSlots, blocked, booked, t, lang, viewerLabel, okMsg, errMsg }: {
-  teacherId: number; tzOffset: number; initialSlots: InitialSlot[];
+export default function TimetableManager({ teacherId, tzOffset, timeZone, initialSlots, blocked, booked, t, lang, viewerLabel, okMsg, errMsg }: {
+  teacherId: number; tzOffset: number; timeZone: string; initialSlots: InitialSlot[];
   blocked: BlockedItem[]; booked: BookedItem[];
   t: T; lang: Lang; viewerLabel: string; okMsg?: string; errMsg?: string;
 }) {
@@ -76,22 +77,19 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
   const [weekOffset, setWeekOffset] = useState(0);
   const paint = useRef<{ down: boolean; value: boolean }>({ down: false, value: true });
 
-  const from = useMemo(() => weekStartUtc(tzOffset, weekOffset), [tzOffset, weekOffset]);
-  const to = from + 7 * DAY;
-  const { cells, perDay } = useMemo(() => paintWeek(booked, tzOffset, from, to), [booked, tzOffset, from, to]);
-  const todayLocalDay = new Date(nowMs() + tzOffset * 3600_000).getUTCDay();
+  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const from = useMemo(() => weekStartUtc(zone, weekOffset), [zone, weekOffset]);
+  const to = useMemo(() => weekStartUtc(zone, weekOffset + 1), [zone, weekOffset]);
+  const { cells, perDay } = useMemo(() => paintWeek(booked, zone, from, to), [booked, zone, from, to]);
+  const todayLocalDay = zonedParts(new Date(nowMs()), zone).weekday;
 
   const days = [1, 2, 3, 4, 5, 6, 0];
-  const sign = tzOffset >= 0 ? "+" : "";
 
   const L = t as unknown as Record<string, string | undefined>;
   const label = (key: string, fallback: string) => L[key] || fallback;
 
-  const dateFor = (wd: number) => new Date(from + ((wd + 6) % 7) * DAY + tzOffset * 3600_000);
-  const rangeLabel = (() => {
-    const a = dateFor(1), b = dateFor(0);
-    return `${a.getUTCDate()}/${a.getUTCMonth() + 1} – ${b.getUTCDate()}/${b.getUTCMonth() + 1}`;
-  })();
+  const dateFor = (wd: number) => { const p=zonedParts(new Date(from), zone); return new Date(Date.UTC(p.year,p.month-1,p.day+((wd+6)%7))); };
+  const rangeLabel = (() => { const a=dateFor(1), b=dateFor(0); return `${a.getUTCDate()}/${a.getUTCMonth()+1} – ${b.getUTCDate()}/${b.getUTCMonth()+1}`; })();
 
   const toggleCell = (wd: number, h: number, value?: boolean) => {
     const key = cellKey(wd, h);
@@ -154,7 +152,8 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
     return booked.filter(b => ["pending", "confirmed"].includes(b.status) && b.startAt.getTime() + b.duration * 60_000 > now);
   }, [booked]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const todayParts = zonedParts(new Date(), zone);
+  const today = `${todayParts.year}-${String(todayParts.month).padStart(2,"0")}-${String(todayParts.day).padStart(2,"0")}`;
 
   const legend: { color: string; ring?: boolean; text: string }[] = [
     { color: "bg-slate-400", text: label("legendCompleted", "Completed lesson") },
@@ -176,7 +175,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
           <div>
             <h2 className="text-lg font-bold text-teal-950">{t.weeklyTitle}</h2>
             <p className="mt-1 text-sm text-slate-500">{t.timetableSub}</p>
-            <p className="mt-1 text-xs text-slate-400">{t.tutorTz}: UTC{sign}{tzOffset} · {t.yourTz}: {viewerLabel}</p>
+            <p className="mt-1 text-xs text-slate-400">{t.tutorTz}: {zone} · {t.yourTz}: {viewerLabel}</p>
           </div>
           <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-bold text-teal-700">{openCount / 2}h / {t.openHours}</span>
         </div>
@@ -200,7 +199,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
 
         <form action={saveWeeklyTimetable as unknown as (fd: FormData) => Promise<void>} onSubmit={() => setSaving(true)} onMouseUp={() => { paint.current.down = false; }} onMouseLeave={() => { paint.current.down = false; }}>
           <input type="hidden" name="slots" value={slotsJson} />
-          <input type="hidden" name="tzOffset" value={tzOffset} />
+          <input type="hidden" name="tzOffset" value={tzOffset} /><input type="hidden" name="timeZone" value={zone} />
 
           <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-100">
             <div className="grid min-w-[760px]" style={{ gridTemplateColumns: "52px repeat(7, 1fr)" }}>
@@ -304,7 +303,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
               <div key={b.id} className="flex items-center gap-3 rounded-xl bg-red-50/60 p-3 text-sm">
                 <Icon name="close" width={14} height={14} className="shrink-0 text-red-400" />
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-slate-700">{localStamp(b.startAt, tzOffset).slice(0, 10)} · {localStamp(b.startAt, tzOffset).slice(11, 16)}–{localStamp(b.endAt, tzOffset).slice(11, 16)}</div>
+                  <div className="font-semibold text-slate-700">{localStamp(b.startAt, zone).slice(0, 10)} · {localStamp(b.startAt, zone).slice(11, 16)}–{localStamp(b.endAt, zone).slice(11, 16)}</div>
                   {b.reason && <div className="truncate text-xs text-slate-500">{b.reason}</div>}
                 </div>
                 <form action={deleteBlockedSlot as unknown as (fd: FormData) => Promise<void>}><input type="hidden" name="id" value={b.id} /><button className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50">{t.delete}</button></form>
@@ -322,7 +321,7 @@ export default function TimetableManager({ teacherId, tzOffset, initialSlots, bl
                 <Icon name="calendar" width={16} height={16} className="shrink-0 text-amber-600" />
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold text-slate-700">{b.studentName}</div>
-                  <div className="text-xs text-slate-500">{localStamp(b.startAt, tzOffset).slice(0, 10)} {localStamp(b.startAt, tzOffset).slice(11, 16)} · {b.duration}min · {b.status}</div>
+                  <div className="text-xs text-slate-500">{localStamp(b.startAt, zone).slice(0, 10)} {localStamp(b.startAt, zone).slice(11, 16)} · {b.duration}min · {b.status}</div>
                 </div>
               </div>
             ))}

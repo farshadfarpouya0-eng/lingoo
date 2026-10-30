@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonRecordings, lessons } from "@/db/schema";
 import { getIntegrationConfig } from "@/lib/integration-config";
@@ -34,21 +34,29 @@ export async function POST(req: Request) {
   const [lesson] = await db.select({ id: lessons.id, startAt: lessons.startAt, duration: lessons.duration }).from(lessons).where(eq(lessons.id, lessonId)).limit(1);
   if (!lesson) return Response.json({ ok: true, ignored: true });
   const [current] = await db.select().from(lessonRecordings).where(eq(lessonRecordings.lessonId, lessonId)).limit(1);
+  if (type === "recording.stopped" || type === "recording.ended") {
+    if (current) await db.update(lessonRecordings).set({ status: "processing", updatedAt: new Date() })
+      .where(eq(lessonRecordings.lessonId, lessonId));
+    return Response.json({ ok: true });
+  }
   if (type === "recording.error") {
-    if (current) await db.update(lessonRecordings).set({ status: "error", providerRecordingId: recordingId || current.providerRecordingId }).where(eq(lessonRecordings.lessonId, lessonId));
+    if (current) await db.update(lessonRecordings).set({ status: "error", providerRecordingId: recordingId || current.providerRecordingId, updatedAt: new Date() })
+      .where(and(eq(lessonRecordings.lessonId, lessonId), sql`${lessonRecordings.status} not in ('stop_pending', 'stop_retrying')`));
     return Response.json({ ok: true });
   }
   if (type === "recording.started" || type === "recording.ready-to-download") {
     const status = type === "recording.started" ? "recording" : recordingId ? "ready" : "error";
     const expiresAt = current?.expiresAt || new Date(lesson.startAt.getTime() + (lesson.duration + 15) * 60_000 + 7 * 24 * 60 * 60_000);
-    // Webhooks may arrive before the API request stores the recording row. Upsert
-    // instead of dropping the event; lesson_id is unique and makes repeats idempotent.
+    // Webhooks may arrive before the API request stores the row. A late
+    // `started` event must never undo an explicit consent-withdrawal stop claim.
+    const conflictStatus = type === "recording.started" ? status : sql`case when ${lessonRecordings.status} in ('stop_pending', 'stop_retrying') then 'processing' else ${status} end`;
     await db.insert(lessonRecordings).values({ lessonId, provider: "daily", providerRecordingId: recordingId, status, fileUrl: "", expiresAt })
       .onConflictDoUpdate({ target: lessonRecordings.lessonId, set: {
-        status,
+        status: conflictStatus,
         ...(recordingId ? { providerRecordingId: recordingId } : {}),
         expiresAt,
-      } });
+        updatedAt: new Date(),
+      }, ...(type === "recording.started" ? { setWhere: sql`${lessonRecordings.status} not in ('stop_pending', 'stop_retrying')` } : {}) });
     return Response.json({ ok: true });
   }
   return Response.json({ ok: true, ignored: true });

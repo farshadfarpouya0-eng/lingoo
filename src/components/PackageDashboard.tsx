@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lte, or } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonPackages, teacherProfiles, users } from "@/db/schema";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -9,7 +9,7 @@ export default async function PackageDashboard({ studentId, balance, lang, tutor
     db.select({id:users.id,name:users.name,avatar:users.avatar,headline:teacherProfiles.headline,
       price:teacherProfiles.price,rating:teacherProfiles.rating,speaks:teacherProfiles.speaks,tags:teacherProfiles.tags,certified:teacherProfiles.certified,
     }).from(teacherProfiles).innerJoin(users,eq(users.id,teacherProfiles.userId))
-      .where(and(eq(teacherProfiles.active,true),eq(users.suspended,false))).orderBy(asc(users.id)).limit(100),
+      .where(and(eq(users.role,"teacher"),eq(teacherProfiles.active,true),or(eq(users.suspended,false),lte(users.suspendedUntil,new Date())))).orderBy(asc(users.id)).limit(100),
     db.select({ id: lessonPackages.id, teacherId: lessonPackages.teacherId, teacherName: users.name, avatar: users.avatar,
       duration: lessonPackages.duration, totalLessons: lessonPackages.totalLessons, remainingLessons: lessonPackages.remainingLessons,
       unitPrice: lessonPackages.unitPrice, discountPercent: lessonPackages.discountPercent,

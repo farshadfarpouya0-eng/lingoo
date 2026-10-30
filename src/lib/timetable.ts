@@ -1,10 +1,12 @@
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { teacherBlockedSlots, teacherProfiles, teacherWeeklySlots } from "@/db/schema";
+import { isValidTimeZone, offsetAt, zonedLocalToUtc } from "./time";
 import type { BlockedRange, WeeklySlot } from "./time";
 
 export type TimetableData = {
   tzOffset: number;
+  timeZone: string;
   weeklySlots: WeeklySlot[];
   blocked: { id: number; startAt: Date; endAt: Date; reason: string }[];
   blockedRanges: BlockedRange[];
@@ -16,11 +18,12 @@ export async function getTeacherTimetable(teacherId: number, tzOffsetFallback = 
     db.select({ weekday: teacherWeeklySlots.weekday, startMinute: teacherWeeklySlots.startMinute, endMinute: teacherWeeklySlots.endMinute })
       .from(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId, teacherId)),
     db.select().from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, teacherId), gte(teacherBlockedSlots.endAt, new Date()))),
-    db.select({ tzOffset: teacherProfiles.tzOffset }).from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)),
+    db.select({ tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone }).from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)),
   ]);
   const tzOffset = prof[0]?.tzOffset ?? tzOffsetFallback;
+  const timeZone = isValidTimeZone(prof[0]?.timeZone) ? prof[0]!.timeZone : (tzOffset === 9 ? "Asia/Tokyo" : tzOffset === 8 ? "Asia/Shanghai" : "UTC");
   return {
-    tzOffset,
+    tzOffset, timeZone,
     weeklySlots: rows,
     blocked: blocks.map(b => ({ id: b.id, startAt: b.startAt, endAt: b.endAt, reason: b.reason })),
     blockedRanges: blocks.map(b => ({ start: b.startAt.getTime(), end: b.endAt.getTime() })),
@@ -85,8 +88,10 @@ export function rangesToCells(ranges: WeeklySlot[]): Set<string> {
   return set;
 }
 
-/** Convert teacher-local "YYYY-MM-DD" + "HH:MM" to a UTC Date using tzOffset. */
-export function teacherLocalToUtc(dateStr: string, timeStr: string, tzOffset: number): Date | null {
+/** Convert teacher-local wall time to a UTC Date using IANA timezone; numeric offset is legacy fallback. */
+export function teacherLocalToUtc(dateStr: string, timeStr: string, timeZone: string | number): Date | null {
+  if (typeof timeZone === "string") return zonedLocalToUtc(dateStr, timeStr, timeZone);
+  const tzOffset = timeZone;
   const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   const tm = /^(\d{2}):(\d{2})$/.exec(timeStr);
   if (!dm || !tm) return null;

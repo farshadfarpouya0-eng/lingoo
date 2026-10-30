@@ -25,6 +25,7 @@ export default async function AdminAccounts() {
       email: users.email,
       role: users.role,
       suspended: users.suspended,
+      suspendedUntil: users.suspendedUntil,
       createdAt: users.createdAt,
       tutor: teacherProfiles.userId,
     })
@@ -56,7 +57,7 @@ export default async function AdminAccounts() {
                   {u.id === me.id && (
                     <span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700">you</span>
                   )}
-                  {u.suspended && <span className="ml-2 text-xs text-red-500">· suspended</span>}
+                  {u.suspended && <span className="ml-2 text-xs text-red-500">· {u.suspendedUntil ? `suspended until ${u.suspendedUntil.toLocaleString()}` : "permanently suspended"}</span>}
                 </p>
                 <p className="truncate text-xs text-slate-400">{u.email}</p>
               </div>

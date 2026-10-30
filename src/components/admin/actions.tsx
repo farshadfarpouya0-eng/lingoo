@@ -7,15 +7,23 @@ const btnDanger = `${btn} bg-red-50 text-red-600 hover:bg-red-100 disabled:opaci
 const btnOk = `${btn} bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50`;
 const input = "rounded-lg border border-slate-200 px-2 py-1.5 text-xs";
 
-export function PayoutActions({ id }: { id: number }) {
-  const [state, action, pending] = useActionState(processPayout, { ok: false });
+export function PayoutActions({ id, status }: { id: number; status: string }) {
+  const [state, action, pending] = useActionState(processPayout, { ok: false } as { ok?: boolean; error?: string });
   const [note, setNote] = useState("");
+  const [reference, setReference] = useState("");
+  const active = ["pending", "approved", "processing"].includes(status);
+  if (!active) return null;
   return (
-    <form action={action as unknown as (fd: FormData) => Promise<void>} className="flex flex-wrap items-center gap-2">
+    <form action={action as unknown as (fd: FormData) => Promise<void>} className="flex min-w-[240px] flex-wrap items-center gap-2">
       <input type="hidden" name="id" value={id} />
-      <input name="note" value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)" className={input} />
-      <button name="action" value="paid" disabled={pending} className={btnOk}>Paid</button>
+      <input name="note" value={note} onChange={e => setNote(e.target.value)} placeholder="Review note" maxLength={300} className={input} />
+      <input name="providerReference" value={reference} onChange={e => setReference(e.target.value)} placeholder="Transfer reference (when paid)" maxLength={120} className={input} />
+      {status === "pending" && <button name="action" value="approve" disabled={pending} className={btnOk}>Approve</button>}
+      {status === "approved" && <button name="action" value="processing" disabled={pending} className={btnOk}>Mark processing</button>}
+      {(status === "approved" || status === "processing") && <button name="action" value="paid" disabled={pending || reference.trim().length < 3} className={btnOk}>Mark paid</button>}
       <button name="action" value="rejected" disabled={pending} className={btnDanger}>Reject & refund</button>
+      {state.error && <span role="alert" className="w-full text-[11px] text-red-600">{state.error === "reference_required" ? "Enter the transfer reference before marking paid." : "Status changed elsewhere or transition is invalid. Refresh this page."}</span>}
+      {state.ok && <span role="status" className="w-full text-[11px] text-emerald-700">Payout status updated.</span>}
     </form>
   );
 }

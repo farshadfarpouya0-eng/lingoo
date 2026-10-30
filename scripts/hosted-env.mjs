@@ -21,6 +21,12 @@ export function validateHostedEnvironment(provider) {
   }
   const secret = required("SESSION_SECRET");
   if (secret && secret.length < 32) problems.push("SESSION_SECRET must contain at least 32 random characters.");
+  const payoutKey = required("PAYOUT_ENCRYPTION_KEY");
+  if (payoutKey && payoutKey.length < 32) problems.push("PAYOUT_ENCRYPTION_KEY must contain at least 32 random characters and remain stable for decrypting saved payout details.");
+  const cronSecret = required("CRON_SECRET");
+  if (cronSecret && cronSecret.length < 32) problems.push("CRON_SECRET must contain at least 32 random characters.");
+  const reminderSecret = required("REMINDER_CRON_SECRET");
+  if (reminderSecret && reminderSecret.length < 32) problems.push("REMINDER_CRON_SECRET must contain at least 32 random characters.");
   const origin = required("APP_URL");
   if (origin) {
     try {
@@ -36,10 +42,10 @@ export function validateHostedEnvironment(provider) {
   if (!process.env.SUPABASE_URL) warnings.push("Private material/document uploads will not work until private Supabase Storage is configured.");
   if (Boolean(process.env.RESEND_API_KEY) !== Boolean(process.env.RESEND_FROM)) problems.push("Configure both RESEND_API_KEY and RESEND_FROM, or leave both unset.");
   if (!process.env.RESEND_API_KEY) warnings.push("Automated lesson reminder emails are disabled until Resend is configured.");
-  if (process.env.REMINDER_CRON_SECRET && process.env.REMINDER_CRON_SECRET.length < 32) problems.push("REMINDER_CRON_SECRET must contain at least 32 characters.");
-  if (process.env.CRON_SECRET && process.env.CRON_SECRET.length < 32) problems.push("CRON_SECRET must contain at least 32 characters.");
-  if (!process.env.CRON_SECRET && !process.env.REMINDER_CRON_SECRET) warnings.push("Lesson reminder endpoint is disabled until CRON_SECRET (for Vercel Cron) or REMINDER_CRON_SECRET (for a custom scheduler) is configured.");
-  if (process.env.TRUST_PROXY_HEADERS !== "true") warnings.push("IP-based throttling uses a shared fallback bucket. Only set TRUST_PROXY_HEADERS=true when the trusted ingress strips client-supplied forwarding headers and sets authoritative values.");
+  if (!process.env.REMINDER_CRON_SECRET) warnings.push("Lesson reminder delivery will not run until a scheduler calls /api/cron/lesson-reminders with REMINDER_CRON_SECRET.");
+  if (provider !== "Vercel" && process.env.TRUST_PROXY_HEADERS !== "true") warnings.push("On non-Vercel hosting, IP-based throttling is disabled unless TRUST_PROXY_HEADERS=true is set behind a trusted ingress that strips client-supplied forwarding headers and writes authoritative values. Shared account-based throttling remains active.");
+  warnings.push("Shared PostgreSQL rate-limit counters require migration 0013. Upstash Redis is optional and can be configured under Admin → Integrations.");
+  warnings.push("Scheduled job history requires migration 0014; time-limited account sanctions require migration 0015. Run the external reminder and settlement schedules documented in DEPLOYMENT.md.");
   if (process.env.ENABLE_DEMO_DATA === "true") problems.push("ENABLE_DEMO_DATA=true is not allowed in hosted deployments because demo accounts use a known password. Demo fixtures are local-database-only.");
   if (process.env.ENABLE_ADMIN_IMPERSONATION === "true") warnings.push("ENABLE_ADMIN_IMPERSONATION=true lets any admin sign in as any user. Keep it off in production unless you are actively testing.");
   if (process.env.ENABLE_DEMO_PAYMENTS === "true") problems.push("ENABLE_DEMO_PAYMENTS=true is not allowed in hosted deployments. Simulated top-ups could mint wallet credit.");

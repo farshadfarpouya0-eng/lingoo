@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { headers } from "next/headers";
 import { getIntegrationConfig } from "@/lib/integration-config";
+import { db } from "@/db";
+import { rateLimitBuckets } from "@/db/schema";
+import { lt, sql } from "drizzle-orm";
 
 type Bucket = { count: number; reset: number };
 const g = globalThis as typeof globalThis & { __rl?: Map<string, Bucket>; __rlSweepAt?: number };
@@ -16,8 +19,12 @@ const REDIS_SCRIPT = "local c=redis.call('INCR',KEYS[1]); if c==1 then redis.cal
  */
 export async function clientIp() {
   const h = await headers();
-  if (process.env.TRUST_PROXY_HEADERS !== "true") return "untrusted-proxy-disabled";
-  const raw = h.get("x-forwarded-for")?.split(",").at(-1)?.trim() || h.get("x-real-ip")?.trim();
+  const trustedIngress = process.env.TRUST_PROXY_HEADERS === "true" || process.env.VERCEL === "1";
+  if (!trustedIngress) return "untrusted-proxy-disabled";
+  // On Vercel, the final forwarded address is the ingress-added client IP.
+  const raw = h.get("x-vercel-forwarded-for")?.split(",").at(-1)?.trim()
+    || h.get("x-forwarded-for")?.split(",").at(-1)?.trim()
+    || h.get("x-real-ip")?.trim();
   if (!raw || raw.length > 64 || !/^[0-9a-fA-F:.]+$/.test(raw)) return "unknown";
   return raw.toLowerCase();
 }
@@ -42,8 +49,30 @@ function localHit(key: string, limit: number, windowMs: number) {
 export async function hit(key: string, limit: number, windowMs: number): Promise<boolean> {
   let cfg: Awaited<ReturnType<typeof getIntegrationConfig>>["rateLimit"];
   try { cfg = (await getIntegrationConfig()).rateLimit; }
-  catch { return localHit(key, limit, windowMs); }
-  if (!cfg.url && !cfg.token) return localHit(key, limit, windowMs);
+  catch { cfg = { url: "", token: "" }; }
+  if (!cfg.url && !cfg.token) {
+    const now = new Date();
+    const safeKey = createHash("sha256").update(key).digest("hex");
+    try {
+      const [row] = await db.insert(rateLimitBuckets).values({ key: safeKey, count: 1, expiresAt: new Date(now.getTime() + Math.max(1, windowMs)), updatedAt: now })
+        .onConflictDoUpdate({
+          target: rateLimitBuckets.key,
+          set: {
+            count: sql`CASE WHEN ${rateLimitBuckets.expiresAt} <= ${now} THEN 1 ELSE ${rateLimitBuckets.count} + 1 END`,
+            expiresAt: sql`CASE WHEN ${rateLimitBuckets.expiresAt} <= ${now} THEN ${new Date(now.getTime() + Math.max(1, windowMs))} ELSE ${rateLimitBuckets.expiresAt} END`,
+            updatedAt: now,
+          },
+        }).returning({ count: rateLimitBuckets.count });
+      // Opportunistic cleanup keeps the fallback table bounded without a separate worker.
+      if ((now.getUTCMinutes() * 60 + now.getUTCSeconds()) % 97 === 0) {
+        await db.delete(rateLimitBuckets).where(lt(rateLimitBuckets.expiresAt, now)).catch(() => undefined);
+      }
+      return Number(row?.count) > 0 && Number(row?.count) <= limit;
+    } catch {
+      // In production, never silently downgrade to per-instance memory.
+      return process.env.NODE_ENV === "production" ? false : localHit(key, limit, windowMs);
+    }
+  }
   // A partially configured shared limiter fails closed; otherwise one missing
   // credential could silently downgrade an intended production control.
   if (!cfg.url || !cfg.token) return false;

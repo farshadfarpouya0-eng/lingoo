@@ -70,20 +70,15 @@ async function teacherPayoutBreakdown(tx: Tx, teacherId: number, gross: number) 
  * Clearing is released by exactly the gross that was escrowed at booking.
  */
 function earningEntries(transactionId: number, teacherId: number, gross: number, base: number): Entry[] {
-  const out: Entry[] = [];
-  if (base > 0) {
-    out.push(
-      { transactionId, userId: teacherId, accountCode: `wallet:${teacherId}`, side: "credit", amount: base },
-      { transactionId, userId: teacherId, accountCode: "platform_clearing", side: "debit", amount: base },
-    );
-  }
+  // The database intentionally allows one row per (transaction, account). The
+  // clearing account therefore receives one aggregated debit for the full gross,
+  // not separate base/commission rows that violate its unique constraint.
   const commission = gross - base;
-  if (commission > 0) {
-    out.push(
-      { transactionId, userId: teacherId, accountCode: "platform_revenue", side: "credit", amount: commission },
-      { transactionId, userId: teacherId, accountCode: "platform_clearing", side: "debit", amount: commission },
-    );
-  }
+  if (gross <= 0 || base < 0 || commission < 0) throw new Error("Invalid teacher earning breakdown.");
+  const out: Entry[] = [];
+  if (base > 0) out.push({ transactionId, userId: teacherId, accountCode: `wallet:${teacherId}`, side: "credit", amount: base });
+  if (commission > 0) out.push({ transactionId, userId: teacherId, accountCode: "platform_revenue", side: "credit", amount: commission });
+  if (gross > 0) out.push({ transactionId, userId: teacherId, accountCode: "platform_clearing", side: "debit", amount: gross });
   return out;
 }
 
@@ -103,32 +98,37 @@ function bonusEntries(transactionId: number, teacherId: number, bonus: number): 
 async function bookEarning(tx: Tx, opts: { teacherId: number; gross: number; lessonId: number; ref: string; bonusRef: string; note: string }) {
   const { teacherId, gross, lessonId, ref, bonusRef, note } = opts;
   const breakdown = await teacherPayoutBreakdown(tx, teacherId, gross);
-  const total = breakdown.base + breakdown.bonus;
-  if (total > 0) await tx.update(users).set({ balance: sql`${users.balance} + ${total}` }).where(eq(users.id, teacherId));
-
   const [row] = await tx.insert(transactions)
     .values({ userId: teacherId, type: "earning", amount: breakdown.base, note, lessonId, ref })
+    .onConflictDoNothing({ target: transactions.ref })
     .returning({ id: transactions.id });
-  if (row) {
-    const entries = earningEntries(row.id, teacherId, gross, breakdown.base);
-    if (entries.length) await tx.insert(accountingEntries).values(entries);
-  }
+  // Claim the unique reference before changing balances. Concurrent completion
+  // workers now become a harmless no-op instead of racing on the wallet update.
+  if (!row) return false;
+
+  const total = breakdown.base;
+  if (total > 0) await tx.update(users).set({ balance: sql`${users.balance} + ${total}` }).where(eq(users.id, teacherId));
+  const entries = earningEntries(row.id, teacherId, gross, breakdown.base);
+  if (entries.length) await tx.insert(accountingEntries).values(entries);
 
   if (breakdown.bonus > 0) {
     const [bonusRow] = await tx.insert(transactions).values({
       userId: teacherId, type: "performance_bonus", amount: breakdown.bonus,
       note: `Performance bonus (${breakdown.percent}% · rating/review threshold met) · ${note}`,
       lessonId, ref: bonusRef,
-    }).returning({ id: transactions.id });
-    if (bonusRow) await tx.insert(accountingEntries).values(bonusEntries(bonusRow.id, teacherId, breakdown.bonus));
+    }).onConflictDoNothing({ target: transactions.ref }).returning({ id: transactions.id });
+    if (bonusRow) {
+      await tx.update(users).set({ balance: sql`${users.balance} + ${breakdown.bonus}` }).where(eq(users.id, teacherId));
+      await tx.insert(accountingEntries).values(bonusEntries(bonusRow.id, teacherId, breakdown.bonus));
+    }
   }
+  return true;
 }
 
 export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, price: number, note: string) {
   const ref = `earning:${lessonId}`;
-  const [exists] = await tx.select({ id: transactions.id }).from(transactions).where(eq(transactions.ref, ref)).limit(1);
-  if (exists) return false;
-  await bookEarning(tx, { teacherId, gross: price, lessonId, ref, bonusRef: `bonus:${lessonId}`, note });
+  const booked = await bookEarning(tx, { teacherId, gross: price, lessonId, ref, bonusRef: `bonus:${lessonId}`, note });
+  if (!booked) return false;
   await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` }).where(eq(teacherProfiles.userId, teacherId));
   return true;
 }
@@ -136,18 +136,19 @@ export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, pr
 /** Pay one semi-private seat exactly once; separate refs allow multiple students per lesson. */
 export async function payGroupSeat(tx: Tx, lessonId: number, teacherId: number, studentId: number, paidAmount: number, note: string) {
   const ref = `group-earning:${lessonId}:${studentId}`;
-  const [exists] = await tx.select({ id: transactions.id }).from(transactions).where(eq(transactions.ref, ref)).limit(1);
-  if (exists) return false;
-  await bookEarning(tx, { teacherId, gross: paidAmount, lessonId, ref, bonusRef: `group-bonus:${lessonId}:${studentId}`, note });
-  return true;
+  return bookEarning(tx, { teacherId, gross: paidAmount, lessonId, ref, bonusRef: `group-bonus:${lessonId}:${studentId}`, note });
 }
 
 export async function refundGroupSeat(tx: Tx, lessonId: number, studentId: number, amount: number, note: string) {
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Invalid group-seat refund amount.");
   const ref = `group-refund:${lessonId}:${studentId}`;
-  const [exists] = await tx.select({ id: transactions.id }).from(transactions).where(eq(transactions.ref, ref)).limit(1);
-  if (exists) return false;
-  await tx.update(users).set({ balance: sql`${users.balance} + ${amount}` }).where(eq(users.id, studentId));
-  await ledger(tx, studentId, "refund", amount, note, lessonId, ref);
+  // Claim the unique refund reference before crediting the wallet. This makes
+  // retries and overlapping cron workers idempotent at the database level.
+  const created = await ledgerOnce(tx, studentId, "refund", amount, note, ref, lessonId);
+  if (!created) return false;
+  if (amount > 0) {
+    await tx.update(users).set({ balance: sql`${users.balance} + ${amount}` }).where(eq(users.id, studentId));
+  }
   return true;
 }
 
@@ -196,13 +197,37 @@ export async function settleLessons(arg?: number | { force?: boolean }) {
 
     if (l.status === "pending" && endsAt < now) {
       await db.transaction(async tx => {
-        const r = await tx.update(lessons).set({ status: "cancelled" })
-          .where(and(eq(lessons.id, l.id), eq(lessons.status, "pending")))
-          .returning({ id: lessons.id });
-        if (r.length) {
-          await refundStudent(tx, l.id, l.studentId, l.price,
-            "Tutor did not confirm this lesson in time", l.packageId ?? undefined, l.rewardCreditId ?? undefined);
+        // Lock the lesson before inspecting its participants. The conditional
+        // state transition is the single winner when cron runs concurrently.
+        const [locked] = await tx.select().from(lessons).where(eq(lessons.id, l.id)).for("update");
+        if (!locked || locked.status !== "pending") return;
+
+        if (locked.classType === "semi_private") {
+          const seats = await tx.select().from(lessonParticipants)
+            .where(and(eq(lessonParticipants.lessonId, locked.id), inArray(lessonParticipants.status, ["booked", "attended"])))
+            .for("update");
+          // Every group seat is paid from the student's wallet (packages and
+          // trials are rejected by reserveLesson for semi-private classes).
+          // Use the seat rows as the source of truth, including the creator.
+          for (const seat of seats) {
+            await refundGroupSeat(tx, locked.id, seat.studentId, seat.paidAmount,
+              "Tutor did not confirm this semi-private lesson in time");
+            await tx.update(lessonParticipants).set({ status: "refunded", cancelledAt: new Date() })
+              .where(and(eq(lessonParticipants.id, seat.id), inArray(lessonParticipants.status, ["booked", "attended"])));
+          }
+          // Legacy group rows created before participant records existed still
+          // have a wallet-funded owner balance; restore it exactly once.
+          if (seats.length === 0) {
+            await refundGroupSeat(tx, locked.id, locked.studentId, locked.price,
+              "Tutor did not confirm this semi-private lesson in time");
+          }
+        } else {
+          await refundStudent(tx, locked.id, locked.studentId, locked.price,
+            "Tutor did not confirm this lesson in time", locked.packageId ?? undefined, locked.rewardCreditId ?? undefined);
         }
+
+        await tx.update(lessons).set({ status: "cancelled" })
+          .where(and(eq(lessons.id, locked.id), eq(lessons.status, "pending")));
       });
       continue;
     }

@@ -7,6 +7,7 @@ import { lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots } fro
 import { getUser } from "./auth";
 import { hit } from "./ratelimit";
 import { cellsToRanges, normalizeWeeklySlots, teacherLocalToUtc } from "./timetable";
+import { isValidTimeZone } from "./time";
 
 const str = (fd: FormData, k: string, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
 
@@ -25,6 +26,8 @@ export async function saveWeeklyTimetable(fd: FormData) {
     ranges = normalizeWeeklySlots(list);
   } catch { redirect("/dashboard?tab=schedule&err=slot"); }
   const tzOffset = Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0)));
+  const requestedZone = str(fd, "timeZone", 64);
+  const timeZone = isValidTimeZone(requestedZone) ? requestedZone : "UTC";
   await db.transaction(async tx => {
     await tx.delete(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId, u.id));
     if (ranges.length) await tx.insert(teacherWeeklySlots).values(ranges.map(r => ({ teacherId: u.id, ...r })));
@@ -32,7 +35,7 @@ export async function saveWeeklyTimetable(fd: FormData) {
     const days = [...new Set(ranges.map(r => r.weekday))].sort((a, b) => a - b);
     const starts = ranges.map(r => r.startMinute), ends = ranges.map(r => r.endMinute);
     await tx.update(teacherProfiles).set({
-      tzOffset,
+      tzOffset, timeZone,
       workDays: days.length ? days.join(",") : "1,2,3,4,5",
       startHour: starts.length ? Math.floor(Math.min(...starts) / 60) : 9,
       endHour: ends.length ? Math.ceil(Math.max(...ends) / 60) : 21,
@@ -48,8 +51,8 @@ export async function addBlockedSlot(fd: FormData) {
   if (!u) redirect("/login");
   if (u.role !== "teacher") redirect("/dashboard");
   if (!await hit(`block:${u.id}`, 30, 3600_000)) redirect("/dashboard?tab=schedule&err=rate");
-  const [prof] = await db.select({ tzOffset: teacherProfiles.tzOffset }).from(teacherProfiles).where(eq(teacherProfiles.userId, u.id));
-  const tz = prof?.tzOffset ?? 8;
+  const [prof] = await db.select({ tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone }).from(teacherProfiles).where(eq(teacherProfiles.userId, u.id));
+  const tz = isValidTimeZone(prof?.timeZone) ? prof!.timeZone : (prof?.tzOffset ?? 0);
   const date = str(fd, "date", 10), start = str(fd, "start", 5), end = str(fd, "end", 5);
   const reason = str(fd, "reason", 120);
   const startAt = teacherLocalToUtc(date, start, tz);

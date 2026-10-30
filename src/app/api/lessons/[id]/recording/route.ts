@@ -56,6 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (input.action === "consent") {
       if (s.snapshot.state === "closed" || s.lesson.status === "cancelled") return json({ error: "The class is no longer active." }, 409);
       const consented = input.consented === true;
+      let stopRequired = false;
       await db.transaction(async tx => {
         const [locked] = await tx.select({ id: lessons.id, status: lessons.status }).from(lessons).where(eq(lessons.id, id)).for("update");
         if (!locked || locked.status === "cancelled") throw new Error("class_closed");
@@ -64,11 +65,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!consented) {
           const [recording] = await tx.select().from(lessonRecordings).where(eq(lessonRecordings.lessonId, id)).for("update");
           if (recording?.status === "recording") {
-            try { await dailyApi(`/rooms/${encodeURIComponent(dailyRoomName(id))}/recordings/stop`, "POST"); } catch { /* A later webhook/cleanup reconciles provider state. */ }
-            await tx.update(lessonRecordings).set({ status: "processing" }).where(eq(lessonRecordings.lessonId, id));
+            // Persist a retryable state before calling the external provider.
+            // A provider outage must never be mistaken for a successful stop.
+            await tx.update(lessonRecordings).set({ status: "stop_pending", updatedAt: new Date() }).where(eq(lessonRecordings.lessonId, id));
+            stopRequired = true;
           }
         }
       });
+      if (stopRequired) {
+        try {
+          await dailyApi(`/rooms/${encodeURIComponent(dailyRoomName(id))}/recordings/stop`, "POST");
+          await db.update(lessonRecordings).set({ status: "processing", updatedAt: new Date() })
+            .where(and(eq(lessonRecordings.lessonId, id), eq(lessonRecordings.status, "stop_pending")));
+        } catch {
+          return json({ error: "Consent was withdrawn, but the provider has not confirmed that recording stopped. The system will retry; contact support if recording remains active." }, 502);
+        }
+      }
       return json({ ok: true, consented });
     }
     if (user.id !== s.lesson.teacherId) return json({ error: "Only the teacher can control recording." }, 403);
@@ -91,23 +103,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // and prevents a consent-revocation request from racing past the start operation.
         await dailyApi(`/rooms/${encodeURIComponent(dailyRoomName(id))}/recordings/start`, "POST");
         const expiresAt = new Date(lesson.startAt.getTime() + (lesson.duration + 15) * 60_000 + 7 * 24 * 60 * 60_000);
-        await tx.insert(lessonRecordings).values({ lessonId: id, provider: "daily", providerRecordingId: "", status: "recording", fileUrl: "", expiresAt });
+        await tx.insert(lessonRecordings).values({ lessonId: id, provider: "daily", providerRecordingId: "", status: "recording", fileUrl: "", expiresAt })
+          .onConflictDoNothing({ target: lessonRecordings.lessonId });
         return { ok: true, status: "recording" } as const;
       });
       if ("error" in result) return json({ error: result.error === "consent" ? "Every current participant must consent before recording starts." : result.error === "already_recorded" ? "A recording already exists for this lesson." : "The lesson is not in a recordable state." }, 409);
       return json(result);
     }
     if (input.action === "stop") {
-      const stopped = await db.transaction(async tx => {
+      const claimed = await db.transaction(async tx => {
         const [lesson] = await tx.select({ id: lessons.id, status: lessons.status }).from(lessons).where(eq(lessons.id, id)).for("update");
         if (!lesson || lesson.status !== "confirmed") return false;
         const [recording] = await tx.select().from(lessonRecordings).where(eq(lessonRecordings.lessonId, id)).for("update");
-        if (recording?.status !== "recording") return false;
-        await dailyApi(`/rooms/${encodeURIComponent(dailyRoomName(id))}/recordings/stop`, "POST");
-        await tx.update(lessonRecordings).set({ status: "processing" }).where(eq(lessonRecordings.lessonId, id));
+        if (recording?.status !== "recording" && recording?.status !== "stop_pending") return false;
+        await tx.update(lessonRecordings).set({ status: "stop_pending", updatedAt: new Date() }).where(eq(lessonRecordings.lessonId, id));
         return true;
       });
-      if (!stopped) return json({ error: "No active recording." }, 409);
+      if (!claimed) return json({ error: "No active recording." }, 409);
+      try {
+        await dailyApi(`/rooms/${encodeURIComponent(dailyRoomName(id))}/recordings/stop`, "POST");
+        await db.update(lessonRecordings).set({ status: "processing", updatedAt: new Date() })
+          .where(and(eq(lessonRecordings.lessonId, id), eq(lessonRecordings.status, "stop_pending")));
+      } catch {
+        return json({ error: "The provider has not confirmed that recording stopped. The system will retry." }, 502);
+      }
       return json({ ok: true, status: "processing" });
     }
     return json({ error: "Unknown action." }, 400);

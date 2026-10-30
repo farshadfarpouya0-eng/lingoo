@@ -17,6 +17,7 @@ export type MaterialItem = {
   id: number;
   title: string;
   kind: string;
+  category?: string;
   language: string;
   level: string;
   description: string | null;
@@ -68,6 +69,7 @@ export default function InteractiveCourseReader({
   buyAction: (fd: FormData) => Promise<void>;
 }) {
   const [studyMode, setStudyMode] = useState<"all" | "self" | "tutor">("all");
+  const [courseCategory, setCourseCategory] = useState("all");
   const [activeBook, setActiveBook] = useState<MaterialItem | null>(null);
   const [unitIndex, setUnitIndex] = useState(0);
   const [autoPlay, setAutoPlay] = useState(true);
@@ -76,7 +78,9 @@ export default function InteractiveCourseReader({
 
   const owned = new Set(ownedIds);
 
+  const categoryLabels: Record<string, string> = { general: "General English", conversation: "Conversation", natural_conversation: "Natural Conversation", ielts: "IELTS", toefl: "TOEFL", toeic: "TOEIC", business_english: "Business English", kids: "English for Kids", grammar: "Grammar", vocabulary: "Vocabulary", pronunciation: "Pronunciation", academic_english: "Academic English", travel_english: "Travel English", reading_writing: "Reading & Writing", exam_prep: "Exam Preparation" };
   const filtered = materials.filter(m => {
+    if (courseCategory !== "all" && (m.category || "general") !== courseCategory) return false;
     if (studyMode === "all") return true;
     const { mode } = parseUnits(m);
     return mode === "both" || mode === studyMode;
@@ -320,6 +324,12 @@ export default function InteractiveCourseReader({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3">
+        <span className="px-2 text-xs font-bold text-slate-600">Choose course:</span>
+        <button type="button" onClick={() => setCourseCategory("all")} className={`rounded-full px-3 py-2 text-xs font-bold ${courseCategory === "all" ? "bg-teal-800 text-white" : "bg-slate-100 text-slate-600"}`}>All categories</button>
+        {Object.entries(categoryLabels).map(([key, label]) => <button key={key} type="button" onClick={() => setCourseCategory(key)} className={`rounded-full px-3 py-2 text-xs font-bold ${courseCategory === key ? "bg-teal-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-teal-50"}`}>{label}</button>)}
+      </div>
+
       <div className="grid gap-5 md:grid-cols-2">
         {filtered.map(m => {
           const canOpen = m.isFree || owned.has(m.id) || isTutor;
@@ -340,7 +350,7 @@ export default function InteractiveCourseReader({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[10px] font-bold uppercase text-teal-800">
-                      {m.kind} · {m.level}
+                      {categoryLabels[m.category || "general"] || "General English"} · {m.level}
                     </span>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
                       {parsed.units.length} {parsed.units.length === 1 ? "Lesson" : "Lessons"}

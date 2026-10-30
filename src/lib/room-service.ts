@@ -5,6 +5,7 @@ import { lessonPlatformEvents, lessons, users } from "@/db/schema";
 import { classroomSecret } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
 import { canAccessLesson } from "./lesson-access";
+import { isAccountSuspended } from "./account-status";
 
 export type Platform = "undecided" | "lingo" | "daily" | "meet" | "zoom";
 export type RoomSnapshot = {
@@ -22,10 +23,17 @@ export function validMeetingLink(platform: string, raw: string) {
 }
 function roomState(l: Pick<typeof lessons.$inferSelect, "status" | "startAt" | "duration">, role: "teacher" | "student") {
   const now = Date.now();
-  if (["completed", "cancelled"].includes(l.status) || now > l.startAt.getTime() + (l.duration + 15) * 60_000) return "closed" as const;
-  if (l.status !== "confirmed") return "pending" as const;
+  const startsAt = l.startAt.getTime();
+  const endsAt = startsAt + l.duration * 60_000;
+  const graceEndsAt = endsAt + 15 * 60_000;
+
+  // Cancellation is final. A stale/incorrect `completed` flag must not lock
+  // participants out before the scheduled lesson window has actually ended.
+  if (l.status === "cancelled" || now >= graceEndsAt) return "closed" as const;
+  if (l.status !== "confirmed" && !(l.status === "completed" && now < graceEndsAt)) return "pending" as const;
+
   const earlyMinutes = role === "teacher" ? 30 : 10;
-  if (now < l.startAt.getTime() - earlyMinutes * 60_000) return "early" as const;
+  if (now < startsAt - earlyMinutes * 60_000) return "early" as const;
   return "open" as const;
 }
 export async function classroomSnapshot(actorId: number, lessonId: number, displayName: string): Promise<RoomSnapshot> {
@@ -36,12 +44,12 @@ export async function classroomSnapshot(actorId: number, lessonId: number, displ
     platformUpdatedAt: lessons.platformUpdatedAt, platformIssueAt: lessons.platformIssueAt,
   }).from(lessons).where(eq(lessons.id, lessonId));
   if (!l || !(await canAccessLesson(lessonId, actorId))) throw new Error("forbidden");
-  const [actor] = await db.select({ role: users.role, suspended: users.suspended }).from(users).where(eq(users.id, actorId));
+  const [actor] = await db.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, actorId));
   const isAdminSandbox = actor?.role === "admin" && (await db.select({ topic: lessons.topic }).from(lessons).where(eq(lessons.id, lessonId)).limit(1))[0]?.topic.startsWith("[TEST]");
   if (actor?.role === "admin" && !isAdminSandbox) throw new Error("forbidden");
   const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
   const actorRole = actor?.role === "teacher" || isAdminSandbox ? "teacher" : actor?.role === "student" ? "student" : null;
-  if (!actor || actor.suspended || !actorRole) throw new Error("forbidden");
+  if (!actor || isAccountSuspended(actor.suspended, actor.suspendedUntil) || !actorRole) throw new Error("forbidden");
   const state = roomState(l, actorRole);
   let joinUrl = "";
   if (state === "open" && platform === "lingo") {
@@ -63,15 +71,15 @@ export async function chooseClassroom(actorId: number, lessonId: number, platfor
   if (!["lingo", "daily", "meet", "zoom"].includes(platform)) throw new Error("platform");
   if (platform === "daily") {
     const cfg = await getIntegrationConfig();
-    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) throw new Error("daily_unconfigured");
+    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) throw new Error("daily_off");
   }
   const url = platform === "lingo" || platform === "daily" ? "" : validMeetingLink(platform, meetingUrl.trim());
   if (platform !== "lingo" && platform !== "daily" && !url) throw new Error("link");
   return db.transaction(async tx => {
     const [l] = await tx.select().from(lessons).where(eq(lessons.id, lessonId)).for("update");
     if (!l || l.teacherId !== actorId) throw new Error("forbidden");
-    const [actor] = await tx.select({ role: users.role, suspended: users.suspended }).from(users).where(eq(users.id, actorId));
-    if (!actor || actor.role !== "teacher" || actor.suspended) throw new Error("forbidden");
+    const [actor] = await tx.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, actorId));
+    if (!actor || actor.role !== "teacher" || isAccountSuspended(actor.suspended, actor.suspendedUntil)) throw new Error("forbidden");
     if (roomState(l, "teacher") === "closed") throw new Error("closed");
     await tx.update(lessons).set({ platform, meetingUrl: url,
       platformRevision: sql`${lessons.platformRevision} + 1`, platformUpdatedAt: new Date(),

@@ -5,18 +5,19 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonPlatformEvents, lessons } from "@/db/schema";
 import { getUser } from "@/lib/auth";
+import { isAccountSuspended } from "@/lib/account-status";
 import { validMeetingLink } from "@/lib/room-service";
 import { getIntegrationConfig } from "@/lib/integration-config";
 
 type SaveResult = { ok?: boolean; error?: string };
 const PLATFORMS = ["lingo", "daily", "meet", "zoom"] as const;
-/** Only the tutor may bring an external meeting link. Students use Lingo Room or Daily. */
-const TUTOR_ONLY = ["meet", "zoom"];
+/** Only the tutor may select a provider-managed or external meeting room. */
+const TUTOR_ONLY = ["daily", "meet", "zoom"];
 
-/** Save / change the classroom. Students may choose Lingo or Daily; tutors may choose any. */
+/** Save or change the classroom provider. Daily requires the admin integration to be configured. */
 export async function saveClassroom(_prev: SaveResult, formData: FormData): Promise<SaveResult> {
   const me = await getUser();
-  if (!me || me.suspended) return { ok: false, error: "forbidden" };
+  if (!me || isAccountSuspended(me.suspended, me.suspendedUntil)) return { ok: false, error: "forbidden" };
 
   const lessonId = Number(formData.get("lessonId"));
   const platform = String(formData.get("platform") ?? "");
@@ -32,16 +33,18 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   const isStudent = l.studentId === me.id;
   if (!isTutor && !isStudent) return { ok: false, error: "forbidden" };
   if (TUTOR_ONLY.includes(platform) && !isTutor) return { ok: false, error: "tutor_only" };
-
   if (platform === "daily") {
     const cfg = await getIntegrationConfig();
     if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) {
-      return { ok: false, error: "daily_unconfigured" };
+      return { ok: false, error: "daily_off" };
     }
   }
 
-  if (["completed", "cancelled"].includes(l.status)) return { ok: false, error: "closed" };
-  if (Date.now() > l.startAt.getTime() + (l.duration + 15) * 60_000) return { ok: false, error: "closed" };
+  const now = Date.now();
+  const graceEndsAt = l.startAt.getTime() + (l.duration + 15) * 60_000;
+  if (l.status === "cancelled" || now >= graceEndsAt) return { ok: false, error: "closed" };
+  // Match roomState(): tolerate a stale completed flag until the scheduled
+  // lesson window and its 15-minute grace period have elapsed.
 
   const url = platform === "lingo" || platform === "daily" ? "" : validMeetingLink(platform, rawUrl);
   if ((platform === "meet" || platform === "zoom") && !url) return { ok: false, error: "link" };

@@ -22,19 +22,19 @@ export function ResetPassword({ id }: { id: number }) {
         type="password"
         value={pw}
         onChange={e => setPw(e.target.value)}
-        minLength={8}
-        placeholder="New password (min 8)"
+        minLength={12}
+        placeholder="New password (min 12)"
         className={`${input} w-44`}
         aria-label="New password"
       />
       <button
         type="submit"
-        disabled={pending || pw.length < 8}
+        disabled={pending || pw.length < 12}
         className={`${btn} bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50`}
       >
         {pending ? "…" : "Reset password"}
       </button>
-      {state.error === "short" && <span role="alert" className="text-[11px] text-red-600">Min 8 characters</span>}
+      {state.error === "short" && <span role="alert" className="text-[11px] text-red-600">Min 12 characters</span>}
       {state.ok && <span role="status" className="text-[11px] text-emerald-700">Password updated</span>}
     </form>
   );
@@ -78,7 +78,7 @@ export function CreateUserForm() {
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <input name="name" required placeholder="Full name" className={input} />
         <input name="email" type="email" required placeholder="email@example.com" className={input} />
-        <input name="password" type="password" required minLength={8} placeholder="Password (min 8)" className={input} />
+        <input name="password" type="password" required minLength={12} placeholder="Password (min 12)" className={input} />
         <select name="role" defaultValue="student" className={input} aria-label="Role">
           <option value="student">student</option>
           <option value="teacher">teacher</option>
@@ -91,7 +91,7 @@ export function CreateUserForm() {
           {state.error === "exists"
             ? "This email is already registered."
             : state.error === "short"
-              ? "Password must be at least 8 characters."
+              ? "Password must be at least 12 characters."
               : "Please check the fields."}
         </p>
       )}

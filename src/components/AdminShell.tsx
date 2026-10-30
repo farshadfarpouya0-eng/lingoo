@@ -19,6 +19,8 @@ const items: NavItem[] = [
   { key: "/admin/testing", label: "Testing", icon: "M9 3h6M10 3v5L5 19a2 2 0 002 3h10a2 2 0 002-3l-5-11V3M8 14h8", hint: "Sandbox lessons" },
   { key: "/admin/lessons", label: "Lessons", icon: "M8 2v4M16 2v4M3 8h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z", hint: "All lessons" },
   { key: "/admin/payouts", label: "Payouts", icon: "M3 7h18v10H3zM12 12a2 2 0 100-4 2 2 0 000 4z", hint: "Approve payouts" },
+  { key: "/admin/audit", label: "Audit log", icon: "M4 5h16M4 12h16M4 19h10M7 2v6M17 2v6", hint: "Admin financial actions" },
+  { key: "/admin/operations", label: "Operations", icon: "M3 12h4l3-8 4 16 3-8h4", hint: "Scheduled job health" },
   { key: "/admin/teacher-bonuses", label: "Teacher bonuses", icon: "M12 2l2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9z", hint: "Rating-based bonuses" },
   { key: "/admin/integrations", label: "Integrations", icon: "M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71", hint: "Email, storage, payments" },
   { key: "/admin/settings", label: "Settings", icon: "M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 01-.1 1.2l2 1.6-2 3.4-2.4-1a7 7 0 01-2 1.2l-.4 2.6h-4l-.4-2.6a7 7 0 01-2-1.2l-2.4 1-2-3.4 2-1.6A7 7 0 015 12a7 7 0 01.1-1.2l-2-1.6 2-3.4 2.4 1a7 7 0 012-1.2l.4-2.6h4l.4 2.6a7 7 0 012 1.2l2.4-1 2 3.4-2 1.6A7 7 0 0119 12z", hint: "Site settings" },

@@ -2,7 +2,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { learningMaterials, lessonReports, materialPurchases, transactions, users, teacherDocuments, lessons, referrals, referralRewards, referralLessonCredits } from "@/db/schema";
+import { learningMaterials, lessonReports, materialPurchases, transactions, users, teacherDocuments, lessons, referrals, referralRewards, referralLessonCredits, adminAuditLogs } from "@/db/schema";
 import { ensureReferralCode } from "@/lib/referral-service";
 import { validateUploadedPrivateFile } from "@/lib/private-storage";
 import { getUser, requireAdmin } from "@/lib/auth";
@@ -27,7 +27,7 @@ export async function saveProfileAvatar(fd: FormData) {
 
 export async function createMaterial(fd: FormData) {
   const admin = await requireAdmin();
-  const title = val(fd, "title", 160), kind = val(fd, "kind", 30);
+  const title = val(fd, "title", 160), kind = val(fd, "kind", 30), category = val(fd, "category", 40) || "general";
   const rawPayload = String(fd.get("fileUrl") || "");
   if (rawPayload.length > 900_000) return { ok: false, error: "Course text is too large. Reduce the text content or split it into multiple courses." };
   const coverUrl = val(fd, "coverUrl", 2000);
@@ -36,6 +36,8 @@ export async function createMaterial(fd: FormData) {
   if (!Number.isFinite(rawPrice) || rawPrice < 0 || rawPrice > 100000) return { ok: false, error: "Price must be between $0 and $100,000." };
   const price = Math.round(rawPrice * 100);
   if (!title || !["textbook", "audio", "worksheet"].includes(kind)) return { ok: false, error: "Enter a title and select a supported material type." };
+  const allowedCategories = ["general", "conversation", "natural_conversation", "ielts", "toefl", "toeic", "business_english", "kids", "grammar", "vocabulary", "pronunciation", "academic_english", "travel_english", "reading_writing", "exam_prep"];
+  if (!allowedCategories.includes(category)) return { ok: false, error: "Choose a supported course category." };
   if (!isFree && price < 1) return { ok: false, error: "Paid materials must have a price greater than zero." };
   let parsed: { mode?: string; pdfRef?: string; units?: Array<{ title?: string; content?: string; audioRef?: string; imageRef?: string; audioUrl?: string; imageUrl?: string }> } | null = null;
   try { parsed = JSON.parse(rawPayload); } catch { return { ok: false, error: "Course lessons are invalid. Please review the course and retry." }; }
@@ -69,7 +71,7 @@ export async function createMaterial(fd: FormData) {
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Private upload validation failed." }; }
   const fileUrl = JSON.stringify({ mode: parsed.mode || "both", pdfRef: parsed.pdfRef || "", units: parsed.units.map(u => ({ title: u.title!.trim(), content: u.content, audioRef: u.audioRef || "", imageRef: u.imageRef || "" })) });
   try {
-    await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind,
+    await db.insert(learningMaterials).values({ title, description: val(fd, "description", 2000), kind, category,
       language: val(fd, "language", 50) || "English", level: val(fd, "level", 20) || "A1", fileUrl,
       coverUrl, isFree, price: isFree ? 0 : price, published: fd.get("published") === "on", createdBy: admin.id });
   } catch { return { ok: false, error: "The course files uploaded, but the course record could not be saved. Please retry or remove orphaned files from private storage." }; }
@@ -155,13 +157,15 @@ export async function claimReferralReward(fd:FormData){
 }
 
 export async function createReferralReward(fd:FormData){
-  await requireAdmin();
+  const admin = await requireAdmin();
   const userId=Number(fd.get("userId")); const duration=Number(fd.get("duration")); const count=Number(fd.get("count"));
   if(!Number.isInteger(userId)||!([25,50].includes(duration))||!([5,10].includes(count))||!((duration===25&&count===10)||(duration===50&&count===5)))return {ok:false};
   await db.transaction(async tx=>{
     const [reward]=await tx.insert(referralRewards).values({userId,duration,lessonsGranted:count,rewardType:"admin_bonus",status:"claimed"}).returning({id:referralRewards.id});
     await tx.insert(referralLessonCredits).values({userId,duration,remainingLessons:count,sourceRewardId:reward.id});
-    await tx.insert(transactions).values({userId,type:"lesson_credit_bonus",amount:0,note:`Admin bonus: ${count} × ${duration}-minute lessons`});
+    const note = `Admin bonus: ${count} × ${duration}-minute lessons`;
+    await tx.insert(transactions).values({userId,type:"lesson_credit_bonus",amount:0,note});
+    await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: userId, action: "lesson_credit_bonus", reference: `referral_reward:${reward.id}`, note, metadata: { duration, lessonsGranted: count, rewardType: "admin_bonus" } });
   });
   revalidatePath("/dashboard"); revalidatePath("/admin"); return {ok:true};
 }

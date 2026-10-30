@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { payouts, transactions, users, teacherProfiles, lessons } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { fmt } from "@/lib/time";
-import { settleLessons } from "@/lib/money";
+import { maskPayoutAccount } from "@/lib/payout-crypto";
 
 export const dynamic = "force-dynamic";
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
@@ -15,7 +15,6 @@ const lessonStatus: Record<string, string> = { completed: "bg-emerald-100 text-e
 export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ tab?: string; ok?: string }> }) {
   const user = await getUser();
   if (!user || user.role !== "admin") redirect("/login");
-  await settleLessons();
   const { t, lang } = await (await import("@/lib/i18n")).getT();
   const { ok } = await searchParams;
 
@@ -32,7 +31,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.select({ id: users.id, name: users.name, rating: teacherProfiles.rating, lessons: teacherProfiles.lessonsCount, active: teacherProfiles.active })
         .from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId)).orderBy(desc(users.createdAt)).limit(6),
     db.select({ id: users.id, name: users.name, email: users.email, role: users.role, suspended: users.suspended }).from(users).orderBy(desc(users.createdAt)).limit(8),
-    db.select().from(payouts).orderBy(desc(payouts.createdAt)).limit(6),
+    db.select({ id: payouts.id, amount: payouts.amount, method: payouts.method, account: payouts.account, status: payouts.status }).from(payouts).orderBy(desc(payouts.createdAt)).limit(6),
     db.select().from(lessons).orderBy(desc(lessons.createdAt)).limit(8),
   ]);
   const kpis = [
@@ -85,7 +84,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             {recentPayouts.length === 0 && <p className="py-6 text-center text-xs text-slate-400">No payouts yet</p>}
             {recentPayouts.map(p => (
                 <div key={p.id} className="flex items-center justify-between py-2.5">
-                  <div><p className="text-sm font-semibold text-slate-800">{money(p.amount)}</p><p className="text-xs text-slate-400">{p.method} · {p.account.slice(0, 14)}…</p></div>
+                  <div><p className="text-sm font-semibold text-slate-800">{money(p.amount)}</p><p className="text-xs text-slate-400">{p.method} · {maskPayoutAccount(p.account)}</p></div>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${payStatus[p.status] ?? "bg-slate-100"}`}>{payLabel[p.status] ?? p.status}</span>
                 </div>
               ))}

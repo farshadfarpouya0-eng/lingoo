@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { and, desc, eq, asc, inArray } from "drizzle-orm";
+import { and, desc, eq, asc, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, materialPurchases } from "@/db/schema";
+import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, materialPurchases, lessonPackages, lessonParticipants } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
 import { classroomSnapshot } from "@/lib/room-service";
-import { fmt } from "@/lib/time";
+import { fmtAtZone } from "@/lib/time";
 import ClassroomLive from "@/components/ClassroomLive";
 import ClassroomChat from "@/components/ClassroomChat";
 import ClassroomPresence from "@/components/ClassroomPresence";
@@ -37,9 +37,24 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const reportTargets = (isTutor ? groupStudents : [{ id: other?.id || l.teacherId, name: other?.name || "Teacher", avatar: other?.avatar || "" }, ...groupStudents]).filter((person, index, all) => person.id !== user.id && all.findIndex(p => p.id === person.id) === index).map(p => ({ id: p.id, name: p.name }));
   const [pref] = isTutor ? await db.select({ platform: teacherProfiles.platformDefault }).from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : [];
   const snapshot = await classroomSnapshot(user.id, id, user.name);
-  const courseLessons = await db.select({ id: lessons.id, startAt: lessons.startAt, status: lessons.status }).from(lessons).where(and(eq(lessons.studentId, l.studentId), eq(lessons.teacherId, l.teacherId))).orderBy(asc(lessons.startAt));
+  const courseStudentId = !isTutor && l.classType === "semi_private" ? user.id : l.studentId;
+  const enrolledGroupRows = !isTutor && l.classType === "semi_private"
+    ? await db.select({ lessonId: lessonParticipants.lessonId }).from(lessonParticipants).where(and(eq(lessonParticipants.studentId, user.id), inArray(lessonParticipants.status, ["booked", "attended"])))
+    : [];
+  const coursePackageId = (isTutor || l.classType !== "semi_private" || l.studentId === user.id) ? l.packageId : null;
+  const courseLessonScope = coursePackageId
+    ? eq(lessons.packageId, coursePackageId)
+    : or(
+        and(eq(lessons.studentId, courseStudentId), eq(lessons.teacherId, l.teacherId), isNull(lessons.packageId)),
+        ...(enrolledGroupRows.length ? [and(inArray(lessons.id, enrolledGroupRows.map(x => x.lessonId)), eq(lessons.teacherId, l.teacherId))] : []),
+      );
+  const courseLessons = await db.select({ id: lessons.id, startAt: lessons.startAt, status: lessons.status }).from(lessons)
+    .where(and(courseLessonScope, inArray(lessons.status, ["pending", "confirmed", "completed"])))
+    .orderBy(asc(lessons.startAt), asc(lessons.id));
   const sessionNumber = Math.max(1, courseLessons.findIndex(x => x.id === l.id) + 1);
-  const publishedMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description, isFree: learningMaterials.isFree }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
+  const [packageRow] = coursePackageId ? await db.select({ totalLessons: lessonPackages.totalLessons }).from(lessonPackages).where(eq(lessonPackages.id, coursePackageId)).limit(1) : [];
+  const sessionTotal = packageRow?.totalLessons ?? courseLessons.length;
+  const publishedMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, category: learningMaterials.category, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description, isFree: learningMaterials.isFree }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
   const purchased = user.role === "student" ? await db.select({ materialId: materialPurchases.materialId }).from(materialPurchases).where(and(eq(materialPurchases.userId, user.id), eq(materialPurchases.status, "paid"))) : [];
   const purchasedIds = new Set(purchased.map(x => x.materialId));
   const teachingMaterials = publishedMaterials.filter(m => user.role === "teacher" || user.role === "admin" || m.isFree || purchasedIds.has(m.id)).map(({ isFree: _isFree, ...m }) => m);
@@ -60,7 +75,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Lingorain · #{id}</p>
             <h1 className="text-2xl font-bold tracking-tight text-teal-950">{t.classroom}</h1>
-            <p className="mt-1 text-xs font-semibold text-teal-700">Session {sessionNumber}{courseLessons.length ? ` of ${courseLessons.length}` : ""}</p>
+            <p className="mt-1 text-xs font-semibold text-teal-700">Session {sessionNumber}{sessionTotal ? ` of ${sessionTotal}` : ""}</p>
           </div>
         </div>
         <Link href="/dashboard?tab=lessons" className="text-sm font-semibold text-teal-700">← {t.dashboard}</Link>
@@ -68,8 +83,20 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
         <div className="space-y-5">
-          <ClassroomTeachingWorkspace lessonId={id} books={teachingMaterials} isTutor={isTutor} userId={user.id} />
-          <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmt(l.startAt, lang)} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} />
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
+                <Icon name="video" /> Live classroom
+              </div>
+              <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} />
+            </div>
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
+                <Icon name="book" /> Teaching tools
+              </div>
+              <ClassroomTeachingWorkspace lessonId={id} books={teachingMaterials} isTutor={isTutor} userId={user.id} />
+            </div>
+          </div>
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
           <ClassroomChat lessonId={id} userId={user.id} />
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -113,7 +140,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             </div>
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmt(l.startAt, lang)}</dd></div>
+              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")}</dd></div>
               <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
               {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
               {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}
@@ -131,7 +158,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
                 {history.map(h => (
                   <div key={h.id} className="border-b border-slate-50 pb-2 text-xs">
                     <p className="font-medium text-teal-800">{labels[h.fromPlatform]} → {labels[h.toPlatform]}</p>
-                    <p className="mt-1 text-[10px] text-slate-400">{fmt(h.createdAt, lang)}</p>
+                    <p className="mt-1 text-[10px] text-slate-400">{fmtAtZone(h.createdAt, lang, user.timeZone || "UTC")}</p>
                   </div>
                 ))}
               </div>

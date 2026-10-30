@@ -119,7 +119,7 @@ export async function getIntegrationStatus() {
     video: { configured: !!c.video.jitsiDomain, domain: c.video.jitsiDomain },
     realtime: { configured: c.realtime.provider === "pusher" && !!(c.realtime.appId && c.realtime.key && c.realtime.secret && c.realtime.cluster), provider: c.realtime.provider, cluster: c.realtime.cluster },
     recording: { configured: c.recording.provider === "daily" && !!c.recording.dailyApiKey && !!c.recording.dailyDomain, provider: c.recording.provider, domain: c.recording.dailyDomain },
-    rateLimit: { configured: !!(c.rateLimit.url && c.rateLimit.token), provider: c.rateLimit.url && c.rateLimit.token ? "upstash" : "memory" },
+    rateLimit: { configured: !!(c.rateLimit.url && c.rateLimit.token), provider: c.rateLimit.url && c.rateLimit.token ? "upstash" : "postgres" },
   };
 }
 
@@ -201,7 +201,9 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
       if (!new Set(["disabled", "daily"]).has(selected)) throw new Error("Invalid recording provider.");
       pub.recordingProvider = selected;
       const domain = val("dailyDomain", 253).toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
-      if (domain && !/^[a-z0-9.-]+$/.test(domain)) throw new Error("Enter your Daily domain, such as example.daily.co.");
+      if (domain && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+daily\.co$/i.test(domain)) {
+        throw new Error("Enter a Daily subdomain ending in .daily.co, such as example.daily.co; custom domains are not allowed by the current Content Security Policy.");
+      }
       if (domain) pub.dailyDomain = domain;
       saveSecret("dailyApiKey", "dailyApiKey", 1000);
       saveSecret("dailyWebhookPassword", "dailyWebhookPassword", 200);

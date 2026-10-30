@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonParticipants, lessons, users } from "@/db/schema";
+import { isAccountSuspended } from "@/lib/account-status";
 
 export async function isActiveLessonStudent(lessonId: number, userId: number, primaryStudentId?: number) {
   if (primaryStudentId === userId) {
@@ -14,8 +15,8 @@ export async function isActiveLessonStudent(lessonId: number, userId: number, pr
 }
 
 export async function canAccessLesson(lessonId: number, userId: number) {
-  const [caller] = await db.select({ role: users.role, suspended: users.suspended }).from(users).where(eq(users.id, userId)).limit(1);
-  if (!caller || caller.suspended) return false;
+  const [caller] = await db.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!caller || isAccountSuspended(caller.suspended, caller.suspendedUntil)) return false;
   if (caller.role === "admin") return true;
 
   const [lesson] = await db.select({ studentId: lessons.studentId, teacherId: lessons.teacherId, classType: lessons.classType }).from(lessons).where(eq(lessons.id, lessonId)).limit(1);

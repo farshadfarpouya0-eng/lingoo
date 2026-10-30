@@ -5,6 +5,7 @@ import { getUser } from "@/lib/auth";
 import { hit } from "@/lib/ratelimit";
 import { classroomSnapshot } from "@/lib/room-service";
 import { canAccessLesson, activeLessonStudentIds } from "@/lib/lesson-access";
+import { isAccountSuspended } from "@/lib/account-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,14 +32,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     ? (await activeLessonStudentIds(lessonId, lesson.studentId, "semi_private")).filter(id => id !== actor.id)
     : [lesson.teacherId];
   const otherIds = candidates.length ? candidates : [actor.id === lesson.teacherId ? lesson.studentId : lesson.teacherId];
-  const others = await db.select({ id: users.id, name: users.name, suspended: users.suspended, presence: userPresence })
+  const others = await db.select({ id: users.id, name: users.name, suspended: users.suspended, suspendedUntil: users.suspendedUntil, presence: userPresence })
     .from(users).leftJoin(userPresence, eq(userPresence.userId, users.id)).where(inArray(users.id, otherIds));
   const other = others.find(o => o.presence?.online && now.getTime() - (o.presence.lastSeenAt?.getTime() || 0) <= 60_000) || others[0];
   const visible = other?.presence?.visible !== false;
   const lastSeenMs = other?.presence?.lastSeenAt?.getTime() ?? 0;
   const recentlySeen = !!lastSeenMs && now.getTime() - lastSeenMs <= 60_000;
   return Response.json({
-    other: { name: visible ? (other?.name ?? "Participant") : "Participant", online: visible && recentlySeen && !!other?.presence?.online && !other?.suspended,
+    other: { name: visible ? (other?.name ?? "Participant") : "Participant", online: visible && recentlySeen && !!other?.presence?.online && !isAccountSuspended(other?.suspended ?? false, other?.suspendedUntil),
       lastSeenAt: visible ? (other?.presence?.lastSeenAt?.toISOString() ?? null) : null, hidden: !visible },
     otherCount: others.filter(o => o.id !== actor.id).length,
     serverTime: now.toISOString(),

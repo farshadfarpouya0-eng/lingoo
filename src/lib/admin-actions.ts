@@ -1,9 +1,11 @@
 "use server";
 import { revalidatePath, updateTag } from "next/cache";
+import { decryptPayoutAccount, encryptPayoutAccount } from "./payout-crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { payouts, teacherProfiles, users, lessons, teacherDocuments, lessonReports, lessonParticipants } from "@/db/schema";
+import { payoutAccountAccessLogs, payouts, teacherProfiles, users, lessons, teacherDocuments, lessonReports, lessonParticipants, adminAuditLogs } from "@/db/schema";
 import { requireAdmin } from "./auth";
+import { isValidTimeZone } from "./time";
 import { hit } from "./ratelimit";
 import { PUBLIC_TUTORS_TAG } from "./public-tutors";
 import { refundStudent, refundGroupSeat, ledger } from "./money";
@@ -79,10 +81,10 @@ export async function setTeacherActive(fd: FormData): Promise<void> {
 }
 
 export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id) || id < 1) return { ok: false, error: "id" };
-  const [target] = await db.select({ role: users.role, avatar: users.avatar }).from(users).where(eq(users.id, id));
+  const [target] = await db.select({ role: users.role, avatar: users.avatar, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, id));
   if (!target || target.role !== "teacher") return { ok: false, error: "not_found" };
 
   const name = str(fd, "name", 60);
@@ -92,17 +94,27 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
   const avatar = str(fd, "avatar", 500);
   if (avatar && avatar !== target.avatar && !validAvatar(avatar)) return { ok: false, error: "avatar" };
   const nativeLang = LANGS.includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) : "en";
+  const requestedTimeZone = str(fd, "timeZone", 80);
+  const timeZone = isValidTimeZone(requestedTimeZone) ? requestedTimeZone : "UTC";
   const startHour = intIn(fd.get("startHour"), 0, 23, 9);
   const endHour = Math.max(startHour + 1, intIn(fd.get("endHour"), 1, 24, 21));
   const rating = Number(fd.get("rating"));
+  const payoutAccountInput = str(fd, "payoutAccount", 200);
+  if (payoutAccountInput && payoutAccountInput.length < 4) return { ok: false, error: "payout_account" };
 
   try {
     await db.transaction(async tx => {
+      const nextSuspended = fd.get("suspended") === "on";
+      const nextSuspendedUntil = nextSuspended && target.suspended ? target.suspendedUntil : null;
       await tx.update(users).set({
         name, email, nativeLang,
         ...(avatar ? { avatar } : {}),
-        suspended: fd.get("suspended") === "on",
+        suspended: nextSuspended,
+        suspendedUntil: nextSuspendedUntil,
       }).where(and(eq(users.id, id), eq(users.role, "teacher")));
+      if (nextSuspended !== target.suspended || target.suspendedUntil) {
+        await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: id, action: nextSuspended ? "account_suspended" : "account_reinstated", reference: `user:${id}`, note: "Account status changed from Admin → Tutors", metadata: { permanent: nextSuspended && !nextSuspendedUntil, suspendedUntil: nextSuspendedUntil?.toISOString() ?? null, previousSuspended: target.suspended, previousSuspendedUntil: target.suspendedUntil?.toISOString() ?? null } });
+      }
       await tx.update(teacherProfiles).set({
         headline: str(fd, "headline", 140),
         bio: str(fd, "bio", 4000),
@@ -114,11 +126,11 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
         rating: Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 5,
         reviewsCount: intIn(fd.get("reviewsCount"), 0, 1_000_000, 0),
         lessonsCount: intIn(fd.get("lessonsCount"), 0, 1_000_000, 0),
-        startHour, endHour,
+        startHour, endHour, timeZone,
         tzOffset: intIn(fd.get("tzOffset"), -12, 14, 0),
         workDays: (fd.getAll("workDays") as unknown as string[]).filter(Boolean).join(",") || "1,2,3,4,5",
         payoutMethod: str(fd, "payoutMethod", 60),
-        payoutAccount: str(fd, "payoutAccount", 200),
+        ...(payoutAccountInput ? { payoutAccount: encryptPayoutAccount(payoutAccountInput) } : {}),
         certified: fd.get("certified") === "on",
         active: fd.get("active") === "on",
       }).where(eq(teacherProfiles.userId, id));
@@ -134,10 +146,10 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
 }
 
 export async function updateStudent(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
   if (!Number.isInteger(id) || id < 1) return { ok: false, error: "id" };
-  const [target] = await db.select({ role: users.role, avatar: users.avatar }).from(users).where(eq(users.id, id));
+  const [target] = await db.select({ role: users.role, avatar: users.avatar, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, id));
   if (!target || target.role !== "student") return { ok: false, error: "not_found" };
   const name = str(fd, "name", 60);
   if (!name) return { ok: false, error: "name" };
@@ -148,13 +160,21 @@ export async function updateStudent(_p: unknown, fd: FormData): Promise<{ ok: bo
   const level = str(fd, "level", 2);
   const nativeLang = str(fd, "nativeLang", 2);
   try {
-    await db.update(users).set({
-      name, email,
-      level: LEVELS.includes(level) ? level : "A1",
-      nativeLang: LANGS.includes(nativeLang) ? nativeLang : "en",
-      ...(avatar ? { avatar } : {}),
-      suspended: fd.get("suspended") === "on",
-    }).where(and(eq(users.id, id), eq(users.role, "student")));
+    await db.transaction(async tx => {
+      const nextSuspended = fd.get("suspended") === "on";
+      const nextSuspendedUntil = nextSuspended && target.suspended ? target.suspendedUntil : null;
+      await tx.update(users).set({
+        name, email,
+        level: LEVELS.includes(level) ? level : "A1",
+        nativeLang: LANGS.includes(nativeLang) ? nativeLang : "en",
+        ...(avatar ? { avatar } : {}),
+        suspended: nextSuspended,
+        suspendedUntil: nextSuspendedUntil,
+      }).where(and(eq(users.id, id), eq(users.role, "student")));
+      if (nextSuspended !== target.suspended || target.suspendedUntil) {
+        await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: id, action: nextSuspended ? "account_suspended" : "account_reinstated", reference: `user:${id}`, note: "Account status changed from Admin → Students", metadata: { permanent: nextSuspended && !nextSuspendedUntil, suspendedUntil: nextSuspendedUntil?.toISOString() ?? null, previousSuspended: target.suspended, previousSuspendedUntil: target.suspendedUntil?.toISOString() ?? null } });
+      }
+    });
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, error: "email_taken" };
     throw error;
@@ -199,7 +219,7 @@ export async function saveTeacherSchedule(_p: unknown, fd: FormData) {
 
 /* ------------------------- Students ------------------------- */
 export async function adjustStudentBalance(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string; balance?: number }> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
   const rawDelta = Number(fd.get("delta"));
   const delta = Math.round(rawDelta * 100);
@@ -214,8 +234,11 @@ export async function adjustStudentBalance(_p: unknown, fd: FormData): Promise<{
     const actualDelta = next - current.balance;
     const [updated] = await tx.update(users).set({ balance: next }).where(eq(users.id, id)).returning({ balance: users.balance });
     newBal = updated.balance;
-    if (actualDelta) await ledger(tx, id, u.role === "teacher" ? "teacher_balance_adjustment" : "adjustment", actualDelta,
-      str(fd, "note", 300) || (u.role === "teacher" ? "Admin teacher earnings balance adjustment" : "Admin student wallet adjustment"));
+    if (actualDelta) {
+      const note = str(fd, "note", 300) || (u.role === "teacher" ? "Admin teacher earnings balance adjustment" : "Admin student wallet adjustment");
+      await ledger(tx, id, u.role === "teacher" ? "teacher_balance_adjustment" : "adjustment", actualDelta, note);
+      await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: id, action: "balance_adjustment", amount: actualDelta, balanceBefore: current.balance, balanceAfter: updated.balance, reference: `user:${id}`, note, metadata: { role: u.role } });
+    }
   });
   revalidateAll();
   return { ok: true, error: "", balance: newBal };
@@ -264,29 +287,71 @@ function inArrayStatus(list: string[]) {
 }
 
 /* ------------------------- Payouts ------------------------- */
+export async function revealPayoutAccount(payoutId: number): Promise<{ ok: true; account: string } | { ok: false; error: string }> {
+  const admin = await requireAdmin();
+  if (!Number.isSafeInteger(payoutId) || payoutId < 1) return { ok: false, error: "invalid" };
+  if (!await hit(`payout-account-reveal:${admin.id}`, 20, 60 * 60_000)) return { ok: false, error: "rate" };
+  const [row] = await db.select({ id: payouts.id, account: payouts.account, status: payouts.status }).from(payouts).where(eq(payouts.id, payoutId)).limit(1);
+  if (!row) return { ok: false, error: "not_found" };
+  if (!["pending", "approved", "processing"].includes(row.status)) return { ok: false, error: "not_active" };
+  // Every full reveal is recorded. Lists and normal page rendering only receive a mask.
+  await db.insert(payoutAccountAccessLogs).values({ adminId: admin.id, payoutId, purpose: "payout_processing" });
+  try {
+    return { ok: true, account: decryptPayoutAccount(row.account) };
+  } catch {
+    return { ok: false, error: "key_unavailable" };
+  }
+}
+
 export async function processPayout(_p: unknown, fd: FormData) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
-  const action = String(fd.get("action"));
-  if (!Number.isInteger(id) || (action !== "paid" && action !== "rejected")) return { error: "id" };
-  await db.transaction(async (tx) => {
-    const [p] = await tx.update(payouts)
-      .set({ status: action === "paid" ? "paid" : "rejected", processedAt: new Date(), note: str(fd, "note", 300) })
-      .where(and(eq(payouts.id, id), eq(payouts.status, "pending")))
-      .returning();
-    if (p && action === "rejected") {
+  const action = String(fd.get("action") ?? "");
+  const note = str(fd, "note", 300);
+  const providerReference = str(fd, "providerReference", 120);
+  if (!Number.isSafeInteger(id) || id < 1 || !["approve", "processing", "paid", "rejected"].includes(action)) return { ok: false, error: "invalid" };
+  if (action === "paid" && providerReference.length < 3) return { ok: false, error: "reference_required" };
+  let changed = false;
+  await db.transaction(async tx => {
+    const [p] = await tx.select().from(payouts).where(eq(payouts.id, id)).for("update");
+    if (!p) return;
+    const from = p.status;
+    const allowed = action === "approve" ? from === "pending"
+      : action === "processing" ? from === "approved"
+      : action === "paid" ? ["approved", "processing"].includes(from)
+      : ["pending", "approved", "processing"].includes(from);
+    if (!allowed) return;
+    const now = new Date();
+    const to = action === "approve" ? "approved" : action === "processing" ? "processing" : action;
+    const [updated] = await tx.update(payouts).set({
+      status: to, reviewedBy: admin.id, reviewedAt: now,
+      ...(action === "paid" || action === "rejected" ? { processedAt: now } : {}),
+      ...(providerReference ? { providerReference } : {}),
+      ...(note ? { note } : {}),
+    }).where(and(eq(payouts.id, id), eq(payouts.status, from))).returning({ id: payouts.id });
+    if (!updated) return;
+    if (action === "rejected") {
       await tx.update(users).set({ balance: sql`${users.balance} + ${p.amount}` }).where(eq(users.id, p.teacherId));
       await ledger(tx, p.teacherId, "payout_refund", p.amount, `Payout #${p.id} rejected`, undefined, `payout-reject:${p.id}`);
     }
+    await tx.insert(adminAuditLogs).values({
+      adminId: admin.id, targetUserId: p.teacherId, action: `payout_${to}`, amount: p.amount,
+      reference: providerReference || `payout:${p.id}`, note,
+      metadata: { payoutId: p.id, previousStatus: from, nextStatus: to, method: p.method },
+    });
+    changed = true;
   });
+  if (!changed) return { ok: false, error: "invalid_transition" };
   revalidateAll();
+  revalidatePath("/admin/payouts");
+  revalidatePath("/dashboard?tab=wallet");
   return { ok: true };
 }
 
 
 /* ------------------------- Verification & support reports ------------------------- */
 export async function reviewTeacherDocument(fd: FormData) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
   const status = str(fd, "status", 20);
   if (!Number.isSafeInteger(id) || id < 1 || !["verified", "rejected"].includes(status)) return { ok: false, error: "invalid" };
@@ -301,6 +366,12 @@ export async function reviewTeacherDocument(fd: FormData) {
       await tx.update(teacherProfiles).set({ certified: Number(verified?.count || 0) > 0 })
         .where(eq(teacherProfiles.userId, reviewed.teacherId));
     }
+    const [credential] = await tx.select({ count: sql<number>`count(*)::int` }).from(teacherDocuments)
+      .where(and(eq(teacherDocuments.teacherId, reviewed.teacherId), eq(teacherDocuments.optionalCredential, true), eq(teacherDocuments.status, "verified")));
+    const credentialVerified = Number(credential?.count || 0) > 0;
+    await tx.update(teacherProfiles).set({ credentialVerified })
+      .where(eq(teacherProfiles.userId, reviewed.teacherId));
+    await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: reviewed.teacherId, action: "teacher_document_review", reference: `teacher_document:${reviewed.id}`, note: `${reviewed.documentType}: ${status}`, metadata: { documentId: reviewed.id, documentType: reviewed.documentType, optionalCredential: reviewed.documentType !== "identity", status, credentialVerified } });
     return reviewed;
   });
   if (!doc) return { ok: false, error: "already_reviewed" };

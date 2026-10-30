@@ -1,10 +1,11 @@
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { accountingEntries, lessonPackages, lessonParticipants, lessons, referralLessonCredits, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "@/db/schema";
 import { FREE_CANCEL_HOURS, ledger, payGroupSeat, payTeacher, refundGroupSeat, refundStudent } from "./money";
 import { slotIsBookable } from "./time";
 import { unitLessonPrice } from "./package-pricing";
 import { qualifyStudentReferral } from "./referral-service";
+import { isAccountSuspended } from "./account-status";
 
 export type BookingInput = {
   teacherId: number; startAt: Date; duration: number; trial?: boolean; packageId?: number; topic?: string;
@@ -22,10 +23,10 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
 
   return db.transaction(async tx => {
     const [student] = await tx.select().from(users).where(eq(users.id, studentId)).for("update");
-    if (!student || student.role !== "student" || student.suspended) throw new Error("forbidden");
+    if (!student || student.role !== "student" || isAccountSuspended(student.suspended, student.suspendedUntil)) throw new Error("forbidden");
 
     const [tutor] = await tx.select({ p: teacherProfiles }).from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId))
-      .where(and(eq(teacherProfiles.userId, input.teacherId), eq(teacherProfiles.active, true), eq(users.suspended, false)));
+      .where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, input.teacherId), eq(teacherProfiles.active, true), or(eq(users.suspended, false), and(eq(users.suspended, true), lte(users.suspendedUntil, new Date())))));
 
     const duration = input.trial ? 25 : input.duration;
     const end = new Date(input.startAt.getTime() + duration * 60_000);
@@ -185,9 +186,9 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
     const [l] = await tx.select().from(lessons).where(eq(lessons.id, lessonId)).for("update");
     if (!l) throw new Error("forbidden");
 
-    const [actor] = await tx.select({ id: users.id, role: users.role, suspended: users.suspended })
+    const [actor] = await tx.select({ id: users.id, role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil })
       .from(users).where(eq(users.id, actorId));
-    if (!actor || actor.suspended || !["student", "teacher"].includes(actor.role)) throw new Error("forbidden");
+    if (!actor || isAccountSuspended(actor.suspended, actor.suspendedUntil) || !["student", "teacher"].includes(actor.role)) throw new Error("forbidden");
 
     const isTeacher = l.teacherId === actorId && actor.role === "teacher";
 

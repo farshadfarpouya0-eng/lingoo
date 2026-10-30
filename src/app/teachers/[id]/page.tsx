@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq, gt, inArray, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonPackages, lessonParticipants, lessons, reviews, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users } from "@/db/schema";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
 import { getUser } from "@/lib/auth";
 import { teacherQuery } from "@/lib/queries";
-import { buildSlots, formatMinutes, nowMs, tzFor, weekdayName } from "@/lib/time";
+import { buildSlots, formatMinutes, nowMs, tzFor, weekdayName, zonedParts, fmt } from "@/lib/time";
 import { sendMessage } from "@/lib/actions";
 import { FLAGS } from "@/components/TeacherCard";
 import BookingPanel from "@/components/BookingPanel";
@@ -24,7 +24,7 @@ export default async function TeacherPage({ params, searchParams }: {
   const sp = await searchParams;
   const { t, lang } = await getT();
   const c = LEARNING[lang];
-  const [tr] = await teacherQuery().where(and(eq(teacherProfiles.userId, tid), eq(teacherProfiles.active, true), eq(users.suspended, false)));
+  const [tr] = await teacherQuery().where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, tid), eq(teacherProfiles.active, true), or(eq(users.suspended, false), lte(users.suspendedUntil, new Date()))));
   if (!tr) notFound();
   const user = await getUser();
   const [booked, revs, prev, credits, weeklySlots, blockedSlots] = await Promise.all([
@@ -55,13 +55,14 @@ export default async function TeacherPage({ params, searchParams }: {
   const days25 = buildSlots(lang, avail, taken, 25);
   const mergeGroupSlots = (base: typeof days, duration: number) => {
     const map = new Map(base.map(d => [d.key, { ...d, slots: [...d.slots] }]));
-    const off = tzFor(lang).off;
+    const zone = tr.timeZone || "UTC";
     for (const g of groupSlots.filter(x => x.duration === duration)) {
       const start = new Date(g.iso);
-      const key = new Date(start.getTime() + off * 3600_000).toISOString().slice(0, 10);
-      if (!map.has(key)) map.set(key, { key, label: new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : "en-US", { weekday: "short", month: "numeric", day: "numeric", timeZone: tzFor(lang).tz }).format(start), slots: [] });
+      const parts = zonedParts(start, zone);
+      const key = `${parts.year}-${String(parts.month).padStart(2,"0")}-${String(parts.day).padStart(2,"0")}`;
+      if (!map.has(key)) map.set(key, { key, label: fmt(start, lang, { weekday: "short", month: "numeric", day: "numeric" }, zone), slots: [] });
       const day = map.get(key)!;
-      if (!day.slots.some(s => s.iso === g.iso)) day.slots.push({ iso: g.iso, label: new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : "en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tzFor(lang).tz }).format(start) });
+      if (!day.slots.some(s => s.iso === g.iso)) day.slots.push({ iso: g.iso, label: fmt(start, lang, { hour: "2-digit", minute: "2-digit", hour12: false }, zone) });
     }
     return [...map.values()].map(d => ({ ...d, slots: d.slots.sort((a,b) => a.iso.localeCompare(b.iso)) })).sort((a,b) => a.key.localeCompare(b.key)).slice(0,14);
   };
@@ -74,14 +75,14 @@ export default async function TeacherPage({ params, searchParams }: {
       ? weeklySlots.filter(r => r.weekday === wd).sort((a, b) => a.startMinute - b.startMinute)
       : legacyDays.has(wd) ? [{ weekday: wd, startMinute: tr.startHour * 60, endMinute: tr.endHour * 60 }] : [],
   }));
-  const tz = tzFor(lang);
+  const tz = tzFor(lang, tr.timeZone);
   const errKey = sp.err ? `err_${sp.err}` as keyof typeof t : null;
   const error = sp.err === "credit" || sp.err === "trial" ? c.planError : errKey ? t[errKey] || t.err_generic : "";
   return <div className="mx-auto grid max-w-7xl items-start gap-7 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
     <div className="space-y-6">
-      <div className="flex flex-col gap-6 rounded-[26px] border border-slate-200 bg-white p-7 sm:flex-row"><img src={tr.avatar || ""} alt={tr.name} width={144} height={144} className="h-36 w-36 rounded-3xl object-cover"/><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h1 className="text-3xl font-bold tracking-tight text-teal-950">{tr.name}</h1><span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{FLAGS[tr.country]}</span>{tr.certified&&<span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600">Verified</span>}</div><p className="mt-2 text-sm leading-6 text-slate-500">{tr.headline}</p><div className="mt-3 flex flex-wrap gap-4 text-xs"><span className="font-bold text-amber-600">★ {tr.rating.toFixed(2)}</span><span className="text-slate-400">{tr.reviewsCount} {t.reviews}</span><span className="text-slate-400">{tr.lessonsCount} {t.lessons}</span><span className="text-slate-400">{tr.accent}</span></div><p className="mt-3 text-xs text-slate-500">{t.speaks}: <b>{tr.speaks}</b></p><div className="mt-3 flex flex-wrap gap-1.5">{tr.tags.split(",").filter(Boolean).map(g=><span key={g} className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-semibold text-teal-700">{g}</span>)}</div></div></div>
+      <div className="flex flex-col gap-6 rounded-[26px] border border-slate-200 bg-white p-7 sm:flex-row"><img src={tr.avatar || ""} alt={tr.name} width={144} height={144} className="h-36 w-36 rounded-3xl object-cover"/><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h1 className="text-3xl font-bold tracking-tight text-teal-950">{tr.name}</h1><span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{FLAGS[tr.country]}</span>{tr.certified&&<span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-600">Identity verified</span>}{tr.credentialVerified&&<span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-bold text-teal-700">Teaching credentials verified</span>}</div><p className="mt-2 text-sm leading-6 text-slate-500">{tr.headline}</p><div className="mt-3 flex flex-wrap gap-4 text-xs"><span className="font-bold text-amber-600">★ {tr.rating.toFixed(2)}</span><span className="text-slate-400">{tr.reviewsCount} {t.reviews}</span><span className="text-slate-400">{tr.lessonsCount} {t.lessons}</span><span className="text-slate-400">{tr.accent}</span></div><p className="mt-3 text-xs text-slate-500">{t.speaks}: <b>{tr.speaks}</b></p><div className="mt-3 flex flex-wrap gap-1.5">{tr.tags.split(",").filter(Boolean).map(g=><span key={g} className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-semibold text-teal-700">{g}</span>)}</div></div></div>
       <div className="rounded-[26px] border border-slate-200 bg-white p-7"><h2 className="text-xl font-bold text-teal-950">{t.about}</h2><p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">{tr.bio}</p></div>
-      <div className="rounded-[26px] border border-slate-200 bg-white p-7"><h2 className="text-xl font-bold text-teal-950">{t.schedule}</h2><p className="mt-1 text-xs text-slate-400">{t.yourTz} {tz.label}</p><div className="mt-4 rounded-2xl border border-slate-100 p-4"><h3 className="text-sm font-bold text-teal-950">{t.weeklySummary} <span className="ml-1 font-normal text-slate-400">({t.tutorTz}: UTC{tr.tzOffset >= 0 ? "+" : ""}{tr.tzOffset})</span></h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{weeklySummary.map(d => <div key={d.wd} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs"><span className="font-bold text-slate-600">{d.label}</span>{d.ranges.length ? <span className="text-right font-semibold text-teal-700">{d.ranges.map(r => `${formatMinutes(r.startMinute)}–${formatMinutes(r.endMinute)}`).join(" · ")}</span> : <span className="text-slate-400">{t.closedDay}</span>}</div>)}</div></div><div className="mt-4 grid gap-3 sm:grid-cols-2">{days.slice(0,6).map(d=><div key={d.key} className="rounded-2xl bg-slate-50 p-3"><div className="mb-2 text-sm font-bold text-slate-600">{d.label}</div><div className="flex flex-wrap gap-1">{d.slots.slice(0,8).map(s=><span key={s.iso} className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold text-teal-700 ring-1 ring-teal-100">{s.label}</span>)}{d.slots.length>8&&<span className="text-xs text-slate-400">+{d.slots.length-8}</span>}</div></div>)}</div>{!days.length&&<p className="mt-3 text-slate-400">{t.noSlots}</p>}</div>
+      <div className="rounded-[26px] border border-slate-200 bg-white p-7"><h2 className="text-xl font-bold text-teal-950">{t.schedule}</h2><p className="mt-1 text-xs text-slate-400">{t.yourTz} {tz.label}</p><div className="mt-4 rounded-2xl border border-slate-100 p-4"><h3 className="text-sm font-bold text-teal-950">{t.weeklySummary} <span className="ml-1 font-normal text-slate-400">({t.tutorTz}: {tr.timeZone})</span></h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{weeklySummary.map(d => <div key={d.wd} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs"><span className="font-bold text-slate-600">{d.label}</span>{d.ranges.length ? <span className="text-right font-semibold text-teal-700">{d.ranges.map(r => `${formatMinutes(r.startMinute)}–${formatMinutes(r.endMinute)}`).join(" · ")}</span> : <span className="text-slate-400">{t.closedDay}</span>}</div>)}</div></div><div className="mt-4 grid gap-3 sm:grid-cols-2">{days.slice(0,6).map(d=><div key={d.key} className="rounded-2xl bg-slate-50 p-3"><div className="mb-2 text-sm font-bold text-slate-600">{d.label}</div><div className="flex flex-wrap gap-1">{d.slots.slice(0,8).map(s=><span key={s.iso} className="rounded-md bg-white px-2 py-0.5 text-xs font-semibold text-teal-700 ring-1 ring-teal-100">{s.label}</span>)}{d.slots.length>8&&<span className="text-xs text-slate-400">+{d.slots.length-8}</span>}</div></div>)}</div>{!days.length&&<p className="mt-3 text-slate-400">{t.noSlots}</p>}</div>
       <div className="rounded-[26px] border border-slate-200 bg-white p-7"><h2 className="text-xl font-bold text-teal-950">★ {tr.rating.toFixed(1)} · {tr.reviewsCount} {t.reviews}</h2><div className="mt-4 divide-y divide-slate-100">{revs.map((r,i)=><div key={i} className="flex gap-3 py-4"><img src={r.avatar || ""} alt="" width={40} height={40} loading="lazy" className="h-10 w-10 rounded-full bg-slate-100 object-cover"/><div><div className="text-sm font-semibold text-slate-700">{r.name} <span className="text-amber-500">{"★".repeat(r.rating)}</span></div><p className="mt-1 text-sm text-slate-500">{r.comment}</p></div></div>)}</div></div>
     </div>
     <aside className="space-y-4 lg:sticky lg:top-24">

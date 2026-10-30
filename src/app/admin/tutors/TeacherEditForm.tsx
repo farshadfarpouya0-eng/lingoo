@@ -4,6 +4,7 @@ import Link from "next/link";
 import { updateTeacher } from "@/lib/admin-actions";
 import type { T } from "@/lib/i18n";
 import type { TRow } from "./types";
+import { COMMON_TIME_ZONES } from "@/lib/time";
 export type { TRow };
 const inp = "w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-teal-500";
 const lab = "block text-xs font-semibold text-slate-500";
@@ -11,7 +12,7 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ERRORS: Record<string, string> = {
   id: "Invalid tutor.", not_found: "This tutor no longer exists.", name: "Please enter a name.",
   email: "Please enter a valid email address.", email_taken: "Another account already uses this email.",
-  avatar: "The photo must be an https:// link.",
+  avatar: "The photo must be an https:// link.", payout_account: "A payout account must contain at least 4 characters.",
 };
 const ID_LABEL = { verified: "ID verified", pending: "ID uploaded — waiting for review", rejected: "ID rejected", none: "No ID uploaded yet" } as const;
 
@@ -62,7 +63,8 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
             <div className="grid grid-cols-2 gap-3">
               <label className={lab}>{t.from} (tutor local)<input name="startHour" type="number" min={0} max={23} defaultValue={row.startHour} className={inp} /></label>
               <label className={lab}>{t.to}<input name="endHour" type="number" min={1} max={24} defaultValue={row.endHour} className={inp} /></label>
-              <label className={`${lab} col-span-2`}>{t.timezone} (UTC offset)<input name="tzOffset" type="number" min={-12} max={14} defaultValue={row.tzOffset} className={inp} /></label>
+              <label className={`${lab} col-span-2`}>Time zone (IANA)<select name="timeZone" defaultValue={row.timeZone || "UTC"} className={inp}>{COMMON_TIME_ZONES.map(zone => <option key={zone} value={zone}>{zone}</option>)}</select></label>
+              <input type="hidden" name="tzOffset" value={row.tzOffset} />
             </div>
             <div className="mt-4">
               <p className="mb-2 text-xs font-semibold text-slate-500">{t.workDays}</p>
@@ -81,7 +83,7 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
             <p className="mb-3 text-xs text-slate-500">Earnings balance: <b>${(row.balance / 100).toFixed(2)}</b> (adjust it from the Tutors list).</p>
             <div className="grid gap-3">
               <label className={lab}>Payout method<input name="payoutMethod" maxLength={60} defaultValue={row.payoutMethod} className={inp} /></label>
-              <label className={lab}>Payout account<input name="payoutAccount" maxLength={200} defaultValue={row.payoutAccount} className={inp} /></label>
+              <label className={lab}>Replace payout account<input name="payoutAccount" minLength={4} maxLength={200} autoComplete="off" placeholder="Leave blank to keep saved details" className={inp} /></label>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Unit = { title: string; content: string; audioRef?: string; imageRef?: string };
-type Book = { id: number; title: string; level: string; fileUrl: string; description: string };
+type Book = { id: number; title: string; category?: string; level: string; fileUrl: string; description: string };
 type Point = { x: number; y: number };
 type Stroke = { color: string; points: Point[] };
 type WorkspaceState = { bookId: number | null; page: number; unitIndex: number; audioTime: number; audioPlaying: boolean; question: string; answer: string; feedback: string; boardStrokes: Stroke[] };
@@ -14,27 +14,29 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
   const [state, setState] = useState<WorkspaceState>(() => ({ ...blank, bookId: books[0]?.id ?? null }));
   const [tab, setTab] = useState<"book" | "board" | "practice">("book");
   const [syncStatus, setSyncStatus] = useState("Connecting to shared classroom…");
+  const revision = useRef(0); const dirty = useRef(false); const conflicted = useRef(false); const [conflict, setConflict] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null); const audioRef = useRef<HTMLAudioElement>(null);
   const drawing = useRef(false); const activeStroke = useRef<Point[]>([]); const lastAudioSync = useRef(0); const latest = useRef(""); const initialized = useRef(false); const suppressSave = useRef(false); const stateRef = useRef(state); stateRef.current = state;
   const book = books.find(b => b.id === state.bookId) || books[0]; const decoded = book ? decodeBook(book) : null; const unit = decoded?.units[state.unitIndex];
   const pdfUrl = book && decoded?.pdfRef ? `/api/private-files/material/${book.id}/asset?asset=pdf` : "";
   const audioUrl = book && unit?.audioRef ? `/api/private-files/material/${book.id}/asset?unit=${state.unitIndex}&type=audio` : "";
-  const update = useCallback((patch: Partial<WorkspaceState>) => setState(prev => ({ ...prev, ...patch })), []);
+  const update = useCallback((patch: Partial<WorkspaceState>) => { dirty.current = true; setState(prev => ({ ...prev, ...patch })); }, []);
 
   useEffect(() => {
     let alive = true;
     const poll = async () => {
       try {
         const res = await fetch(`/api/lessons/${lessonId}/workspace`, { cache: "no-store" }); if (!res.ok) throw new Error("sync");
-        const payload = await res.json() as { state?: Partial<WorkspaceState>; updatedAt?: string | null; updatedBy?: number | null };
+        const payload = await res.json() as { state?: Partial<WorkspaceState>; revision?: number; updatedAt?: string | null; updatedBy?: number | null };
         if (!alive) return;
-        if (payload.updatedAt && payload.updatedAt !== latest.current && (!initialized.current || payload.updatedBy !== userId)) {
+        if (Number.isSafeInteger(payload.revision) && (payload.revision ?? 0) > revision.current) revision.current = payload.revision ?? revision.current;
+        if (payload.updatedAt && payload.updatedAt !== latest.current && !dirty.current && (!initialized.current || payload.updatedBy !== userId)) {
           const remote = payload.state || {};
           suppressSave.current = true; latest.current = payload.updatedAt;
           setState(prev => ({ ...prev, ...remote, bookId: books.some(b => b.id === Number(remote.bookId)) ? Number(remote.bookId) : prev.bookId, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : prev.boardStrokes } as WorkspaceState));
           window.setTimeout(() => { suppressSave.current = false; }, 150);
         }
-        if (!payload.updatedAt) initialized.current = true;
+        initialized.current = true;
         setSyncStatus("Shared classroom connected · auto-saving");
       } catch { if (alive) setSyncStatus("Reconnecting…"); }
     };
@@ -46,14 +48,29 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
     if (suppressSave.current) return;
     const timer = window.setTimeout(async () => {
       try {
-        const res = await fetch(`/api/lessons/${lessonId}/workspace`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
+        const res = await fetch(`/api/lessons/${lessonId}/workspace`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...state, expectedRevision: revision.current }) });
+        if (res.status === 409) { conflicted.current = true; setConflict(true); setSyncStatus("A participant saved a newer version. Your state was not written over it."); return; }
         if (!res.ok) { setSyncStatus(res.status === 403 ? "A selected book is not available to all participants" : "Save failed · retry on next change"); return; }
-        const payload = await res.json() as { updatedAt?: string }; if (payload.updatedAt) latest.current = payload.updatedAt;
+        const payload = await res.json() as { updatedAt?: string; revision?: number }; if (payload.updatedAt) latest.current = payload.updatedAt; if (Number.isSafeInteger(payload.revision)) revision.current = payload.revision!; dirty.current = false;
         setSyncStatus("Shared classroom connected · saved");
       } catch { setSyncStatus("Offline · waiting to reconnect"); }
     }, 800);
     return () => window.clearTimeout(timer);
   }, [lessonId, state]);
+
+  const syncLatest = async () => {
+    try {
+      const res = await fetch(`/api/lessons/${lessonId}/workspace`, { cache: "no-store" });
+      if (!res.ok) throw new Error("sync");
+      const payload = await res.json() as { state?: Partial<WorkspaceState>; revision?: number; updatedAt?: string | null };
+      suppressSave.current = true; dirty.current = false; conflicted.current = false; setConflict(false);
+      revision.current = payload.revision ?? 0; latest.current = payload.updatedAt || "";
+      const remote = payload.state || {};
+      setState({ ...blank, ...remote, bookId: books.some(b => b.id === Number(remote.bookId)) ? Number(remote.bookId) : books[0]?.id ?? null, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : [] } as WorkspaceState);
+      window.setTimeout(() => { suppressSave.current = false; }, 200);
+      setSyncStatus("Latest classroom version loaded");
+    } catch { setSyncStatus("Could not load the latest classroom version"); }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current; const ctx = canvas?.getContext("2d"); if (!canvas || !ctx) return;
@@ -74,7 +91,7 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
   const stopDraw = () => { if(!drawing.current)return; drawing.current=false; const points=activeStroke.current; activeStroke.current=[]; if(points.length) update({boardStrokes:[...stateRef.current.boardStrokes,{color:"#0f766e",points}].slice(-200)}); };
 
   return <section className="overflow-hidden rounded-3xl border border-teal-200 bg-white shadow-sm">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-teal-100 bg-teal-950 px-5 py-4 text-white"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-teal-200">Lingorain Teaching Studio · Session {lessonId}</p><h2 className="mt-1 text-lg font-black">Interactive textbook classroom</h2><p className="mt-1 text-[10px] text-teal-200">{syncStatus}</p></div><label className="text-xs font-semibold">Book <select value={book?.id ?? ""} onChange={e=>{const id=Number(e.target.value);update({bookId:id||null,page:1,unitIndex:0,audioTime:0,audioPlaying:false});}} className="ml-2 max-w-56 rounded-lg bg-white px-3 py-2 text-slate-900" disabled={!books.length}><option value="">No textbook available</option>{books.map(b=><option key={b.id} value={b.id}>{b.title} · {b.level}</option>)}</select></label></header>
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-teal-100 bg-teal-950 px-5 py-4 text-white"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-teal-200">Lingorain Teaching Studio · Session {lessonId}</p><h2 className="mt-1 text-lg font-black">Interactive textbook classroom</h2><p className="mt-1 text-[10px] text-teal-200">{syncStatus}</p>{conflict&&<button type="button" onClick={syncLatest} className="mt-2 rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-bold text-amber-950">Load latest shared version</button>}</div><label className="text-xs font-semibold">Book <select value={book?.id ?? ""} onChange={e=>{const id=Number(e.target.value);update({bookId:id||null,page:1,unitIndex:0,audioTime:0,audioPlaying:false});}} className="ml-2 max-w-56 rounded-lg bg-white px-3 py-2 text-slate-900" disabled={!books.length}><option value="">No textbook available</option>{books.map(b=><option key={b.id} value={b.id}>{b.title} · {(b.category || "general").replaceAll("_", " ")} · {b.level}</option>)}</select></label></header>
     <nav className="flex gap-2 border-b border-slate-100 p-3">{([ ["book","📘 Textbook"],["board","✏️ Whiteboard"],["practice","📝 Practice"]] as const).map(([id,label])=><button key={id} onClick={()=>setTab(id)} className={`rounded-xl px-4 py-2 text-xs font-bold ${tab===id?"bg-teal-800 text-white":"bg-slate-100 text-slate-600"}`}>{label}</button>)}</nav>
     {!book ? <div className="p-8 text-center text-sm text-slate-500">No accessible published textbooks are available for this account yet.</div> : <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]"><div className="min-w-0">
       {tab === "book" && <div className="space-y-3">{pdfUrl ? <><div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3"><span className="text-xs font-bold text-slate-700">{book.title} · PDF reader</span><div className="flex items-center gap-2"><button className="rounded-lg border px-3 py-1.5 text-xs" onClick={()=>update({page:Math.max(1,state.page-1)})}>Previous page</button><span className="text-xs font-bold">Page {state.page}</span><button className="rounded-lg border px-3 py-1.5 text-xs" onClick={()=>update({page:state.page+1})}>Next page</button></div></div><iframe title={`${book.title} PDF`} src={`${pdfUrl}#page=${state.page}&toolbar=0`} className="h-[65vh] min-h-[440px] w-full rounded-xl border border-slate-200 bg-slate-100" /></> : <div className="rounded-xl border border-dashed p-6 text-sm text-slate-500">This book has no PDF uploaded. Use the lesson text and audio below, or upload a PDF in Admin → Materials.</div>}

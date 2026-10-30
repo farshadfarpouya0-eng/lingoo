@@ -1,5 +1,6 @@
 "use server";
 import { cookies, headers } from "next/headers";
+import { encryptPayoutAccount, isEncryptedPayoutAccount } from "./payout-crypto";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { revalidatePath, updateTag } from "next/cache";
@@ -15,6 +16,10 @@ import { reserveLesson, changeLessonStatus } from "./lesson-service";
 import { chooseClassroom } from "./room-service";
 import { demoPaymentsEnabled } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
+import { isValidTimeZone, DEFAULT_TIME_ZONE } from "./time";
+import type { Lang } from "./i18n";
+import { sendVerificationForNewUser } from "./auth-flows";
+import { isAccountSuspended } from "@/lib/account-status";
 
 const str = (fd: FormData, k: string, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -35,8 +40,9 @@ export async function login(_: unknown, fd: FormData) {
   const [u] = await db.select().from(users).where(eq(users.email, email));
   const ok = verifyPassword(String(fd.get("password") ?? "").slice(0, 200), u?.passwordHash ?? null);
   if (!u || !ok) return { error: "invalid" };
+  if (!u.emailVerified) return { error: "verify" };
   await createSession(u.id);
-  if (u.suspended) redirect("/appeals");
+  if (isAccountSuspended(u.suspended, u.suspendedUntil)) redirect("/appeals");
   redirect(u.role === "admin" ? "/admin" : "/dashboard");
 }
 
@@ -47,16 +53,19 @@ export async function register(_: unknown, fd: FormData) {
   const email = str(fd, "email", 254).toLowerCase();
   const name = str(fd, "name", 60);
   const pw = String(fd.get("password") ?? "").slice(0, 200);
+  if (!await hit(`reg:email:${email}`, 5, 3600_000)) return { error: "rate" };
   const role = fd.get("role") === "teacher" ? "teacher" : "student";
-  const nativeLang = ["zh", "ja", "en"].includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) : "en";
-  if (!EMAIL_RE.test(email) || name.length < 2 || pw.length < 8) return { error: "fill" };
+  const nativeLang: Lang = ["zh", "ja", "en"].includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) as Lang : "en";
+  if (!EMAIL_RE.test(email) || name.length < 2 || pw.length < 12) return { error: "fill" };
+  const requestedZone = str(fd, "timeZone", 80);
+  const timeZone = isValidTimeZone(requestedZone) ? requestedZone : DEFAULT_TIME_ZONE[nativeLang];
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing) return { error: "exists" };
 
   const u = await db.transaction(async tx => {
     const referralCode = randomBytes(6).toString("hex").toUpperCase();
     const [nu] = await tx.insert(users).values({
-      email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode,
+      email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode, emailVerified: false, timeZone,
       avatar: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}`,
     }).returning();
 
@@ -65,15 +74,16 @@ export async function register(_: unknown, fd: FormData) {
       await tx.insert(teacherProfiles).values({
         userId: nu.id,
         headline: "New English tutor",
+        timeZone,
         active: false,
       });
     }
 
     const invitedBy = str(fd, "referralCode", 24).toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (role === "student" && invitedBy) {
-      const [referrer] = await tx.select({ id: users.id, email: users.email, suspended: users.suspended })
+      const [referrer] = await tx.select({ id: users.id, email: users.email, suspended: users.suspended, suspendedUntil: users.suspendedUntil })
         .from(users).where(eq(users.referralCode, invitedBy)).for("update");
-      if (referrer && referrer.id !== nu.id && referrer.email.toLowerCase() !== email && !referrer.suspended) {
+      if (referrer && referrer.id !== nu.id && referrer.email.toLowerCase() !== email && !isAccountSuspended(referrer.suspended, referrer.suspendedUntil)) {
         await tx.insert(referrals).values({ referrerId: referrer.id, referredUserId: nu.id, code: invitedBy, status: "registered" }).onConflictDoNothing();
       }
     }
@@ -81,9 +91,8 @@ export async function register(_: unknown, fd: FormData) {
   }).catch(e => pgCode(e) === "23505" ? null : Promise.reject(e));
 
   if (!u) return { error: "exists" };
-  await createSession(u.id);
-  /* tutors land on their profile so they can upload documents right away */
-  redirect(role === "teacher" ? "/dashboard?tab=profile" : "/dashboard");
+  try { await sendVerificationForNewUser(u.id); } catch { return { error: "email_setup_needed" }; }
+  return { error: "email_sent" };
 }
 
 export async function logout() { await destroySession(); redirect("/"); }
@@ -196,18 +205,29 @@ export async function requestPayout(fd: FormData) {
   if (!u || u.role !== "teacher") redirect("/login");
   const amount = Math.round(Number(fd.get("amount")) * 100);
   const method = str(fd, "method", 20);
-  const account = str(fd, "account", 200);
-  if (!["Bank", "PayPal", "Alipay", "Wise", "PayPay"].includes(method) || account.length < 4 || !Number.isFinite(amount) || amount < MIN_PAYOUT) redirect("/dashboard?tab=wallet&err=payout");
+  const accountInput = str(fd, "account", 200);
+  if (!["Bank", "PayPal", "Alipay", "Wise", "PayPay"].includes(method) || (accountInput.length > 0 && accountInput.length < 4) || accountInput.length > 200 || !Number.isFinite(amount) || !Number.isSafeInteger(amount) || amount < MIN_PAYOUT) redirect("/dashboard?tab=wallet&err=payout");
   if (!await hit(`payout:${u.id}`, 5, 3600_000)) redirect("/dashboard?tab=wallet&err=rate");
   let ok = false;
-  await db.transaction(async tx => {
-    const r = await tx.update(users).set({ balance: sql`${users.balance} - ${amount}` }).where(and(eq(users.id, u.id), sql`${users.balance} >= ${amount}`)).returning({ id: users.id });
-    if (!r.length) return;
-    await tx.insert(payouts).values({ teacherId: u.id, amount, method, account });
-    await ledger(tx, u.id, "payout", -amount, `${method} withdrawal`);
-    await tx.update(teacherProfiles).set({ payoutMethod: method, payoutAccount: account }).where(eq(teacherProfiles.userId, u.id));
-    ok = true;
-  });
+  try {
+    await db.transaction(async tx => {
+      const [profile] = await tx.select({ payoutAccount: teacherProfiles.payoutAccount })
+        .from(teacherProfiles).where(eq(teacherProfiles.userId, u.id)).for("update");
+      let account = accountInput ? encryptPayoutAccount(accountInput) : (profile?.payoutAccount || "");
+      if (account && !isEncryptedPayoutAccount(account)) account = encryptPayoutAccount(account); // encrypt legacy profile value on use
+      if (!account) throw new Error("payout_account_required");
+      const r = await tx.update(users).set({ balance: sql`${users.balance} - ${amount}` })
+        .where(and(eq(users.id, u.id), sql`${users.balance} >= ${amount}`)).returning({ id: users.id });
+      if (!r.length) return;
+      await tx.insert(payouts).values({ teacherId: u.id, amount, method, account });
+      await ledger(tx, u.id, "payout", -amount, `${method} withdrawal`);
+      await tx.update(teacherProfiles).set({ payoutMethod: method, payoutAccount: account }).where(eq(teacherProfiles.userId, u.id));
+      ok = true;
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.message === "payout_account_required" || error.message.includes("PAYOUT_ENCRYPTION_KEY"))) redirect("/dashboard?tab=wallet&err=payout_config");
+    throw error;
+  }
   redirect(ok ? "/dashboard?tab=wallet&ok=payout" : "/dashboard?tab=wallet&err=balance");
 }
 
@@ -230,6 +250,7 @@ export async function updateProfile(fd: FormData) {
     name: str(fd, "name", 60) || u.name,
     level: ["A1", "A2", "B1", "B2", "C1", "C2"].includes(str(fd, "level", 2)) ? str(fd, "level", 2) : u.level,
     nativeLang: ["zh", "ja", "en"].includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) : u.nativeLang,
+    timeZone: isValidTimeZone(str(fd, "timeZone", 64)) ? str(fd, "timeZone", 64) : (u.timeZone || "UTC"),
   }).where(eq(users.id, u.id));
   if (u.role === "teacher") {
     const start = Math.min(23, Math.max(0, Math.round(Number(fd.get("startHour")) || 9)));
@@ -242,6 +263,7 @@ export async function updateProfile(fd: FormData) {
       price: Math.min(50000, Math.max(500, Math.round(Number(fd.get("price") || 25) * 100))),
       startHour: start, endHour: end,
       tzOffset: Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0))),
+      timeZone: isValidTimeZone(str(fd, "teacherTimeZone", 64)) ? str(fd, "teacherTimeZone", 64) : (u.timeZone || "UTC"),
       workDays: days.length ? days.join(",") : "1,2,3,4,5",
       platformDefault: ["lingo", "meet", "zoom"].includes(str(fd, "platformDefault", 10)) ? str(fd, "platformDefault", 10) : "lingo",
     }).where(eq(teacherProfiles.userId, u.id));

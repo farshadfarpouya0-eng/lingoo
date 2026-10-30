@@ -9,7 +9,7 @@ export function teacherQuery() {
       country: teacherProfiles.country, accent: teacherProfiles.accent, price: teacherProfiles.price, rating: teacherProfiles.rating,
       reviewsCount: teacherProfiles.reviewsCount, lessonsCount: teacherProfiles.lessonsCount, speaks: teacherProfiles.speaks,
       tags: teacherProfiles.tags, certified: teacherProfiles.certified, active: teacherProfiles.active,
-      startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour, tzOffset: teacherProfiles.tzOffset, workDays: teacherProfiles.workDays,
+      startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour, tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone, workDays: teacherProfiles.workDays, credentialVerified: teacherProfiles.credentialVerified,
     })
     .from(teacherProfiles)
     .innerJoin(users, eq(users.id, teacherProfiles.userId));

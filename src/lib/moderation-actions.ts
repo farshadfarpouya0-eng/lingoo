@@ -2,7 +2,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { lessons, moderationCases, users } from "@/db/schema";
+import { adminAuditLogs, lessons, moderationCases, users } from "@/db/schema";
 import { getUser, requireAdmin } from "@/lib/auth";
 import { canAccessLesson } from "@/lib/lesson-access";
 
@@ -43,23 +43,38 @@ export async function submitModerationAppeal(fd: FormData) {
 }
 
 export async function reviewModerationCase(fd: FormData) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = Number(fd.get("id"));
   const nextStatus = clean(fd, "status", 30);
   const sanction = clean(fd, "sanction", 30);
   const note = clean(fd, "resolution", 2000);
-  if (!Number.isSafeInteger(id) || id < 1 || !["investigating", "resolved", "dismissed"].includes(nextStatus) || !["none", "suspend", "unsuspend"].includes(sanction) || note.length < 4) return { ok: false, error: "Choose a valid decision and provide a review note." };
+  const allowedSanctions = ["none", "suspend_7d", "suspend_30d", "suspend_permanent", "unsuspend"];
+  if (!Number.isSafeInteger(id) || id < 1 || !["investigating", "resolved", "dismissed"].includes(nextStatus) || !allowedSanctions.includes(sanction) || note.length < 4) return { ok: false, error: "Choose a valid decision and provide a review note." };
   try {
     await db.transaction(async tx => {
       const [caseRow] = await tx.select().from(moderationCases).where(eq(moderationCases.id, id)).for("update");
       if (!caseRow) throw new Error("not_found");
       if (sanction !== "none") {
         if (!caseRow.subjectUserId) throw new Error("no_subject");
-        const [target] = await tx.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, caseRow.subjectUserId)).for("update");
+        const [target] = await tx.select({ id: users.id, role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, caseRow.subjectUserId)).for("update");
         if (!target || !["student", "teacher"].includes(target.role)) throw new Error("invalid_target");
-        await tx.update(users).set({ suspended: sanction === "suspend" }).where(eq(users.id, target.id));
+        const now = new Date();
+        const until = sanction === "suspend_7d" ? new Date(now.getTime() + 7 * 86400_000)
+          : sanction === "suspend_30d" ? new Date(now.getTime() + 30 * 86400_000) : null;
+        const shouldSuspend = sanction !== "unsuspend";
+        await tx.update(users).set({ suspended: shouldSuspend, suspendedUntil: shouldSuspend ? until : null }).where(eq(users.id, target.id));
+        await tx.insert(adminAuditLogs).values({
+          adminId: admin.id, targetUserId: target.id,
+          action: sanction === "unsuspend" ? "account_reinstated" : "account_suspended",
+          reference: `moderation_case:${id}`, note,
+          metadata: { sanction, suspendedUntil: until?.toISOString() ?? null, previousSuspended: target.suspended, previousSuspendedUntil: target.suspendedUntil?.toISOString() ?? null },
+        });
       }
-      await tx.update(moderationCases).set({ status: nextStatus, resolution: `${sanction === "suspend" ? "Account suspended. " : sanction === "unsuspend" ? "Account reinstated. " : ""}${note}`, resolvedAt: ["resolved", "dismissed"].includes(nextStatus) ? new Date() : null }).where(eq(moderationCases.id, id));
+      const decision = sanction === "suspend_7d" ? "Account suspended for 7 days. "
+        : sanction === "suspend_30d" ? "Account suspended for 30 days. "
+        : sanction === "suspend_permanent" ? "Account permanently suspended. "
+        : sanction === "unsuspend" ? "Account reinstated. " : "";
+      await tx.update(moderationCases).set({ status: nextStatus, resolution: `${decision}${note}`, resolvedAt: ["resolved", "dismissed"].includes(nextStatus) ? new Date() : null }).where(eq(moderationCases.id, id));
     });
   } catch (e) { return { ok: false, error: e instanceof Error && e.message === "not_found" ? "Case not found." : "The review could not be saved." }; }
   revalidatePath("/admin/moderation"); revalidatePath("/appeals"); revalidatePath("/admin/students"); revalidatePath("/admin/tutors");

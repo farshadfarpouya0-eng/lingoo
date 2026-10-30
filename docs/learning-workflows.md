@@ -36,4 +36,4 @@
 - Real browser flow against the managed preview: `npm exec --yes --package=tsx -- tsx scripts/test-learning-ui.ts`. Optionally set `TEST_URL` to the HTTPS preview origin.
 - Tests create temporary users/transactions and remove their own data afterwards. They never wipe production tables.
 - Browser tests cover duration tabs, price rows, checkout, inventory, credit booking, tutor-only selection, live failover, issue reports, private API access and mobile overflow. Actual audio/video on external providers requires real meetings and is not exercised by these tests.
-- Rate limiting is process-local. Use a shared limiter (e.g. Redis) before deploying across multiple application instances.
+- Rate limiting uses shared PostgreSQL atomic counters by default (migration `0013`); Upstash Redis is an optional shared-store alternative. Production fails closed if neither shared mechanism is available.

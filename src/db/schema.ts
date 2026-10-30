@@ -15,7 +15,8 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(), name: text("name").notNull(), email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(), role: text("role").notNull().default("student"),
   avatar: text("avatar"), avatarStorageRef: text("avatar_storage_ref"), nativeLang: text("native_lang").default("zh"), level: text("level").default("A1"),
-  balance: integer("balance").notNull().default(0), suspended: boolean("suspended").notNull().default(false),
+  balance: integer("balance").notNull().default(0), suspended: boolean("suspended").notNull().default(false), suspendedUntil: timestamp("suspended_until"),
+  emailVerified: boolean("email_verified").notNull().default(true), timeZone: text("time_zone").notNull().default("UTC"),
   referralCode: text("referral_code").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -30,7 +31,8 @@ export const teacherProfiles = pgTable("teacher_profiles", {
   price: integer("price").notNull().default(2500), rating: real("rating").notNull().default(5),
   reviewsCount: integer("reviews_count").notNull().default(0), lessonsCount: integer("lessons_count").notNull().default(0),
   speaks: text("speaks").notNull().default("English"), tags: text("tags").notNull().default(""),
-  certified: boolean("certified").notNull().default(false), active: boolean("active").notNull().default(true),
+  certified: boolean("certified").notNull().default(false), credentialVerified: boolean("credential_verified").notNull().default(false), active: boolean("active").notNull().default(true),
+  timeZone: text("time_zone").notNull().default("UTC"),
   startHour: integer("start_hour").notNull().default(9), endHour: integer("end_hour").notNull().default(21),
   tzOffset: integer("tz_offset").notNull().default(8), workDays: text("work_days").notNull().default("0,1,2,3,4,5,6"),
   // A private form preference only. Never applied automatically to a booking.
@@ -141,12 +143,21 @@ export const payouts = pgTable("payouts", {
   id: serial("id").primaryKey(), teacherId: integer("teacher_id").notNull().references(() => users.id), amount: integer("amount").notNull(),
   method: text("method").notNull(), account: text("account").notNull(), status: text("status").notNull().default("pending"),
   note: text("note").notNull().default(""), createdAt: timestamp("created_at").defaultNow().notNull(), processedAt: timestamp("processed_at"),
+  reviewedBy: integer("reviewed_by").references(() => users.id), reviewedAt: timestamp("reviewed_at"),
+  providerReference: text("provider_reference").notNull().default(""),
 }, t => [index("payouts_teacher_idx").on(t.teacherId), index("payouts_status_idx").on(t.status)]);
+export const payoutAccountAccessLogs = pgTable("payout_account_access_logs", {
+  id: serial("id").primaryKey(),
+  adminId: integer("admin_id").notNull().references(() => users.id),
+  payoutId: integer("payout_id").notNull().references(() => payouts.id),
+  purpose: text("purpose").notNull().default("payout_processing"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, t => [index("payout_access_admin_idx").on(t.adminId, t.createdAt), index("payout_access_payout_idx").on(t.payoutId, t.createdAt)]);
 
 // Extended learning platform features.
 export const learningMaterials = pgTable("learning_materials", {
   id: serial("id").primaryKey(), title: text("title").notNull(), description: text("description").notNull().default(""),
-  kind: text("kind").notNull().default("textbook"), language: text("language").notNull().default("English"), level: text("level").notNull().default("A1"),
+  kind: text("kind").notNull().default("textbook"), category: text("category").notNull().default("general"), language: text("language").notNull().default("English"), level: text("level").notNull().default("A1"),
   fileUrl: text("file_url").notNull(), coverUrl: text("cover_url").notNull().default(""), isFree: boolean("is_free").notNull().default(true),
   price: integer("price").notNull().default(0), published: boolean("published").notNull().default(false), createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -185,7 +196,7 @@ export const classroomWorkspaceStates = pgTable("classroom_workspace_states", {
   lessonId: integer("lesson_id").primaryKey().references(() => lessons.id, { onDelete: "cascade" }),
   state: jsonb("state").notNull().default(sql`'{}'::jsonb`),
   updatedBy: integer("updated_by").notNull().references(() => users.id),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(), revision: integer("revision").notNull().default(1),
 }, t => [index("classroom_workspace_updated_idx").on(t.updatedAt)]);
 
 export const lessonChatMessages = pgTable("lesson_chat_messages", {
@@ -196,7 +207,7 @@ export const lessonRecordings = pgTable("lesson_recordings", {
   id: serial("id").primaryKey(), lessonId: integer("lesson_id").notNull().unique().references(() => lessons.id, { onDelete: "cascade" }),
   fileUrl: text("file_url").notNull().default(""), provider: text("provider").notNull().default("daily"),
   providerRecordingId: text("provider_recording_id").notNull().default(""), status: text("status").notNull().default("processing"),
-  expiresAt: timestamp("expires_at").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, t => [index("recordings_expiry_idx").on(t.expiresAt), index("recordings_status_idx").on(t.status)]);
 
 // Additional students joining a semi-private lesson are represented here. The
@@ -239,3 +250,33 @@ export const userPresence = pgTable("user_presence", {
   online: boolean("online").notNull().default(false),
   visible: boolean("visible").notNull().default(true),
 });
+
+
+// Append-only admin audit trail for manual financial and account actions.
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+  id: serial("id").primaryKey(), adminId: integer("admin_id").notNull().references(() => users.id),
+  targetUserId: integer("target_user_id").references(() => users.id), action: text("action").notNull(),
+  amount: integer("amount").notNull().default(0), balanceBefore: integer("balance_before"), balanceAfter: integer("balance_after"),
+  reference: text("reference").notNull().default(""), note: text("note").notNull().default(""),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`), createdAt: timestamp("created_at").defaultNow().notNull(),
+}, t => [index("admin_audit_admin_idx").on(t.adminId, t.createdAt), index("admin_audit_target_idx").on(t.targetUserId, t.createdAt), index("admin_audit_action_idx").on(t.action, t.createdAt)]);
+
+export const authActionTokens = pgTable("auth_action_tokens", {
+  id: serial("id").primaryKey(), userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  purpose: text("purpose").notNull(), tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(), consumedAt: timestamp("consumed_at"), createdAt: timestamp("created_at").defaultNow().notNull(),
+}, t => [index("auth_tokens_user_purpose_idx").on(t.userId, t.purpose), index("auth_tokens_expiry_idx").on(t.expiresAt)]);
+
+
+// Shared atomic rate-limit windows used when a Redis provider is not configured.
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  key: text("key").primaryKey(), count: integer("count").notNull().default(0),
+  expiresAt: timestamp("expires_at").notNull(), updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, t => [index("rate_limit_expires_idx").on(t.expiresAt)]);
+
+
+export const scheduledJobRuns = pgTable("scheduled_job_runs", {
+  id: serial("id").primaryKey(), job: text("job").notNull(), status: text("status").notNull().default("running"),
+  startedAt: timestamp("started_at").defaultNow().notNull(), finishedAt: timestamp("finished_at"), durationMs: integer("duration_ms"),
+  summary: jsonb("summary").notNull().default(sql`'{}'::jsonb`), error: text("error").notNull().default(""),
+}, t => [index("scheduled_job_name_started_idx").on(t.job, t.startedAt), index("scheduled_job_status_started_idx").on(t.status, t.startedAt)]);

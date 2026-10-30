@@ -1,4 +1,4 @@
-import { asc, desc, ilike, or, and, eq, not, sql, type SQL } from "drizzle-orm";
+import { asc, desc, ilike, lte, or, and, eq, not, sql, type SQL } from "drizzle-orm";
 import { teacherProfiles, users } from "@/db/schema";
 import { getT } from "@/lib/i18n";
 import { LANDING } from "@/lib/landing-i18n";
@@ -14,7 +14,7 @@ export default async function Teachers({searchParams}:{searchParams:Promise<{q?:
   await ensureSeed();
   const {t,lang}=await getT();const c=LANDING[lang];
   const {q="",tag="",sort="rating",speaks="",audience=""}=await searchParams;
-  const conds:SQL[]=[eq(teacherProfiles.active,true),eq(users.suspended,false)];
+  const conds:SQL[]=[eq(users.role,"teacher"),eq(teacherProfiles.active,true),or(eq(users.suspended,false),lte(users.suspendedUntil,new Date()))!];
   if(audience==="kids")conds.push(ilike(teacherProfiles.tags,"%Kids%"));
   else if(audience==="adults")conds.push(not(ilike(teacherProfiles.tags,"%Kids%")));
   if(q)conds.push(or(ilike(users.name,`%${esc(q)}%`),ilike(teacherProfiles.headline,`%${esc(q)}%`),ilike(teacherProfiles.tags,`%${esc(q)}%`))!);

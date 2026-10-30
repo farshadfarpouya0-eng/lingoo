@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
-import { settleLessons } from "@/lib/money";
 import StudentEditForm, { type StudentRow } from "./StudentEditForm";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +14,6 @@ const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
 export default async function AdminStudents({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const user = await getUser();
   if (!user || user.role !== "admin") redirect("/login");
-  await settleLessons();
   const { t } = await getT();
   const { edit } = await searchParams;
 
@@ -36,7 +34,7 @@ export default async function AdminStudents({ searchParams }: { searchParams: Pr
   const [students, totals] = await Promise.all([
       db.select({ id: users.id, name: users.name, email: users.email, balance: users.balance, level: users.level, suspended: users.suspended })
         .from(users).where(eq(users.role, "student")).orderBy(desc(users.createdAt)).limit(200),
-      db.select({ count: sql<number>`count(*)::int`, balance: sql<number>`coalesce(sum(${users.balance}),0)::int`, active: sql<number>`count(*) filter (where ${users.suspended} = false)::int` })
+      db.select({ count: sql<number>`count(*)::int`, balance: sql<number>`coalesce(sum(${users.balance}),0)::int`, active: sql<number>`count(*) filter (where ${users.suspended} = false or ${users.suspendedUntil} <= now())::int` })
         .from(users).where(eq(users.role, "student")),
     ]);
   const T = totals[0] ?? { count: 0, balance: 0, active: 0 };

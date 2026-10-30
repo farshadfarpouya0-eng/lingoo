@@ -7,7 +7,6 @@ import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherW
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
-import { settleLessons } from "@/lib/money";
 import { money } from "@/lib/package-pricing";
 import PackageDashboard from "@/components/PackageDashboard";
 import DashboardLessons, { DashboardLessonRow } from "@/components/DashboardLessons";
@@ -18,12 +17,13 @@ import MessagesPanel from "@/components/MessagesPanel";
 import DashboardRefresh from "@/components/DashboardRefresh";
 import Icon, { type IconName } from "@/components/Icon";
 import { dashboardSummary, upcomingForUser } from "@/lib/dashboard-summary";
-import { tzFor } from "@/lib/time";
+import { isValidTimeZone, tzFor } from "@/lib/time";
 import { buyMaterial } from "@/lib/feature-actions";
 import TeacherDocumentUploadForm from "@/components/TeacherDocumentUploadForm";
 import InteractiveCourseReader from "@/components/InteractiveCourseReader";
 import ReferralPanel from "@/components/ReferralPanel";
 import PresencePrivacySetting from "@/components/PresencePrivacySetting";
+import TeacherProfileProgress from "@/components/TeacherProfileProgress";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
 import { referralProgress } from "@/lib/referral-service";
 
@@ -45,7 +45,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const user = await getUser();
   if (!user) redirect("/login");
   if (user.role === "admin") redirect("/admin");
-  await settleLessons(user.id);
   const { t, lang } = await getT();
   const c = LEARNING[lang];
   const sp = await searchParams;
@@ -65,7 +64,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     ? or(eq(lessons.studentId, user.id), inArray(lessons.id, groupLessonIds))
     : eq(lessons.studentId, user.id);
 
-  const rowQuery = db.select({ l: lessons, otherName: other.name, otherAvatar: other.avatar, otherId: other.id, teacherTzOffset: teacherProfiles.tzOffset })
+  const rowQuery = db.select({ l: lessons, otherName: other.name, otherAvatar: other.avatar, otherId: other.id, teacherTimeZone: teacherProfiles.timeZone })
     .from(lessons)
     .innerJoin(other, eq(other.id, isTutor ? lessons.studentId : lessons.teacherId))
     .leftJoin(teacherProfiles, eq(teacherProfiles.userId, lessons.teacherId))
@@ -101,6 +100,26 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     db.select({ visible: userPresence.visible }).from(userPresence).where(eq(userPresence.userId, user.id)).limit(1),
   ]);
 
+  const teacherDocs = isTutor && (tab === "profile" || tab === "overview")
+    ? await db.select().from(teacherDocuments).where(eq(teacherDocuments.teacherId, user.id)).orderBy(asc(teacherDocuments.createdAt))
+    : [];
+  const identityVerified = teacherDocs.some(d => d.documentType === "identity" && d.status === "verified");
+  const identityPending = teacherDocs.some(d => d.documentType === "identity" && d.status === "pending");
+  const teacherProfileItems = isTutor ? [
+    { key: "photo", label: "Profile photo", points: 15, complete: Boolean(user.avatarStorageRef), href: "#profile-photo" },
+    { key: "headline", label: "Teaching headline", points: 10, complete: Boolean(tutor?.headline?.trim() && tutor.headline.trim().toLowerCase() !== "new english tutor"), href: "#profile-form" },
+    { key: "bio", label: "Teaching biography (80+ characters)", points: 15, complete: (tutor?.bio?.trim().length || 0) >= 80, href: "#profile-form" },
+    { key: "price", label: "Lesson price", points: 10, complete: Boolean(tutor && tutor.price >= 500), href: "#profile-form" },
+    { key: "languages", label: "Languages you teach/speak", points: 10, complete: Boolean(tutor?.speaks?.trim() && tutor.speaks.trim().length >= 3), href: "#profile-form" },
+    { key: "subjects", label: "Subjects and specialties", points: 10, complete: Boolean(tutor?.tags?.split(",").some(tag => tag.trim().length > 1)), href: "#profile-form" },
+    { key: "availability", label: "Working days and hours", points: 10, complete: Boolean(tutor && tutor.workDays.split(",").some(Boolean) && tutor.endHour > tutor.startHour), href: "#profile-form" },
+    { key: "timezone", label: "Teacher time zone", points: 5, complete: isValidTimeZone(tutor?.timeZone), href: "#profile-form" },
+    { key: "identity", label: "Identity document verified", points: 15, complete: identityVerified, pending: identityPending, href: "#documents" },
+  ] : [];
+
+  // The profile row contains an encrypted payout credential. Never serialize it
+  // into props for client components; only server-side payout actions need it.
+  const safeTutor = tutor ? { ...tutor, payoutAccount: "" } : undefined;
   const balance = fresh?.balance ?? user.balance;
   const reviewedLessonIds = !isTutor && needsRows
     ? new Set((await db.select({ lessonId: reviews.lessonId }).from(reviews).where(eq(reviews.studentId, user.id))).map(r => r.lessonId).filter((v): v is number => v !== null))
@@ -156,43 +175,27 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
   } else if (tab === "schedule" && isTutor) {
-    content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 8} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
+    content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 0} timeZone={tutor?.timeZone || user.timeZone || "UTC"} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang, user.timeZone).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
   } else if (tab === "wallet") {
-    content = <WalletPanel userId={user.id} isTutor={isTutor} balance={balance} escrow={escrow} tutor={tutor} t={t} c={c} lang={lang} ok={sp.ok} err={sp.err} />;
+    content = <WalletPanel userId={user.id} isTutor={isTutor} balance={balance} escrow={escrow} tutor={safeTutor} t={t} c={c} lang={lang} timeZone={user.timeZone} ok={sp.ok} err={sp.err} />;
   } else if (tab === "messages") {
-    content = <MessagesPanel userId={user.id} contactIds={contacts.map(x => x.id)} selectedId={Number(sp.with) || undefined} t={t} lang={lang} />;
+    content = <MessagesPanel userId={user.id} contactIds={contacts.map(x => x.id)} selectedId={Number(sp.with) || undefined} t={t} lang={lang} timeZone={user.timeZone} />;
   } else if (tab === "profile") {
-    const docs = isTutor ? await db.select().from(teacherDocuments).where(eq(teacherDocuments.teacherId, user.id)).orderBy(asc(teacherDocuments.createdAt)) : [];
-    const completed = isTutor ? [Boolean(user.avatarStorageRef), Boolean(tutor?.headline), Boolean(tutor?.bio), Boolean(tutor?.speaks), Boolean(tutor?.tags), Boolean(tutor?.workDays), docs.some(d => d.documentType === "identity" && d.status === "verified"), docs.some(d => d.optionalCredential && d.status === "verified")].filter(Boolean).length : 0;
-    const percent = isTutor ? Math.round(completed / 8 * 100) : 0;
     content = (
       <div className="space-y-5">
         <PresencePrivacySetting visible={presenceSetting?.visible ?? true} />
-        <ProfileAvatarUploadForm avatar={user.avatar} />
-        <ProfileForm user={user} tutor={tutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} />
+        {!isTutor && <><ProfileAvatarUploadForm avatar={user.avatar} /><ProfileForm user={user} t={t} c={c} lang={lang} saved={sp.ok === "saved"} /></>}
         {isTutor && (
-          <section id="documents" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-teal-950">Profile completion</h2>
-                <p className="mt-1 text-sm text-slate-500">Complete more sections to build trust with students.</p>
-              </div>
-              <strong className="text-2xl text-teal-800">{percent}%</strong>
-            </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-700" style={{ width: `${percent}%` }} /></div>
-            <p className="mt-3 text-xs text-slate-500">Photo, headline, biography, languages, skills, timetable and verified documents contribute. Academic and teaching credentials are optional.</p>
-            <TeacherDocumentUploadForm />
-            {docs.length > 0 && (
-              <div className="mt-5 space-y-2">
-                {docs.map(d => (
-                  <div key={d.id} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm">
-                    <span>{d.documentType}{d.optionalCredential ? " · optional" : ""}</span>
-                    <span className="text-xs font-semibold text-slate-500">{d.status}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          <>
+            <div id="profile-photo" className="scroll-mt-28"><ProfileAvatarUploadForm avatar={user.avatar} /></div>
+            <div id="profile-form" className="scroll-mt-28"><ProfileForm user={user} tutor={safeTutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} /></div>
+            <TeacherProfileProgress items={teacherProfileItems} credentialVerified={Boolean(tutor?.credentialVerified)} />
+            <section id="documents" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="mb-3"><h2 className="text-lg font-bold text-teal-950">Identity and optional credentials</h2><p className="mt-1 text-sm text-slate-500">Identity verification is required. University certificates and teaching credentials are optional and can add a public trust badge after review.</p></div>
+              <TeacherDocumentUploadForm />
+              {teacherDocs.length > 0 && <div className="mt-5 space-y-2">{teacherDocs.map(d => <div key={d.id} className="flex justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><span>{d.documentType}{d.optionalCredential ? " · optional" : ""}</span><span className="text-xs font-semibold text-slate-500">{d.status}</span></div>)}</div>}
+            </section>
+          </>
         )}
       </div>
     );
@@ -204,6 +207,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     content = (
       <div className="space-y-6">
         <DashboardRefresh />
+        {isTutor && <TeacherProfileProgress items={teacherProfileItems} credentialVerified={Boolean(tutor?.credentialVerified)} />}
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           {stats.map((s, i) => (
             <div key={s.label} className={`rounded-[22px] border p-5 ${i === 0 ? "border-teal-800 bg-teal-800 text-white" : "border-slate-200 bg-white text-teal-950"}`}>

@@ -30,7 +30,7 @@ async function dailyRequest(path: string, init: RequestInit = {}) {
 export async function ensureDailyRoom(lesson: { id: number; startAt: Date; duration: number; capacity: number }) {
   const cfg = await getIntegrationConfig();
   if (cfg.recording.provider !== "daily") throw new Error("Daily video is not enabled. Select Daily in Admin → Integrations.");
-  if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/i.test(cfg.recording.dailyDomain)) throw new Error("Daily domain is invalid.");
+  if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+daily\.co$/i.test(cfg.recording.dailyDomain)) throw new Error("Daily domain must be a subdomain ending in .daily.co.");
   const name = dailyRoomName(lesson.id);
   const expires = Math.floor((lesson.startAt.getTime() + (lesson.duration + 45) * 60_000) / 1000);
   const properties = { enable_recording: "cloud", max_participants: Math.min(5, Math.max(2, lesson.capacity + 1)), exp: expires, eject_at_room_exp: true };

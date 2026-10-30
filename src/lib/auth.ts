@@ -4,8 +4,9 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { db } from "@/db";
+import { isAccountSuspended } from "@/lib/account-status";
 import { sessions, users } from "@/db/schema";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, isNull, not, or } from "drizzle-orm";
 
 const SESSION_DAYS = 14;
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -48,15 +49,23 @@ export async function destroySession() {
 export const getUser = cache(async (options?: { includeSuspended?: boolean }) => {
   const token = (await cookies()).get("sid")?.value;
   if (!token || token.length > 100) return null;
+  const now = new Date();
+  const activeSuspension = and(eq(users.suspended, true), or(isNull(users.suspendedUntil), gt(users.suspendedUntil, now)));
   const [row] = await db
     .select({ u: users })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(options?.includeSuspended
-      ? and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, new Date()))
-      : and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, new Date()), eq(users.suspended, false)));
-  if (!row || (row.u.suspended && !options?.includeSuspended)) return null;
-  return row.u;
+      ? and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, now))
+      : and(eq(sessions.id, sha(token)), gt(sessions.expiresAt, now), not(activeSuspension!)));
+  if (!row) return null;
+  let account = row.u;
+  if (account.suspended && account.suspendedUntil && account.suspendedUntil <= now) {
+    await db.update(users).set({ suspended: false, suspendedUntil: null }).where(eq(users.id, account.id));
+    account = { ...account, suspended: false, suspendedUntil: null };
+  }
+  if (isAccountSuspended(account.suspended, account.suspendedUntil) && !options?.includeSuspended) return null;
+  return account;
 });
 export type User = NonNullable<Awaited<ReturnType<typeof getUser>>>;
 

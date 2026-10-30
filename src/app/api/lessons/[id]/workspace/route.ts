@@ -73,7 +73,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if ("response" in auth) return auth.response;
   if (!await hit(`workspace-read:${auth.user.id}`, 180, 60_000)) return Response.json({ error: "Slow down" }, { status: 429 });
   const [row] = await db.select().from(classroomWorkspaceStates).where(eq(classroomWorkspaceStates.lessonId, auth.lessonId)).limit(1);
-  return Response.json({ state: row?.state ?? {}, updatedBy: row?.updatedBy ?? null, updatedAt: row?.updatedAt?.toISOString() ?? null }, { headers: { "Cache-Control": "private, no-store" } });
+  return Response.json({ state: row?.state ?? {}, revision: row?.revision ?? 0, updatedBy: row?.updatedBy ?? null, updatedAt: row?.updatedAt?.toISOString() ?? null }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -92,14 +92,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!purchase) return Response.json({ error: "Purchase required" }, { status: 403 });
     }
   }
-  const [previous] = await db.select({ state: classroomWorkspaceStates.state }).from(classroomWorkspaceStates).where(eq(classroomWorkspaceStates.lessonId, auth.lessonId)).limit(1);
-  if (auth.user.role !== "teacher" && auth.user.role !== "admin" && previous?.state && typeof previous.state === "object") {
-    const oldState = previous.state as Record<string, unknown>;
-    state.feedback = typeof oldState.feedback === "string" ? oldState.feedback : "";
-    state.question = typeof oldState.question === "string" ? oldState.question : state.question;
-  }
-  const [row] = await db.insert(classroomWorkspaceStates).values({ lessonId: auth.lessonId, state, updatedBy: auth.user.id, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: classroomWorkspaceStates.lessonId, set: { state, updatedBy: auth.user.id, updatedAt: new Date() } })
-    .returning({ state: classroomWorkspaceStates.state, updatedBy: classroomWorkspaceStates.updatedBy, updatedAt: classroomWorkspaceStates.updatedAt });
+  const expectedRevisionRaw = Number((raw as Record<string, unknown>).expectedRevision ?? 0);
+  if (!Number.isSafeInteger(expectedRevisionRaw) || expectedRevisionRaw < 0) return Response.json({ error: "Invalid workspace revision" }, { status: 400 });
+  const result = await db.transaction(async tx => {
+    const [previous] = await tx.select().from(classroomWorkspaceStates)
+      .where(eq(classroomWorkspaceStates.lessonId, auth.lessonId)).for("update").limit(1);
+    const currentRevision = previous?.revision ?? 0;
+    if (currentRevision !== expectedRevisionRaw) return { conflict: true as const, revision: currentRevision, state: previous?.state ?? {} };
+    if (auth.user.role !== "teacher" && auth.user.role !== "admin" && previous?.state && typeof previous.state === "object") {
+      const oldState = previous.state as Record<string, unknown>;
+      state.feedback = typeof oldState.feedback === "string" ? oldState.feedback : "";
+      state.question = typeof oldState.question === "string" ? oldState.question : state.question;
+    }
+    const now = new Date();
+    if (!previous) {
+      const [inserted] = await tx.insert(classroomWorkspaceStates).values({ lessonId: auth.lessonId, state, updatedBy: auth.user.id, updatedAt: now, revision: 1 })
+        .onConflictDoNothing({ target: classroomWorkspaceStates.lessonId })
+        .returning({ state: classroomWorkspaceStates.state, revision: classroomWorkspaceStates.revision, updatedBy: classroomWorkspaceStates.updatedBy, updatedAt: classroomWorkspaceStates.updatedAt });
+      if (inserted) return { conflict: false as const, row: inserted };
+      const [raced] = await tx.select().from(classroomWorkspaceStates).where(eq(classroomWorkspaceStates.lessonId, auth.lessonId)).limit(1);
+      return { conflict: true as const, revision: raced?.revision ?? 0, state: raced?.state ?? {} };
+    }
+    const [updated] = await tx.update(classroomWorkspaceStates).set({ state, updatedBy: auth.user.id, updatedAt: now, revision: currentRevision + 1 })
+      .where(and(eq(classroomWorkspaceStates.lessonId, auth.lessonId), eq(classroomWorkspaceStates.revision, currentRevision)))
+      .returning({ state: classroomWorkspaceStates.state, revision: classroomWorkspaceStates.revision, updatedBy: classroomWorkspaceStates.updatedBy, updatedAt: classroomWorkspaceStates.updatedAt });
+    return updated ? { conflict: false as const, row: updated } : { conflict: true as const, revision: currentRevision, state: previous.state };
+  });
+  if (result.conflict) return Response.json({ error: "workspace_conflict", revision: result.revision, state: result.state }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
+  const row = result.row;
   return Response.json({ ...row, updatedAt: row.updatedAt.toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
 }

@@ -28,7 +28,7 @@ export async function createTestLesson(prev: R, formData: FormData): Promise<R> 
   if (!Number.isInteger(studentId) || !Number.isInteger(teacherId) || studentId === teacherId) {
     return { ok: false, error: "invalid" };
   }
-  if (!["lingo", "daily", "meet", "zoom"].includes(platform)) return { ok: false, error: "invalid" };
+  if (!["lingo", "meet", "zoom"].includes(platform)) return { ok: false, error: "invalid" };
 
   const [s] = await db.select({ id: users.id }).from(users).where(eq(users.id, studentId)).limit(1);
   const [t] = await db.select({ id: teacherProfiles.userId }).from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);

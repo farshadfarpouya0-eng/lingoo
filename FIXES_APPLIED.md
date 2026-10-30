@@ -1,3 +1,5 @@
+> **Historical note:** This file records earlier fixes only. Its old dependency-audit snapshot and issue list are not current verification results. For the current code state and open release gates, see `LINGORAIN_SOURCE_COMPLETION.md`, `SECURITY_REVIEW.md`, `RELEASE_STATUS.md`, and `DEPLOYMENT.md`.
+
 # Fixes applied to this version
 
 ## Security / dependencies

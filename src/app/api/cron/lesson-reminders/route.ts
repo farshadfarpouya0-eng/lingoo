@@ -4,22 +4,17 @@ import { db } from "@/db";
 import { lessonReminderLogs, lessons, users } from "@/db/schema";
 import { activeLessonStudentIds } from "@/lib/lesson-access";
 import { getIntegrationConfig } from "@/lib/integration-config";
+import { runTrackedJob } from "@/lib/operational-jobs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function authorized(req: Request) {
-  // Vercel's native scheduler and a third-party scheduler may use separate secrets.
-  // Compare against every configured value so CRON_SECRET does not shadow REMINDER_CRON_SECRET.
+  // Reminder delivery uses a dedicated secret, separate from settlement and recording cleanup.
   const supplied = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
-  if (!supplied) return false;
-  let accepted = false;
-  for (const secret of [process.env.CRON_SECRET, process.env.REMINDER_CRON_SECRET]) {
-    if (!secret || secret.length < 32) continue;
-    const matches = supplied.length === secret.length && timingSafeEqual(Buffer.from(supplied), Buffer.from(secret));
-    accepted = accepted || matches;
-  }
-  return accepted;
+  const secret = process.env.REMINDER_CRON_SECRET || "";
+  if (!secret || secret.length < 32 || supplied.length !== secret.length) return false;
+  return timingSafeEqual(Buffer.from(supplied), Buffer.from(secret));
 }
 
 async function claimReminder(lessonId: number, recipientId: number, minutesBefore: number) {
@@ -71,52 +66,59 @@ async function sendEmail(to: string, subject: string, text: string, idempotencyK
 
 export async function GET(req: Request) {
   if (!authorized(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const email = (await getIntegrationConfig()).email;
-  if (!email.apiKey || !email.from) return Response.json({ error: "Email provider is not configured. Add Resend credentials in Admin → Integrations." }, { status: 503 });
-  const now = Date.now();
-  // Pull only relevant upcoming confirmed lessons. The unique DB key plus atomic claim
-  // prevents two parallel cron invocations from sending the same reminder.
-  const candidates = await db.select({
-    id: lessons.id, studentId: lessons.studentId, teacherId: lessons.teacherId, classType: lessons.classType,
-    startAt: lessons.startAt, status: lessons.status,
-  }).from(lessons).where(and(
-    eq(lessons.status, "confirmed"),
-    gte(lessons.startAt, new Date(now + 7 * 60_000)),
-    lte(lessons.startAt, new Date(now + 33 * 60_000)),
-  )).limit(500);
-
-  let sent = 0, failed = 0, skipped = 0;
-  for (const lesson of candidates) {
-    for (const minutesBefore of [30, 10]) {
-      const until = lesson.startAt.getTime() - minutesBefore * 60_000;
-      // Cron runs every minute. A 3-minute catch-up window prevents brief scheduler delays
-      // from dropping reminders; idempotent claims prevent repeated sends in overlapping windows.
-      if (until > now || now - until >= 3 * 60_000) continue;
-      const studentIds = await activeLessonStudentIds(lesson.id, lesson.studentId, lesson.classType);
-      const recipientIds = [...new Set([...studentIds, lesson.teacherId])];
-      const recipients = recipientIds.length ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, recipientIds)) : [];
-      for (const recipientId of recipientIds) {
-        const recipient = recipients.find(r => r.id === recipientId);
-        if (!recipient?.email) { skipped++; continue; }
-        const logId = await claimReminder(lesson.id, recipient.id, minutesBefore);
-        if (!logId) { skipped++; continue; }
-        try {
-          const appUrl = (process.env.APP_URL || new URL(req.url).origin).replace(/\/$/, "");
-          await sendEmail(
-            recipient.email,
-            `Lingorain class reminder · ${minutesBefore} minutes`,
-            `Hi ${recipient.name},\n\nYour Lingorain class (#${lesson.id}) starts in about ${minutesBefore} minutes.\n\nOpen your dashboard: ${appUrl}/dashboard?tab=lessons\nEnter the classroom when your access window opens.\n\nLingorain`,
-            `lingorain-reminder-${lesson.id}-${recipient.id}-${minutesBefore}`,
-            email.apiKey, email.from,
-          );
-          await db.update(lessonReminderLogs).set({ status: "sent", sentAt: new Date() }).where(eq(lessonReminderLogs.id, logId));
-          sent++;
-        } catch {
-          await db.update(lessonReminderLogs).set({ status: "failed" }).where(eq(lessonReminderLogs.id, logId));
-          failed++;
+  try {
+    const summary = await runTrackedJob("lesson-reminders", async () => {
+    const email = (await getIntegrationConfig()).email;
+    if (!email.apiKey || !email.from) throw new Error("Email provider is not configured. Add Resend credentials in Admin → Integrations.");
+    const now = Date.now();
+    // Pull only relevant upcoming confirmed lessons. The unique DB key plus atomic claim
+    // prevents two parallel cron invocations from sending the same reminder.
+    const candidates = await db.select({
+      id: lessons.id, studentId: lessons.studentId, teacherId: lessons.teacherId, classType: lessons.classType,
+      startAt: lessons.startAt, status: lessons.status,
+    }).from(lessons).where(and(
+      eq(lessons.status, "confirmed"),
+      gte(lessons.startAt, new Date(now + 7 * 60_000)),
+      lte(lessons.startAt, new Date(now + 33 * 60_000)),
+    )).limit(500);
+  
+    let sent = 0, failed = 0, skipped = 0;
+    for (const lesson of candidates) {
+      for (const minutesBefore of [30, 10]) {
+        const until = lesson.startAt.getTime() - minutesBefore * 60_000;
+        // Cron runs every minute. A 3-minute catch-up window prevents brief scheduler delays
+        // from dropping reminders; idempotent claims prevent repeated sends in overlapping windows.
+        if (until > now || now - until >= 3 * 60_000) continue;
+        const studentIds = await activeLessonStudentIds(lesson.id, lesson.studentId, lesson.classType);
+        const recipientIds = [...new Set([...studentIds, lesson.teacherId])];
+        const recipients = recipientIds.length ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, recipientIds)) : [];
+        for (const recipientId of recipientIds) {
+          const recipient = recipients.find(r => r.id === recipientId);
+          if (!recipient?.email) { skipped++; continue; }
+          const logId = await claimReminder(lesson.id, recipient.id, minutesBefore);
+          if (!logId) { skipped++; continue; }
+          try {
+            const appUrl = (process.env.APP_URL || new URL(req.url).origin).replace(/\/$/, "");
+            await sendEmail(
+              recipient.email,
+              `Lingorain class reminder · ${minutesBefore} minutes`,
+              `Hi ${recipient.name},\n\nYour Lingorain class (#${lesson.id}) starts in about ${minutesBefore} minutes.\n\nOpen your dashboard: ${appUrl}/dashboard?tab=lessons\nEnter the classroom when your access window opens.\n\nLingorain`,
+              `lingorain-reminder-${lesson.id}-${recipient.id}-${minutesBefore}`,
+              email.apiKey, email.from,
+            );
+            await db.update(lessonReminderLogs).set({ status: "sent", sentAt: new Date() }).where(eq(lessonReminderLogs.id, logId));
+            sent++;
+          } catch {
+            await db.update(lessonReminderLogs).set({ status: "failed" }).where(eq(lessonReminderLogs.id, logId));
+            failed++;
+          }
         }
       }
     }
+    return { checked: candidates.length, sent, failed, skipped };
+    });
+    return Response.json(summary, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return Response.json({ error: "reminder_job_failed" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
-  return Response.json({ checked: candidates.length, sent, failed, skipped });
 }

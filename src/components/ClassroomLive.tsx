@@ -15,14 +15,14 @@ const D = {
   tutorPickText: "The student chooses the platform. You can still change it here.",
   switchTitle: "Change the classroom",
   lingo: "Lingo Room", lingoDesc: "Runs right here — no install, no account.",
-  daily: "Daily secure room", dailyDesc: "Private room with secure tokens and optional recording.",
+  daily: "Daily secure room", dailyDesc: "Private video room with optional consent-based cloud recording.",
   meet: "Google Meet", meetDesc: "Opens in a new tab. Set up by your tutor.",
   zoom: "Zoom", zoomDesc: "Opens in Zoom. Set up by your tutor.",
-  tutorOnly: "Only your tutor can use Google Meet or Zoom. Pick Lingo Room or Daily.",
+  tutorOnly: "Only your tutor can use Google Meet or Zoom. Pick Lingo Room.",
   link: "Meeting link", linkHint: "Paste your Google Meet or Zoom link",
   save: "Save classroom", saved: "Classroom saved",
   invalidLink: "That doesn't look like a valid Google Meet or Zoom link.",
-  dailyOff: "Daily is not set up on this site yet. Pick Lingo Room instead.",
+  dailyOff: "Daily video is not configured by the site administrator yet. Choose Lingo Room instead.",
   dailyLoading: "Preparing the secure room…",
   dailyError: "The secure room could not be opened. Try again or pick another room.",
   closed: "This lesson has ended.", forbidden: "You can't change the classroom for this lesson.",
@@ -88,8 +88,8 @@ function Countdown({ startAtMs, durationMinutes, earlyMinutes }: { startAtMs: nu
     return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">This lesson has ended</span>;
   }
 
-  const m = Math.floor(toStart / 60_000);
-  const opens = Math.max(0, m - earlyMinutes);
+  const m = Math.ceil(toStart / 60_000);
+  const opens = Math.max(0, Math.ceil((toStart - earlyMinutes * 60_000) / 60_000));
   return (
     <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
       <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
@@ -101,7 +101,7 @@ function Countdown({ startAtMs, durationMinutes, earlyMinutes }: { startAtMs: nu
 function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   lessonId: number; initial: RoomSnapshot; preference: string; onSaved: () => void; isTutor: boolean;
 }) {
-  const allowed = (p: string) => isTutor || p === "lingo" || p === "daily";
+  const allowed = (p: string) => isTutor || p === "lingo";
   const startPlatform = initial.platform === "undecided"
     ? (allowed(preference) ? preference : "lingo")
     : initial.platform;
@@ -113,7 +113,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
 
   const cards: { key: Platform; code: string; title: string; desc: string; tag: string }[] = [
     { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: "FREE" },
-    { key: "daily", code: "DA", title: D.daily, desc: D.dailyDesc, tag: "SECURE" },
+    { key: "daily", code: "DY", title: D.daily, desc: D.dailyDesc, tag: isTutor ? "RECORDING" : "TUTOR" },
     { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: isTutor ? "LINK" : "TUTOR" },
     { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: isTutor ? "LINK" : "TUTOR" },
   ];
@@ -121,7 +121,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   const errorText =
     result?.error === "link" ? D.invalidLink :
     result?.error === "tutor_only" ? D.tutorOnly :
-    result?.error === "daily_unconfigured" ? D.dailyOff :
+    result?.error === "daily_off" ? D.dailyOff :
     result?.error === "closed" ? D.closed : D.forbidden;
 
   return (
