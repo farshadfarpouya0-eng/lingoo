@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
+import ClassroomChat from "@/components/ClassroomChat";
+import ClassroomTeachingWorkspace from "@/components/ClassroomTeachingWorkspace";
 
 type Props = {
   joinUrl: string;
@@ -11,17 +13,20 @@ type Props = {
   startLabel: string;
   minutesLeft: number | null;
   isTutor: boolean;
+  lessonId: number;
+  books: { id: number; title: string; category: string; level: string; fileUrl: string; description: string | null }[];
+  userId: number;
 };
 
 const tool = "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition";
 
-export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange, startLabel, minutesLeft, isTutor }: Props) {
+export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange, startLabel, minutesLeft, isTutor, lessonId, books, userId }: Props) {
   const [joined, setJoined] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [devices, setDevices] = useState<{ cam: boolean; mic: boolean }>({ cam: false, mic: false });
   const [deviceError, setDeviceError] = useState("");
-  const [tab, setTab] = useState<"plan" | "people" | "notes">("plan");
+  const [tab, setTab] = useState<"plan" | "people" | "notes" | "tools" | "chat">("plan");
   const [notes, setNotes] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -186,7 +191,7 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
         {/* sidebar */}
         <aside className="flex min-h-[420px] flex-col rounded-2xl bg-white">
           <nav className="flex border-b border-slate-100">
-            {(["plan", "people", "notes"] as const).map(k => (
+            {(["plan", "people", "notes", "tools", "chat"] as const).map(k => (
               <button
                 key={k}
                 type="button"
@@ -195,7 +200,7 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
                   tab === k ? "border-teal-700 text-teal-800" : "border-transparent text-slate-400 hover:text-slate-600"
                 }`}
               >
-                {k === "plan" ? "Lesson plan" : k === "people" ? "In the room" : "My notes"}
+                {k === "plan" ? "Lesson plan" : k === "people" ? "In the room" : k === "notes" ? "My notes" : k === "tools" ? "Teaching Tools" : "Class Chat"}
               </button>
             ))}
           </nav>
@@ -255,6 +260,15 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
                 />
               </div>
             )}
+
+            {tab === "tools" && (
+              <ClassroomTeachingWorkspace lessonId={lessonId} books={books} isTutor={isTutor} userId={userId} />
+            )}
+
+            {tab === "chat" && (
+              <ClassroomChat lessonId={lessonId} userId={userId} />
+            )}
+
           </div>
 
           <footer className="border-t border-slate-100 p-3">

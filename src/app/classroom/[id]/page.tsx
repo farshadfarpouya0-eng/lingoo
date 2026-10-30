@@ -9,14 +9,12 @@ import { LEARNING } from "@/lib/learning-i18n";
 import { classroomSnapshot } from "@/lib/room-service";
 import { fmtAtZone } from "@/lib/time";
 import ClassroomLive from "@/components/ClassroomLive";
-import ClassroomChat from "@/components/ClassroomChat";
 import ClassroomPresence from "@/components/ClassroomPresence";
 import RecordingConsentPanel from "@/components/RecordingConsentPanel";
 import ReportParticipantForm from "@/components/ReportParticipantForm";
 import { reportLessonIssue } from "@/lib/feature-actions";
 import { canAccessLesson, activeLessonStudentIds } from "@/lib/lesson-access";
 import Icon from "@/components/Icon";
-import ClassroomTeachingWorkspace from "@/components/ClassroomTeachingWorkspace";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Classroom", robots: { index: false, follow: false } };
@@ -82,22 +80,13 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
         <div className="space-y-5">
-          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
-                <Icon name="video" /> Live classroom
-              </div>
-              <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} />
+          <div className="min-w-0 space-y-3">
+            <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
+              <Icon name="video" /> Live classroom
             </div>
-            <div className="min-w-0 space-y-3">
-              <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
-                <Icon name="book" /> Teaching tools
-              </div>
-              <ClassroomTeachingWorkspace lessonId={id} books={teachingMaterials} isTutor={isTutor} userId={user.id} />
-            </div>
+            <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} />
           </div>
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
-          <ClassroomChat lessonId={id} userId={user.id} />
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="font-bold text-amber-950">Report a lesson issue</h2>
             <p className="mt-1 text-sm leading-6 text-amber-900/75">If internet or technical problems disrupt the lesson, report what happened. Support will review it; a report does not automatically guarantee a refund or replacement.</p>
@@ -140,18 +129,17 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
               <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")}</dd></div>
-              <div className="flex justify-between gap-2"><dt>Ends</dt><dd className="font-medium text-slate-700">{fmtAtZone(new Date(l.startAt.getTime() + l.duration * 60_000), lang, user.timeZone || "UTC")}</dd></div>
               <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
               {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
               {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}
             </dl>
           </div>
-          {isTutor && <div className="rounded-[22px] bg-teal-50/80 p-5">
+          <div className="rounded-[22px] bg-teal-50/80 p-5">
             <Icon name="swap" className="text-teal-700" />
-            <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Classroom settings"}</h2>
-            <p className="mt-2 text-xs leading-6 text-slate-500">LingoRoom is the default. Google Meet or Zoom are backup options if the main classroom has technical problems.</p>
-          </div>}
-          {isTutor && history.length > 0 && (
+            <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Change the classroom"}</h2>
+            <p className="mt-2 text-xs leading-6 text-slate-500">{c.switchRules || "The classroom can be changed until the lesson ends."}</p>
+          </div>
+          {history.length > 0 && (
             <div className="rounded-[22px] border border-slate-200 bg-white p-5">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">{c.history || "History"}</h2>
               <div className="mt-3 space-y-3">

@@ -7,10 +7,12 @@ import { lessonPlatformEvents, lessons } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { isAccountSuspended } from "@/lib/account-status";
 import { validMeetingLink } from "@/lib/room-service";
+import { getIntegrationConfig } from "@/lib/integration-config";
 
 type SaveResult = { ok?: boolean; error?: string };
-const PLATFORMS = ["lingo", "meet", "zoom"] as const;
-/** Only the teacher can choose or switch the classroom provider. */
+const PLATFORMS = ["lingo", "daily", "meet", "zoom"] as const;
+/** Only the tutor may select a provider-managed or external meeting room. */
+const TUTOR_ONLY = ["daily", "meet", "zoom"];
 
 /** Save or change the classroom provider. Daily requires the admin integration to be configured. */
 export async function saveClassroom(_prev: SaveResult, formData: FormData): Promise<SaveResult> {
@@ -27,8 +29,16 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   const [l] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!l) return { ok: false, error: "forbidden" };
 
-  const isTutor = l.teacherId === me.id && me.role === "teacher";
-  if (!isTutor) return { ok: false, error: "tutor_only" };
+  const isTutor = l.teacherId === me.id;
+  const isStudent = l.studentId === me.id;
+  if (!isTutor && !isStudent) return { ok: false, error: "forbidden" };
+  if (TUTOR_ONLY.includes(platform) && !isTutor) return { ok: false, error: "tutor_only" };
+  if (platform === "daily") {
+    const cfg = await getIntegrationConfig();
+    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) {
+      return { ok: false, error: "daily_off" };
+    }
+  }
 
   const now = Date.now();
   const graceEndsAt = l.startAt.getTime() + (l.duration + 15) * 60_000;
@@ -36,7 +46,7 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   // Match roomState(): tolerate a stale completed flag until the scheduled
   // lesson window and its 15-minute grace period have elapsed.
 
-  const url = platform === "lingo" ? "" : validMeetingLink(platform, rawUrl);
+  const url = platform === "lingo" || platform === "daily" ? "" : validMeetingLink(platform, rawUrl);
   if ((platform === "meet" || platform === "zoom") && !url) return { ok: false, error: "link" };
 
   await db.update(lessons).set({

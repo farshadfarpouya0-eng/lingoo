@@ -265,7 +265,7 @@ export async function updateProfile(fd: FormData) {
       tzOffset: Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0))),
       timeZone: isValidTimeZone(str(fd, "teacherTimeZone", 64)) ? str(fd, "teacherTimeZone", 64) : (u.timeZone || "UTC"),
       workDays: days.length ? days.join(",") : "1,2,3,4,5",
-      platformDefault: "lingo",
+      platformDefault: ["lingo", "meet", "zoom"].includes(str(fd, "platformDefault", 10)) ? str(fd, "platformDefault", 10) : "lingo",
     }).where(eq(teacherProfiles.userId, u.id));
     updateTag(PUBLIC_TUTORS_TAG);
   }

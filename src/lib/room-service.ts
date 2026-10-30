@@ -47,9 +47,7 @@ export async function classroomSnapshot(actorId: number, lessonId: number, displ
   const [actor] = await db.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, actorId));
   const isAdminSandbox = actor?.role === "admin" && (await db.select({ topic: lessons.topic }).from(lessons).where(eq(lessons.id, lessonId)).limit(1))[0]?.topic.startsWith("[TEST]");
   if (actor?.role === "admin" && !isAdminSandbox) throw new Error("forbidden");
-  // LingoRoom is the platform default. Legacy undecided lessons resolve to it;
-  // external providers are selected explicitly by the teacher only.
-  const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "lingo";
+  const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
   const actorRole = actor?.role === "teacher" || isAdminSandbox ? "teacher" : actor?.role === "student" ? "student" : null;
   if (!actor || isAccountSuspended(actor.suspended, actor.suspendedUntil) || !actorRole) throw new Error("forbidden");
   const state = roomState(l, actorRole);
