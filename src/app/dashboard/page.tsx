@@ -23,7 +23,6 @@ import ReferralPanel from "@/components/ReferralPanel";
 import PresencePrivacySetting from "@/components/PresencePrivacySetting";
 import TeacherProfileProgress from "@/components/TeacherProfileProgress";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
-import TeacherClassTest from "@/components/TeacherClassTest";
 import { referralProgress } from "@/lib/referral-service";
 
 async function ReferralDashboardBlock({ userId, code }: { userId: number; code: string | null }) {
@@ -49,8 +48,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const isTutor = user.role === "teacher";
   const requested = sp.tab || "overview";
-  const allowedTabs = ["overview", "packages", "lessons", "schedule", "test", "messages", "wallet", "profile"];
-  const tab = allowedTabs.includes(requested) && !(isTutor && requested === "packages") && (isTutor || (requested !== "schedule" && requested !== "test")) ? requested : "overview";
+  const allowedTabs = ["overview", "packages", "lessons", "schedule", "demo", "messages", "wallet", "profile"];
+  const tab = allowedTabs.includes(requested) && !(isTutor && requested === "packages") && (isTutor || (requested !== "schedule" && requested !== "demo")) ? requested : "overview";
 
   const other = alias(users, "other");
   const needsRows = tab === "overview" || tab === "lessons";
@@ -149,7 +148,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     ...(!isTutor ? [{ key: "find", label: t.findTeachers, icon: "search" as IconName, href: "/teachers" }] : []),
     ...(!isTutor ? [{ key: "packages", label: c.packages, icon: "box" as IconName }] : []),
     { key: "lessons", label: t.myLessons, icon: "calendar" },
-    ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }, { key: "test", label: "تست کلاس", icon: "video" as IconName }] : []),
+    ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }, { key: "demo", label: "LingoRoom Demo", icon: "video" as IconName, href: "/dashboard/lingoroom-demo" }] : []),
     { key: "messages", label: t.messages, icon: "messages" },
     { key: "wallet", label: t.wallet, icon: "wallet" },
     { key: "profile", label: t.profile, icon: "user" },
@@ -161,8 +160,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
-  } else if (tab === "test" && isTutor) {
-    content = <TeacherClassTest />;
+  } else if (tab === "demo" && isTutor) {
+    content = <div className="rounded-2xl border border-teal-100 bg-white p-6"><h2 className="text-lg font-bold text-teal-950">LingoRoom Demo</h2><p className="mt-2 text-sm leading-6 text-slate-600">Practice in a private classroom sandbox with simulated student chat, whiteboard, teaching materials and device controls.</p><Link href="/dashboard/lingoroom-demo" className="mt-4 inline-flex rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white">Enter LingoRoom Demo</Link></div>;
   } else if (tab === "schedule" && isTutor) {
     content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 0} timeZone={tutor?.timeZone || user.timeZone || "UTC"} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang, user.timeZone).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
   } else if (tab === "wallet") {
@@ -198,12 +197,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <DashboardRefresh />
         {isTutor && <TeacherProfileProgress items={teacherProfileItems} credentialVerified={Boolean(tutor?.credentialVerified)} />}
         {isTutor && (
-          <Link href="/dashboard?tab=test" className="group flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-teal-100 bg-white p-5 shadow-sm transition hover:border-teal-300">
+          <Link href="/dashboard/lingoroom-demo" className="group flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-teal-100 bg-white p-5 shadow-sm transition hover:border-teal-300">
             <div className="flex items-center gap-4">
               <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="video" width={22} height={22} /></span>
-              <div><h2 className="text-sm font-bold text-teal-950">تست کلاس قبل از شروع جلسه</h2><p className="mt-1 text-xs leading-5 text-slate-500">دوربین، میکروفون و بلندگو را پیش از کلاس بررسی کنید.</p></div>
+              <div><h2 className="text-sm font-bold text-teal-950">LingoRoom Demo · تمرین قبل از اولین جلسه</h2><p className="mt-1 text-xs leading-5 text-slate-500">تمام فضای کلاس، ابزار تدریس و کنترل‌های جلسه را در یک محیط آزمایشی تجربه کنید.</p></div>
             </div>
-            <span className="flex items-center gap-2 text-xs font-bold text-teal-800">شروع تست <Icon name="arrow" width={15} height={15} /></span>
+            <span className="flex items-center gap-2 text-xs font-bold text-teal-800">ورود به کلاس آزمایشی <Icon name="arrow" width={15} height={15} /></span>
           </Link>
         )}
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
