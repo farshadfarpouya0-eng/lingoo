@@ -1,5 +1,5 @@
 import type { SVGProps } from "react";
-export type IconName = "box" | "book" | "wallet" | "calendar" | "video" | "shield" | "arrow" | "chevron" | "swap" | "clock" | "alert" | "check" | "close" | "user" | "messages" | "chart" | "copy" | "settings";
+export type IconName = "box" | "book" | "wallet" | "calendar" | "video" | "shield" | "arrow" | "chevron" | "swap" | "clock" | "alert" | "check" | "close" | "user" | "messages" | "chart" | "copy" | "settings" | "search";
 const paths: Record<IconName, React.ReactNode> = {
   box: <><path d="m12 3 9 5v8l-9 5-9-5V8z"/><path d="m3 8 9 5 9-5M12 13v8M7.5 5.5l9 5"/></>,
   book: <><path d="M12 6C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 2Z"/><path d="M12 6v15"/></>,
@@ -17,6 +17,7 @@ const paths: Record<IconName, React.ReactNode> = {
   chart: <><path d="M3 3v18h18M7 15l5-6 4 3 5-7"/></>,
   copy: <><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></>,
   settings: <><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="3" fill="currentColor" stroke="none"/></>,
+  search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></>,
 };
 export default function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: IconName }) {
   return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>{paths[name]}</svg>;
