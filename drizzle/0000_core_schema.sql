@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS lessons (
   id serial PRIMARY KEY,
   student_id integer NOT NULL REFERENCES users(id),
   teacher_id integer NOT NULL REFERENCES users(id),
-  start_at timestamp NOT NULL,
+  start_at timestamptz NOT NULL,
   duration integer NOT NULL DEFAULT 50,
   status text NOT NULL DEFAULT 'pending',
   price integer NOT NULL,
@@ -113,8 +113,8 @@ CREATE INDEX IF NOT EXISTS weekly_slots_teacher_idx ON teacher_weekly_slots(teac
 CREATE TABLE IF NOT EXISTS teacher_blocked_slots (
   id serial PRIMARY KEY,
   teacher_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  start_at timestamp NOT NULL,
-  end_at timestamp NOT NULL,
+  start_at timestamptz NOT NULL,
+  end_at timestamptz NOT NULL,
   reason text NOT NULL DEFAULT '',
   created_at timestamp NOT NULL DEFAULT now(),
   CONSTRAINT blocked_slots_range_check CHECK (end_at > start_at)

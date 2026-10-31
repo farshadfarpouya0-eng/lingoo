@@ -58,7 +58,7 @@ export const lessonPackages = pgTable("lesson_packages", {
 
 export const lessons = pgTable("lessons", {
   id: serial("id").primaryKey(), studentId: integer("student_id").notNull().references(() => users.id),
-  teacherId: integer("teacher_id").notNull().references(() => users.id), startAt: timestamp("start_at").notNull(),
+  teacherId: integer("teacher_id").notNull().references(() => users.id), startAt: timestamp("start_at", { withTimezone: true, mode: "date" }).notNull(),
   duration: integer("duration").notNull().default(50), status: text("status").notNull().default("pending"),
   classType: text("class_type").notNull().default("private"), capacity: integer("capacity").notNull().default(1),
   price: integer("price").notNull(), trial: boolean("trial").notNull().default(false),
@@ -92,8 +92,8 @@ export const teacherWeeklySlots = pgTable("teacher_weekly_slots", {
 export const teacherBlockedSlots = pgTable("teacher_blocked_slots", {
   id: serial("id").primaryKey(),
   teacherId: integer("teacher_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  startAt: timestamp("start_at").notNull(),
-  endAt: timestamp("end_at").notNull(),
+  startAt: timestamp("start_at", { withTimezone: true, mode: "date" }).notNull(),
+  endAt: timestamp("end_at", { withTimezone: true, mode: "date" }).notNull(),
   reason: text("reason").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, t => [

@@ -17,8 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!material || (!material.published && user.role !== "admin")) return Response.json({ error: "Not found" }, { status: 404 });
   const url = new URL(req.url);
   const lessonId = Number(url.searchParams.get("lesson"));
-  const demoAccess = url.searchParams.get("demo") === "1" && user.role === "teacher";
-  if (user.role !== "admin" && !demoAccess) {
+  if (user.role !== "admin") {
     if (!Number.isSafeInteger(lessonId) || lessonId < 1 || !(await canAccessLesson(lessonId, user.id))) {
       return Response.json({ error: "Classroom access required" }, { status: 403 });
     }

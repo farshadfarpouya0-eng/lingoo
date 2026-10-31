@@ -84,7 +84,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
               <Icon name="video" /> Live classroom
             </div>
-            <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} />
+            <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} />
           </div>
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">

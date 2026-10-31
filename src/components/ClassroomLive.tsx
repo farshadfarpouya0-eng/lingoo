@@ -66,12 +66,16 @@ function Timeline({ step }: { step: number }) {
 const fmtSpan = (min: number) => (min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`);
 
 /** Tutors may enter 30 minutes early, students 10 — matching roomState() on the server. */
-function Countdown({ startAtMs, durationMinutes, earlyMinutes }: { startAtMs: number; durationMinutes: number; earlyMinutes: number }) {
-  const [now, setNow] = useState(() => Date.now());
+function Countdown({ startAtMs, durationMinutes, earlyMinutes, serverNowMs }: { startAtMs: number; durationMinutes: number; earlyMinutes: number; serverNowMs: number }) {
+  // Anchor the countdown to server time so a device clock that is hours ahead/behind
+  // cannot display a false remaining duration. Date.now() is used only for elapsed time.
+  const [clientBase] = useState(() => Date.now());
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const t = setInterval(() => setTick(value => value + 1), 1_000);
     return () => clearInterval(t);
   }, []);
+  const now = serverNowMs + (Date.now() - clientBase);
 
   const toStart = startAtMs - now;
   const toEnd = startAtMs + durationMinutes * 60_000 - now;
@@ -188,13 +192,14 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   );
 }
 
-export default function ClassroomLive({ initial, isTutor, preference, c, startLabel, startAtMs, durationMinutes, books, userId }: {
+export default function ClassroomLive({ initial, isTutor, preference, c, startLabel, startAtMs, serverNowMs, durationMinutes, books, userId }: {
   initial: RoomSnapshot; isTutor: boolean; preference: string; c: LearningCopy;
-  startLabel: string; startAtMs: number; durationMinutes: number;
+  startLabel: string; startAtMs: number; serverNowMs: number; durationMinutes: number;
   books: { id: number; title: string; category: string; level: string; fileUrl: string; description: string | null }[];
   userId: number;
 }) {
   const [room, setRoom] = useState(initial);
+  const [clientClockBase] = useState(() => Date.now());
   const [updated, setUpdated] = useState(false);
   const [offline, setOffline] = useState(false);
   const [name, setName] = useState("");
@@ -266,7 +271,8 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
     room.state === "early" ? 3 : 1;
 
   const opensText = `The classroom opens ${earlyMinutes} minutes before the lesson`;
-  const minutesLeft = Math.max(0, Math.round((startAtMs + durationMinutes * 60_000 - Date.now()) / 60_000));
+  const estimatedServerNowMs = serverNowMs + (Date.now() - clientClockBase);
+  const minutesLeft = Math.max(0, Math.round((startAtMs + durationMinutes * 60_000 - estimatedServerNowMs) / 60_000));
 
   return (
     <div className="space-y-5">
@@ -362,7 +368,7 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
 
           {room.state !== "closed" && (
             <div className="mt-5 flex justify-center">
-              <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} />
+              <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} serverNowMs={serverNowMs} />
             </div>
           )}
 

@@ -23,6 +23,7 @@ import ReferralPanel from "@/components/ReferralPanel";
 import PresencePrivacySetting from "@/components/PresencePrivacySetting";
 import TeacherProfileProgress from "@/components/TeacherProfileProgress";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
+import TeacherClassTest from "@/components/TeacherClassTest";
 import { referralProgress } from "@/lib/referral-service";
 
 async function ReferralDashboardBlock({ userId, code }: { userId: number; code: string | null }) {
@@ -48,8 +49,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const isTutor = user.role === "teacher";
   const requested = sp.tab || "overview";
-  const allowedTabs = ["overview", "packages", "lessons", "schedule", "demo", "messages", "wallet", "profile"];
-  const tab = allowedTabs.includes(requested) && !(isTutor && requested === "packages") && (isTutor || (requested !== "schedule" && requested !== "demo")) ? requested : "overview";
+  const allowedTabs = ["overview", "packages", "lessons", "schedule", "test", "messages", "wallet", "profile"];
+  const tab = allowedTabs.includes(requested) && !(isTutor && requested === "packages") && (isTutor || (requested !== "schedule" && requested !== "test")) ? requested : "overview";
 
   const other = alias(users, "other");
   const needsRows = tab === "overview" || tab === "lessons";
@@ -145,10 +146,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const nav: { key: string; label: string; icon: IconName; href?: string }[] = [
     { key: "overview", label: t.overview, icon: "chart" },
-    ...(!isTutor ? [{ key: "find", label: t.findTeachers, icon: "search" as IconName, href: "/teachers" }] : []),
     ...(!isTutor ? [{ key: "packages", label: c.packages, icon: "box" as IconName }] : []),
     { key: "lessons", label: t.myLessons, icon: "calendar" },
-    ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }, { key: "demo", label: "LingoRoom Demo", icon: "video" as IconName, href: "/dashboard/lingoroom-demo" }] : []),
+    ...(isTutor ? [{ key: "schedule", label: t.scheduleTab, icon: "clock" as IconName }, { key: "test", label: "LingoRoom Demo", icon: "video" as IconName }] : []),
     { key: "messages", label: t.messages, icon: "messages" },
     { key: "wallet", label: t.wallet, icon: "wallet" },
     { key: "profile", label: t.profile, icon: "user" },
@@ -160,8 +160,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
-  } else if (tab === "demo" && isTutor) {
-    content = <div className="rounded-2xl border border-teal-100 bg-white p-6"><h2 className="text-lg font-bold text-teal-950">LingoRoom Demo</h2><p className="mt-2 text-sm leading-6 text-slate-600">Practice in a private classroom sandbox with simulated student chat, whiteboard, teaching materials and device controls.</p><Link href="/dashboard/lingoroom-demo" className="mt-4 inline-flex rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white">Enter LingoRoom Demo</Link></div>;
+  } else if (tab === "test" && isTutor) {
+    content = <TeacherClassTest />;
   } else if (tab === "schedule" && isTutor) {
     content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 0} timeZone={tutor?.timeZone || user.timeZone || "UTC"} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang, user.timeZone).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
   } else if (tab === "wallet") {
@@ -197,12 +197,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <DashboardRefresh />
         {isTutor && <TeacherProfileProgress items={teacherProfileItems} credentialVerified={Boolean(tutor?.credentialVerified)} />}
         {isTutor && (
-          <Link href="/dashboard/lingoroom-demo" className="group flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-teal-100 bg-white p-5 shadow-sm transition hover:border-teal-300">
+          <Link href="/dashboard?tab=test" className="group flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-teal-100 bg-white p-5 shadow-sm transition hover:border-teal-300">
             <div className="flex items-center gap-4">
               <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="video" width={22} height={22} /></span>
-              <div><h2 className="text-sm font-bold text-teal-950">LingoRoom Demo · تمرین قبل از اولین جلسه</h2><p className="mt-1 text-xs leading-5 text-slate-500">تمام فضای کلاس، ابزار تدریس و کنترل‌های جلسه را در یک محیط آزمایشی تجربه کنید.</p></div>
+              <div><h2 className="text-sm font-bold text-teal-950">LingoRoom Demo</h2><p className="mt-1 text-xs leading-5 text-slate-500">Practice in LingoRoom and check your camera, microphone, and speakers before your first lesson.</p></div>
             </div>
-            <span className="flex items-center gap-2 text-xs font-bold text-teal-800">ورود به کلاس آزمایشی <Icon name="arrow" width={15} height={15} /></span>
+            <span className="flex items-center gap-2 text-xs font-bold text-teal-800">Open Demo Room <Icon name="arrow" width={15} height={15} /></span>
           </Link>
         )}
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -214,19 +214,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </div>
           ))}
         </div>
-
-        {!isTutor && (
-          <Link href="/teachers" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] border border-teal-100 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="search" width={24} height={24} /></span>
-              <div>
-                <h2 className="text-lg font-bold text-teal-950">{t.findTeachers}</h2>
-                <p className="mt-1 text-xs text-slate-500">{t.topic}</p>
-              </div>
-            </div>
-            <span className="flex items-center gap-2 text-xs font-semibold text-teal-800">{t.viewAll}<Icon name="arrow" width={16} height={16} /></span>
-          </Link>
-        )}
 
         {!isTutor && (
           <Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6">
@@ -286,7 +273,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
           {!upcoming.length && (
             <p className="py-5 text-sm text-slate-400">
-              {t.noLessons} {!isTutor && <Link href="/teachers" className="ml-2 text-teal-700">{t.findTeachers} →</Link>}
+              {t.noLessons} {!isTutor && <Link href="/dashboard?tab=packages" className="ml-2 text-teal-700">{c.packages} →</Link>}
             </p>
           )}
         </section>
@@ -340,8 +327,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <Icon name="shield" className="text-teal-700" />
             <p className="mt-3 text-xs font-semibold text-teal-950">{t.policyTitle}</p>
             <p className="mt-2 text-[11px] leading-5 text-slate-400">{isTutor ? c.switchRules : c.paymentPolicy}</p>
-            <Link href={isTutor ? `/teachers/${user.id}` : "/teachers"} className="mt-4 flex items-center gap-2 text-[11px] font-bold text-teal-700">
-              {isTutor ? t.publicProfile : t.findTeachers}<Icon name="arrow" width={13} height={13} />
+            <Link href={isTutor ? `/teachers/${user.id}` : "/dashboard?tab=packages"} className="mt-4 flex items-center gap-2 text-[11px] font-bold text-teal-700">
+              {isTutor ? t.publicProfile : c.packages}<Icon name="arrow" width={13} height={13} />
             </Link>
           </div>
         </aside>

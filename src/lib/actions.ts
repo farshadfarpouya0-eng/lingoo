@@ -58,7 +58,7 @@ export async function register(_: unknown, fd: FormData) {
   const nativeLang: Lang = ["zh", "ja", "en"].includes(str(fd, "nativeLang", 2)) ? str(fd, "nativeLang", 2) as Lang : "en";
   if (!EMAIL_RE.test(email) || name.length < 2 || pw.length < 12) return { error: "fill" };
   const requestedZone = str(fd, "timeZone", 80);
-  const timeZone = isValidTimeZone(requestedZone) ? requestedZone : DEFAULT_TIME_ZONE[nativeLang];
+  const timeZone = isValidTimeZone(requestedZone) ? requestedZone : (role === "teacher" ? "Asia/Tehran" : DEFAULT_TIME_ZONE[nativeLang]);
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing) return { error: "exists" };
 

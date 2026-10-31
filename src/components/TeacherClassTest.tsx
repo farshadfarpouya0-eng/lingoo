@@ -7,7 +7,7 @@ import Icon from "./Icon";
 type CheckState = "idle" | "ok" | "error";
 
 function permissionLabel(state: PermissionState) {
-  return state === "granted" ? "مجاز" : state === "denied" ? "مسدود" : "هنوز درخواست نشده";
+  return state === "granted" ? "Allowed" : state === "denied" ? "Blocked" : "Not requested";
 }
 
 export default function TeacherClassTest() {
@@ -22,9 +22,14 @@ export default function TeacherClassTest() {
   const [error, setError] = useState("");
   const [level, setLevel] = useState(0);
   const [testing, setTesting] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState("در حال بررسی مجوزها…");
+  const [permissionStatus, setPermissionStatus] = useState("Checking permissions…");
   const [secureContext, setSecureContext] = useState(true);
   const [checks, setChecks] = useState({ internet: false, headphones: false, materials: false });
+  const [demoTab, setDemoTab] = useState<"board" | "chat" | "materials">("board");
+  const [demoChat, setDemoChat] = useState([{ from: "Student", text: "Could you explain this example again?" }]);
+  const [demoMessage, setDemoMessage] = useState("");
+  const [demoBoard, setDemoBoard] = useState("Today's lesson\n1. Introductions\n2. Speaking practice\n3. Feedback");
+  const [demoBook, setDemoBook] = useState("Everyday English · Unit 1");
 
   useEffect(() => {
     setSecureContext(window.isSecureContext);
@@ -32,21 +37,21 @@ export default function TeacherClassTest() {
     const checkPermissions = async () => {
       try {
         if (!navigator.permissions?.query) {
-          if (!cancelled) setPermissionStatus("وضعیت مجوزها توسط این مرورگر قابل بررسی مستقیم نیست؛ با شروع تست، درخواست دسترسی نمایش داده می‌شود.");
+          if (!cancelled) setPermissionStatus("This browser cannot report permission status directly. You will be prompted when you start the device check.");
           return;
         }
         const [cameraPermission, microphonePermission] = await Promise.all([
           navigator.permissions.query({ name: "camera" as PermissionName }),
           navigator.permissions.query({ name: "microphone" as PermissionName }),
         ]);
-        if (!cancelled) setPermissionStatus(`دوربین: ${permissionLabel(cameraPermission.state)} · میکروفون: ${permissionLabel(microphonePermission.state)}`);
+        if (!cancelled) setPermissionStatus(`Camera: ${permissionLabel(cameraPermission.state)} · Microphone: ${permissionLabel(microphonePermission.state)}`);
         const update = () => {
-          if (!cancelled) setPermissionStatus(`دوربین: ${permissionLabel(cameraPermission.state)} · میکروفون: ${permissionLabel(microphonePermission.state)}`);
+          if (!cancelled) setPermissionStatus(`Camera: ${permissionLabel(cameraPermission.state)} · Microphone: ${permissionLabel(microphonePermission.state)}`);
         };
         cameraPermission.addEventListener("change", update);
         microphonePermission.addEventListener("change", update);
       } catch {
-        if (!cancelled) setPermissionStatus("وضعیت مجوزها قابل خواندن نیست؛ برای بررسی، تست دوربین و میکروفون را اجرا کنید.");
+        if (!cancelled) setPermissionStatus("Permission status is unavailable. Start the camera and microphone check to test access.");
       }
     };
     void checkPermissions();
@@ -78,7 +83,7 @@ export default function TeacherClassTest() {
     setMicrophone("idle");
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError("مرورگر یا اتصال فعلی اجازه دسترسی به دوربین و میکروفون را نمی‌دهد. از HTTPS و مرورگر به‌روز استفاده کنید.");
+        setError("Your browser or connection does not allow camera and microphone access. Use HTTPS and an up-to-date browser.");
         setCamera("error");
         setMicrophone("error");
         return;
@@ -119,10 +124,10 @@ export default function TeacherClassTest() {
     } catch (err) {
       const name = err instanceof DOMException ? err.name : "";
       setError(name === "NotAllowedError"
-        ? "دسترسی دوربین یا میکروفون رد شده است. مجوز آن را از تنظیمات مرورگر فعال کنید."
+        ? "Camera or microphone access was denied. Enable the permissions in your browser settings."
         : name === "NotFoundError"
-          ? "دوربین یا میکروفون متصل پیدا نشد. دستگاه‌ها را بررسی کنید."
-          : "تست دستگاه‌ها انجام نشد. اتصال و تنظیمات مرورگر را بررسی کنید.");
+          ? "No connected camera or microphone was found. Check your devices."
+          : "The device check could not be completed. Check your connection and browser settings.");
       setCamera("error");
       setMicrophone("error");
       stopTest();
@@ -149,21 +154,21 @@ export default function TeacherClassTest() {
       window.setTimeout(() => void context.close(), 700);
     } catch {
       setSpeaker("error");
-      setError("پخش صدای آزمایشی در این مرورگر ممکن نشد.");
+      setError("The test sound could not be played in this browser.");
     }
   };
 
-  const statusText = (state: CheckState) => state === "ok" ? "آماده" : state === "error" ? "نیاز به بررسی" : "تست نشده";
+  const statusText = (state: CheckState) => state === "ok" ? "Ready" : state === "error" ? "Needs attention" : "Not tested";
   const statusClass = (state: CheckState) => state === "ok" ? "bg-emerald-50 text-emerald-700" : state === "error" ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-500";
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6" dir="ltr">
       <section className="rounded-[24px] border border-slate-200 bg-white p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-teal-700">آماده‌سازی قبل از جلسه</p>
-            <h2 className="mt-2 text-xl font-bold text-teal-950">تست کلاس LingoRoom</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">قبل از اولین جلسه، دوربین، میکروفون و صدای سیستم را بررسی کنید تا هنگام کلاس واقعی با تنظیمات دستگاه‌ها درگیر نشوید. این بخش جلسه واقعی ایجاد نمی‌کند و دانش‌آموزی وارد آن نمی‌شود.</p>
+            <p className="text-xs font-semibold text-teal-700">Before Your First Session</p>
+            <h2 className="mt-2 text-xl font-bold text-teal-950">LingoRoom Demo</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">Practice using LingoRoom before your first lesson. Check your camera, microphone, and speakers in a safe demo environment. No real lesson is created, and no student will join this room.</p>
           </div>
           <span className="rounded-xl bg-teal-50 p-3 text-teal-700"><Icon name="video" width={25} height={25} /></span>
         </div>
@@ -171,54 +176,68 @@ export default function TeacherClassTest() {
           <div className="overflow-hidden rounded-2xl bg-slate-950">
             <div className="relative aspect-video">
               <video ref={videoRef} muted playsInline className={`h-full w-full object-cover ${testing && camera === "ok" ? "block" : "hidden"}`} />
-              {(!testing || camera !== "ok") && <div className="absolute inset-0 grid place-items-center text-center text-slate-400"><div><Icon name="video" width={34} height={34} className="mx-auto mb-3 opacity-60"/><p className="text-sm">پیش‌نمایش دوربین بعد از شروع تست نمایش داده می‌شود</p></div></div>}
-              {testing && <span className="absolute bottom-3 right-3 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white">پیش‌نمایش فقط برای خودتان</span>}
+              {(!testing || camera !== "ok") && <div className="absolute inset-0 grid place-items-center text-center text-slate-400"><div><Icon name="video" width={34} height={34} className="mx-auto mb-3 opacity-60"/><p className="text-sm">Your camera preview will appear when you start the device check.</p></div></div>}
+              {testing && <span className="absolute bottom-3 right-3 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white">Preview visible only to you</span>}
             </div>
           </div>
           <div className="space-y-3">
             <div className="rounded-2xl border border-slate-100 p-4">
-              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="video" width={17}/> دوربین</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(camera)}`}>{statusText(camera)}</span></div>
-              <p className="mt-2 text-xs leading-6 text-slate-500">تصویر خودتان را در پیش‌نمایش بررسی کنید.</p>
+              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="video" width={17}/> Camera</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(camera)}`}>{statusText(camera)}</span></div>
+              <p className="mt-2 text-xs leading-6 text-slate-500">Check your video in the preview.</p>
             </div>
             <div className="rounded-2xl border border-slate-100 p-4">
-              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="messages" width={17}/> میکروفون</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(microphone)}`}>{statusText(microphone)}</span></div>
-              <p className="mt-2 text-xs text-slate-500">صحبت کنید و حرکت نشانگر صدا را ببینید.</p>
+              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="messages" width={17}/> Microphone</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(microphone)}`}>{statusText(microphone)}</span></div>
+              <p className="mt-2 text-xs text-slate-500">Speak and watch the audio level indicator.</p>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600 transition-[width]" style={{ width: `${level}%` }}/></div>
             </div>
             <div className="rounded-2xl border border-slate-100 p-4">
-              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="chart" width={17}/> بلندگو</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(speaker)}`}>{statusText(speaker)}</span></div>
-              <button type="button" onClick={testSpeaker} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">پخش صدای آزمایشی</button>
-              <p className="mt-2 text-[11px] text-slate-400">اگر صدا را شنیدید، خروجی صدای شما درست کار می‌کند.</p>
+              <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-bold text-teal-950"><Icon name="chart" width={17}/> Speakers</div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusClass(speaker)}`}>{statusText(speaker)}</span></div>
+              <button type="button" onClick={testSpeaker} className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200">Play test sound</button>
+              <p className="mt-2 text-[11px] text-slate-400">If you can hear the sound, your audio output is working.</p>
             </div>
           </div>
         </div>
-        <section className="mt-5 rounded-2xl border border-slate-100 p-4">
-          <h3 className="text-sm font-bold text-teal-950">وضعیت مرورگر و مجوزها</h3>
-          <p className="mt-2 text-xs leading-6 text-slate-500">{permissionStatus}</p>
-          <p className={`mt-2 text-xs font-semibold ${secureContext ? "text-emerald-700" : "text-amber-700"}`}>{secureContext ? "اتصال امن مرورگر فعال است." : "برای دسترسی به دوربین و میکروفون، سایت باید با HTTPS باز شود."}</p>
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div><h3 className="text-sm font-bold text-teal-950">Practice Classroom</h3><p className="mt-1 text-[11px] text-slate-500">Try the teaching workflow with simulated content. Nothing is saved to a real lesson.</p></div>
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800">Demo only</span>
+          </div>
+          <div className="flex gap-1 border-b border-slate-100 bg-slate-50 p-2">
+            {([{id:"board",label:"Whiteboard"},{id:"chat",label:"Class Chat"},{id:"materials",label:"Textbook & Audio"}] as const).map(tab => <button key={tab.id} type="button" onClick={() => setDemoTab(tab.id)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${demoTab===tab.id?"bg-white text-teal-800 shadow-sm":"text-slate-500 hover:bg-white"}`}>{tab.label}</button>)}
+          </div>
+          <div className="p-4">
+            {demoTab === "board" && <div><label className="block text-xs font-semibold text-slate-600">Shared whiteboard · editable practice notes</label><textarea value={demoBoard} onChange={e=>setDemoBoard(e.target.value)} rows={6} className="mt-2 w-full rounded-xl border border-slate-200 p-3 text-sm leading-6 text-slate-700 outline-none focus:border-teal-500"/><p className="mt-2 text-[11px] text-slate-400">Changes are temporary and stay in this browser session.</p></div>}
+            {demoTab === "chat" && <div><div className="mb-3 max-h-36 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">{demoChat.map((m,i)=><div key={i} className="rounded-lg bg-white p-2.5 text-xs"><b className="text-teal-800">{m.from}</b><p className="mt-1 text-slate-600">{m.text}</p></div>)}</div><form onSubmit={e=>{e.preventDefault();const msg=demoMessage.trim();if(msg){setDemoChat(v=>[...v,{from:"You",text:msg}]);setDemoMessage("");}}} className="flex gap-2"><input value={demoMessage} onChange={e=>setDemoMessage(e.target.value)} maxLength={300} placeholder="Send a practice message…" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs"/><button className="rounded-lg bg-teal-800 px-4 py-2 text-xs font-bold text-white">Send</button></form></div>}
+            {demoTab === "materials" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Practice textbook<select value={demoBook} onChange={e=>setDemoBook(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs"><option>Everyday English · Unit 1</option><option>IELTS Speaking · Part 1</option><option>Kids English · Lesson 1</option></select></label><div className="rounded-xl bg-teal-50 p-3"><p className="text-xs font-bold text-teal-900">Selected lesson</p><p className="mt-2 text-xs text-teal-800">{demoBook}</p><button type="button" onClick={testSpeaker} className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-teal-800">Play sample audio</button></div></div>}
+          </div>
         </section>
         <section className="mt-5 rounded-2xl border border-slate-100 p-4">
-          <h3 className="text-sm font-bold text-teal-950">چک‌لیست آمادگی قبل از کلاس</h3>
+          <h3 className="text-sm font-bold text-teal-950">Browser & Permissions</h3>
+          <p className="mt-2 text-xs leading-6 text-slate-500">{permissionStatus}</p>
+          <p className={`mt-2 text-xs font-semibold ${secureContext ? "text-emerald-700" : "text-amber-700"}`}>{secureContext ? "Secure browser connection is active." : "This site must be opened over HTTPS to access your camera and microphone."}</p>
+        </section>
+        <section className="mt-5 rounded-2xl border border-slate-100 p-4">
+          <h3 className="text-sm font-bold text-teal-950">Pre-Class Readiness Checklist</h3>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.internet} onChange={e => setChecks(v => ({ ...v, internet: e.target.checked }))} className="accent-teal-700" /> اتصال اینترنت بررسی شد</label>
-            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.headphones} onChange={e => setChecks(v => ({ ...v, headphones: e.target.checked }))} className="accent-teal-700" /> هدفون و محیط مناسب آماده است</label>
-            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.materials} onChange={e => setChecks(v => ({ ...v, materials: e.target.checked }))} className="accent-teal-700" /> کتاب و محتوای جلسه آماده است</label>
+            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.internet} onChange={e => setChecks(v => ({ ...v, internet: e.target.checked }))} className="accent-teal-700" /> Internet connection checked</label>
+            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.headphones} onChange={e => setChecks(v => ({ ...v, headphones: e.target.checked }))} className="accent-teal-700" /> Headphones and a suitable environment are ready</label>
+            <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={checks.materials} onChange={e => setChecks(v => ({ ...v, materials: e.target.checked }))} className="accent-teal-700" /> Lesson materials are ready</label>
           </div>
-          <p className="mt-3 text-[11px] text-slate-400">{Object.values(checks).filter(Boolean).length} از ۳ مورد چک‌لیست تکمیل شده</p>
+          <p className="mt-3 text-[11px] text-slate-400">{Object.values(checks).filter(Boolean).length} of 3 checklist items completed</p>
         </section>
         {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-xs leading-6 text-rose-700">{error}</p>}
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          {!testing ? <button type="button" onClick={startTest} className="rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white hover:bg-teal-900">شروع تست دوربین و میکروفون</button> : <button type="button" onClick={stopTest} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">پایان تست و بستن دوربین</button>}
-          <Link href="/dashboard?tab=lessons" className="rounded-xl border border-teal-200 px-5 py-3 text-sm font-bold text-teal-800 hover:bg-teal-50">مشاهده کلاس‌های واقعی</Link>
+          {!testing ? <button type="button" onClick={startTest} className="rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white hover:bg-teal-900">Start Camera & Microphone Check</button> : <button type="button" onClick={stopTest} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">Stop Check & Turn Off Camera</button>}
+          <Link href="/dashboard?tab=lessons" className="rounded-xl border border-teal-200 px-5 py-3 text-sm font-bold text-teal-800 hover:bg-teal-50">View Scheduled Lessons</Link>
         </div>
       </section>
       <section className="rounded-[22px] border border-amber-100 bg-amber-50/70 p-5">
-        <h3 className="text-sm font-bold text-amber-950">روز برگزاری کلاس چه کار کنم؟</h3>
+        <h3 className="text-sm font-bold text-amber-950">When It’s Time for Your Lesson</h3>
         <ol className="mt-3 space-y-2 text-xs leading-6 text-amber-950/80">
-          <li>۱. از بخش «کلاس‌های من»، جلسه تأییدشده را پیدا کنید.</li>
-          <li>۲. در زمان مجاز روی «ورود به کلاس» بزنید؛ لینک تست جایگزین کلاس واقعی نیست.</li>
-          <li>۳. داخل LingoRoom ابتدا دوربین و میکروفون را بررسی کنید، سپس کتاب و تخته را از ابزارهای همان کلاس باز کنید.</li>
-          <li>۴. اگر LingoRoom مشکل داشت، فقط از گزینه پشتیبان جلسه استفاده کنید.</li>
+          <li>1. Find your confirmed lesson under “My Lessons.”</li>
+          <li>2. When the room opens, select “Join Class.” This demo does not replace your actual lesson room.</li>
+          <li>3. Inside LingoRoom, check your camera and microphone, then open the lesson book and whiteboard using the in-room tools.</li>
+          <li>4. If LingoRoom is unavailable, use the backup option provided for your lesson.</li>
         </ol>
       </section>
     </div>
