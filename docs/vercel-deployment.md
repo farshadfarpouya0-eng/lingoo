@@ -2,7 +2,7 @@
 
 This is the canonical hosting direction for the current project: **Next.js on Vercel + PostgreSQL on Neon**. The older Netlify and fixed-Singapore notes elsewhere in this folder are historical planning material; do not treat them as the current deployment instructions.
 
-Use the root-level `DEPLOYMENT.md` as the complete, authoritative procedure. It covers GitHub import, pooled/direct Neon connection strings, all SQL migrations through `0015`, environment validation, administrator bootstrap, provider integrations, external scheduled jobs and the later staging release gate.
+Use the root-level `DEPLOYMENT.md` as the complete, authoritative procedure. It covers GitHub import, pooled/direct Neon connection strings, all SQL migrations through `0017`, environment validation, administrator bootstrap, provider integrations, external scheduled jobs and the later staging release gate.
 
 ## Current deployment decisions
 

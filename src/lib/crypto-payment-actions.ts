@@ -6,6 +6,7 @@ import { cryptoPaymentOrders } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getIntegrationConfig } from "@/lib/integration-config";
 import { hit } from "@/lib/ratelimit";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
 const AMOUNTS = new Set([2000, 5000, 10000, 20000]);
 const ASSETS = {
@@ -38,10 +39,10 @@ export async function createCryptoTopUp(fd: FormData) {
   const provider = String(fd.get("provider") || "");
   const assetKey = String(fd.get("asset") || "") as AssetKey;
   if (!AMOUNTS.has(amountUsd) || !validAsset(assetKey)) redirect("/dashboard?tab=wallet&err=crypto");
+  if (!await isCryptoPaymentsSchemaReady()) redirect("/dashboard?tab=wallet&err=crypto_setup");
   if (!await hit(`crypto-topup:${user.id}`, 5, 3600_000)) redirect("/dashboard?tab=wallet&err=rate");
   const asset = ASSETS[assetKey];
   const cfg = await getIntegrationConfig();
-  const origin = await appOrigin();
 
   if (method === "direct") {
     const address = cfg.crypto[asset.directKey];
@@ -70,6 +71,7 @@ export async function createCryptoTopUp(fd: FormData) {
   }
 
   if (method !== "provider" || !["nowpayments", "plisio"].includes(provider)) redirect("/dashboard?tab=wallet&err=crypto");
+  const origin = await appOrigin();
   const [order] = await db.insert(cryptoPaymentOrders).values({
     userId: user.id, method: "provider", provider, asset: assetKey, network: asset.network,
     amountUsd, status: "creating", expiresAt: new Date(Date.now() + 45 * 60_000),
@@ -141,6 +143,7 @@ export async function submitDirectCryptoProof(fd: FormData) {
   const id = Number(fd.get("orderId"));
   const txHash = String(fd.get("txHash") || "").trim();
   if (!Number.isSafeInteger(id) || id < 1 || !/^(?:0x)?[a-fA-F0-9]{64}$/.test(txHash)) redirect("/dashboard?tab=wallet&err=crypto_hash");
+  if (!await isCryptoPaymentsSchemaReady()) redirect("/dashboard?tab=wallet&err=crypto_setup");
   const [order] = await db.select().from(cryptoPaymentOrders).where(and(
     eq(cryptoPaymentOrders.id, id), eq(cryptoPaymentOrders.userId, user.id),
     eq(cryptoPaymentOrders.method, "direct"), eq(cryptoPaymentOrders.status, "awaiting_payment"),

@@ -3,17 +3,53 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Icon from "./Icon";
+import type { ClassroomMaterial } from "@/lib/classroom-material";
 
 type CheckState = "idle" | "ok" | "error";
+type DemoUnit = { title: string; content: string; audioRef?: string; imageRef?: string };
+type DemoMaterial = ClassroomMaterial;
+type DemoMaterialContent = { pdfRef: string; pageCount: number | null; units: DemoUnit[] };
+
+function decodeDemoMaterial(material: DemoMaterial): DemoMaterialContent {
+  const raw = (material.fileUrl || "").trim();
+  try {
+    const parsed = JSON.parse(raw) as { pdfRef?: unknown; pageCount?: unknown; units?: unknown; audioRef?: unknown };
+    const units: DemoUnit[] = Array.isArray(parsed.units) ? parsed.units.flatMap((value): DemoUnit[] => {
+      if (!value || typeof value !== "object") return [];
+      const unit = value as Record<string, unknown>;
+      return [{
+        title: typeof unit.title === "string" && unit.title.trim() ? unit.title : "Lesson",
+        content: typeof unit.content === "string" ? unit.content : "",
+        audioRef: typeof unit.audioRef === "string" ? unit.audioRef : "",
+        imageRef: typeof unit.imageRef === "string" ? unit.imageRef : "",
+      }];
+    }) : [];
+    if (!units.length && typeof parsed.audioRef === "string" && parsed.audioRef) units.push({ title: material.title, content: material.description || "", audioRef: parsed.audioRef });
+    const count = Number(parsed.pageCount);
+    return {
+      pdfRef: typeof parsed.pdfRef === "string" ? parsed.pdfRef : "",
+      pageCount: Number.isSafeInteger(count) && count > 0 ? count : null,
+      units: units.length ? units : [{ title: material.title, content: material.description || "" }],
+    };
+  } catch {
+    const extension = raw.split("/").pop()?.split("?")[0]?.split(".").pop()?.toLowerCase() || "";
+    if (raw.startsWith("storage://") && extension === "pdf") return { pdfRef: raw, pageCount: null, units: [{ title: material.title, content: material.description || "" }] };
+    if (raw.startsWith("storage://") && ["mp3", "wav", "ogg", "m4a", "aac"].includes(extension)) return { pdfRef: "", pageCount: null, units: [{ title: material.title, content: material.description || "", audioRef: raw }] };
+    return { pdfRef: "", pageCount: null, units: [{ title: material.title, content: material.description || "" }] };
+  }
+}
+
+const demoMaterialKind = (kind: string) => kind === "audio" ? "Audio course" : kind === "worksheet" ? "Interactive worksheet" : "Textbook";
 
 function permissionLabel(state: PermissionState) {
   return state === "granted" ? "Allowed" : state === "denied" ? "Blocked" : "Not requested";
 }
 
-export default function TeacherClassTest() {
+export default function TeacherClassTest({ materials }: { materials: DemoMaterial[] }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const shareVideoRef = useRef<HTMLVideoElement>(null);
   const demoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const demoAudioRef = useRef<HTMLAudioElement>(null);
   const demoDrawingRef = useRef(false);
   const shareStreamRef = useRef<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -34,7 +70,16 @@ export default function TeacherClassTest() {
   const [demoMessage, setDemoMessage] = useState("");
   const [demoBoardColor, setDemoBoardColor] = useState("#0f766e");
   const [screenTest, setScreenTest] = useState(false);
-  const [demoBook, setDemoBook] = useState("Everyday English · Unit 1");
+  const [demoBookId, setDemoBookId] = useState<number | "">(() => materials[0]?.id ?? "");
+  const [demoUnitIndex, setDemoUnitIndex] = useState(0);
+  const [demoPage, setDemoPage] = useState(1);
+  const demoBook = materials.find(material => material.id === demoBookId) || null;
+  const demoContent = demoBook ? decodeDemoMaterial(demoBook) : null;
+  const demoUnit = demoContent?.units[demoUnitIndex] || null;
+  const demoPdfUrl = demoBook && demoContent?.pdfRef ? `/api/private-files/material/${demoBook.id}/preview?asset=pdf` : "";
+  const demoAudioUrl = demoBook && demoUnit?.audioRef ? `/api/private-files/material/${demoBook.id}/preview?asset=audio&unit=${demoUnitIndex}` : "";
+  const demoImageUrl = demoBook && demoUnit?.imageRef ? `/api/private-files/material/${demoBook.id}/preview?asset=image&unit=${demoUnitIndex}` : "";
+  const demoCoverUrl = demoBook?.coverUrl?.startsWith("storage://") ? `/api/private-files/material/${demoBook.id}/preview?asset=cover` : "";
 
   useEffect(() => {
     setSecureContext(window.isSecureContext);
@@ -293,7 +338,37 @@ export default function TeacherClassTest() {
               <canvas ref={demoCanvasRef} width={1100} height={500} onPointerDown={startDemoDraw} onPointerMove={drawDemo} onPointerUp={stopDemoDraw} onPointerCancel={stopDemoDraw} className="h-[42vh] min-h-[300px] w-full touch-none rounded-xl border border-slate-200 bg-white" style={{backgroundImage:"linear-gradient(rgba(15,118,110,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(15,118,110,.055) 1px, transparent 1px)",backgroundSize:"26px 26px"}} />
             </div>}
             {demoTab === "chat" && <div><div className="mb-3 max-h-36 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">{demoChat.map((m,i)=><div key={i} className="rounded-lg bg-white p-2.5 text-xs"><b className="text-teal-800">{m.from}</b><p className="mt-1 text-slate-600">{m.text}</p></div>)}</div><form onSubmit={e=>{e.preventDefault();const msg=demoMessage.trim();if(msg){setDemoChat(v=>[...v,{from:"You",text:msg}]);setDemoMessage("");}}} className="flex gap-2"><input value={demoMessage} onChange={e=>setDemoMessage(e.target.value)} maxLength={300} placeholder="Send a practice message…" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs"/><button className="rounded-lg bg-teal-800 px-4 py-2 text-xs font-bold text-white">Send</button></form></div>}
-            {demoTab === "materials" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Practice textbook<select value={demoBook} onChange={e=>setDemoBook(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs"><option>Everyday English · Unit 1</option><option>IELTS Speaking · Part 1</option><option>Kids English · Lesson 1</option></select></label><div className="rounded-xl bg-teal-50 p-3"><p className="text-xs font-bold text-teal-900">Selected lesson</p><p className="mt-2 text-xs text-teal-800">{demoBook}</p><button type="button" onClick={testSpeaker} className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-teal-800">Play sample audio</button></div></div>}
+            {demoTab === "materials" && <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <label className="min-w-0 flex-1 text-xs font-semibold text-slate-700">Admin teaching library
+                  <select value={demoBookId} onChange={e => { setDemoBookId(e.target.value ? Number(e.target.value) : ""); setDemoUnitIndex(0); setDemoPage(1); }} className="mt-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs" disabled={!materials.length}>
+                    <option value="">Choose a published resource</option>
+                    {materials.map(material => <option key={material.id} value={material.id}>{demoMaterialKind(material.kind)} · {material.title}</option>)}
+                  </select>
+                </label>
+                <span className="rounded-full bg-teal-100 px-3 py-2 text-[10px] font-bold text-teal-900">{materials.length} published resources</span>
+              </div>
+              {!materials.length ? <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center"><p className="text-sm font-bold text-slate-800">No published teaching materials yet</p><p className="mt-2 text-xs text-slate-500">Upload a textbook, audio course or worksheet in Admin → Materials, then mark it as Published.</p></div> : !demoBook || !demoContent || !demoUnit ? <div className="rounded-xl border border-dashed border-slate-300 px-5 py-8 text-center text-xs text-slate-500">Choose a resource from the admin library to preview and teach it in this practice room.</div> : <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                <div className="flex flex-wrap items-start gap-3 rounded-xl bg-teal-50 p-3">
+                  {demoCoverUrl && <img src={demoCoverUrl} alt="" className="h-16 w-12 shrink-0 rounded-lg border border-teal-100 bg-white object-cover" />}
+                  <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-wider text-teal-800">{demoMaterialKind(demoBook.kind)} · {demoBook.category.replaceAll("_", " ")}</p><h4 className="mt-1 text-sm font-black text-slate-900">{demoBook.title}</h4><p className="mt-1 text-[10px] text-slate-500">{demoBook.language} · {demoBook.level}</p>{demoBook.description && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">{demoBook.description}</p>}</div>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-bold text-teal-800">Preview only</span>
+                </div>
+                {demoPdfUrl ? <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-slate-700">Textbook PDF</p><div className="flex items-center gap-2"><button type="button" disabled={demoPage <= 1} onClick={() => setDemoPage(value => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40">Previous</button><span className="text-[11px] text-slate-500">Page {demoPage}{demoContent.pageCount ? ` / ${demoContent.pageCount}` : ""}</span><button type="button" disabled={!!demoContent.pageCount && demoPage >= demoContent.pageCount} onClick={() => setDemoPage(value => value + 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40">Next</button></div></div>
+                  <iframe title={`${demoBook.title} PDF preview`} src={`${demoPdfUrl}#page=${demoPage}&toolbar=0`} className="h-[55vh] min-h-[340px] w-full rounded-xl border border-slate-200 bg-slate-100" />
+                </div> : <div className="rounded-xl border border-dashed border-teal-200 bg-teal-50/50 p-4 text-xs text-slate-600">This resource is taught through its lesson text and media below.</div>}
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+                  <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-bold uppercase tracking-wider text-teal-700">Lesson {demoUnitIndex + 1} of {demoContent.units.length}</p><h5 className="mt-1 text-sm font-bold text-slate-900">{demoUnit.title}</h5></div><label className="text-[10px] font-semibold text-slate-500">Choose lesson<select value={demoUnitIndex} onChange={e => setDemoUnitIndex(Number(e.target.value))} className="mt-1 block max-w-48 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs">{demoContent.units.map((unit, index) => <option key={`${index}-${unit.title}`} value={index}>{index + 1}. {unit.title}</option>)}</select></label></div>
+                    {demoImageUrl && <img src={demoImageUrl} alt={`${demoUnit.title} illustration`} loading="lazy" className="max-h-64 w-full rounded-lg border border-slate-100 bg-slate-50 object-contain" />}
+                    <p className="whitespace-pre-wrap text-xs leading-7 text-slate-700">{demoUnit.content || "No lesson text was added to this unit."}</p>
+                    {demoAudioUrl && <div className="rounded-lg bg-slate-50 p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-teal-800">Lesson audio</p><audio ref={demoAudioRef} key={demoAudioUrl} controls preload="metadata" controlsList="nodownload" src={demoAudioUrl} className="w-full" /></div>}
+                  </div>
+                  <aside className="space-y-3 rounded-xl bg-teal-50 p-3"><p className="text-xs font-bold text-teal-950">Teaching ideas</p><ul className="list-disc space-y-2 pl-4 text-[11px] leading-5 text-teal-900"><li>Read the text together and clarify new words.</li><li>Play the audio and practice pronunciation.</li><li>Use the whiteboard to explain and annotate.</li><li>Ask the student to answer a question about this lesson.</li></ul><p className="rounded-lg bg-white/80 p-2 text-[10px] leading-5 text-teal-800">This preview uses real published Admin materials, but changes stay local to the demo and are not saved to a real lesson.</p></aside>
+                </div>
+              </div>}
+            </div>}
           </div>
         </section>
         <section className="mt-5 rounded-2xl border border-slate-100 p-4">

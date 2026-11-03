@@ -1,31 +1,103 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ClassroomMaterial } from "@/lib/classroom-material";
 
 type Unit = { title: string; content: string; audioRef?: string; imageRef?: string };
-type Book = { id: number; title: string; category?: string; level: string; fileUrl: string; description: string | null };
-type BookData = { pdfRef: string; pageCount: number | null; units: Unit[] };
+type Book = ClassroomMaterial;
+type BookData = { pdfRef: string; pageCount: number | null; units: Unit[]; legacy: boolean };
 type Point = { x: number; y: number };
 type Stroke = { color: string; points: Point[]; width?: number };
 type WorkspaceState = { bookId: number | null; page: number; unitIndex: number; audioTime: number; audioPlaying: boolean; question: string; answer: string; feedback: string; boardStrokes: Stroke[] };
 const blank: WorkspaceState = { bookId: null, page: 1, unitIndex: 0, audioTime: 0, audioPlaying: false, question: "", answer: "", feedback: "", boardStrokes: [] };
-function decodeBook(book: Book): BookData { try { const p = JSON.parse(book.fileUrl); const count = Number(p.pageCount); return { pdfRef: String(p.pdfRef || ""), pageCount: Number.isSafeInteger(count) && count > 0 ? count : null, units: Array.isArray(p.units) ? p.units as Unit[] : [] }; } catch { return { pdfRef: "", pageCount: null, units: [] }; } }
+function decodeBook(book: Book): BookData {
+  const raw = (book.fileUrl || "").trim();
+  try {
+    const parsed = JSON.parse(raw) as { pdfRef?: unknown; pageCount?: unknown; units?: unknown; audioRef?: unknown };
+    const units = Array.isArray(parsed.units) ? parsed.units.flatMap((entry): Unit[] => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as Record<string, unknown>;
+      return [{
+        title: typeof item.title === "string" && item.title.trim() ? item.title : "Lesson",
+        content: typeof item.content === "string" ? item.content : "",
+        audioRef: typeof item.audioRef === "string" ? item.audioRef : "",
+        imageRef: typeof item.imageRef === "string" ? item.imageRef : "",
+      }];
+    }) : [];
+    if (!units.length && typeof parsed.audioRef === "string" && parsed.audioRef) {
+      units.push({ title: book.title, content: book.description || "", audioRef: parsed.audioRef });
+    }
+    const count = Number(parsed.pageCount);
+    return {
+      pdfRef: typeof parsed.pdfRef === "string" ? parsed.pdfRef : "",
+      pageCount: Number.isSafeInteger(count) && count > 0 ? count : null,
+      units: units.length ? units : [{ title: book.title, content: book.description || "" }],
+      legacy: false,
+    };
+  } catch {
+    // Support older Admin → Materials entries that stored one private file
+    // reference directly instead of the newer structured course JSON.
+    const ext = raw.split("/").pop()?.split("?")[0]?.split(".").pop()?.toLowerCase() || "";
+    if (raw.startsWith("storage://") && ext === "pdf") {
+      return { pdfRef: raw, pageCount: null, units: [{ title: book.title, content: book.description || "" }], legacy: true };
+    }
+    if (raw.startsWith("storage://") && ["mp3", "wav", "ogg", "m4a", "aac"].includes(ext)) {
+      return { pdfRef: "", pageCount: null, units: [{ title: book.title, content: book.description || "", audioRef: raw }], legacy: true };
+    }
+    return { pdfRef: "", pageCount: null, units: [{ title: book.title, content: book.description || "" }], legacy: true };
+  }
+}
+
+const materialKindLabel = (kind: string) => kind === "audio" ? "Audio course" : kind === "worksheet" ? "Interactive worksheet" : "Textbook";
 
 export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, userId, initialTab = "book" }: { lessonId: number; books: Book[]; isTutor: boolean; userId: number; initialTab?: "book" | "board" | "practice" }) {
   const [state, setState] = useState<WorkspaceState>(() => ({ ...blank }));
+  const [remoteSelectedBook, setRemoteSelectedBook] = useState<Book | null>(null);
   const [tab, setTab] = useState<"book" | "board" | "practice">(initialTab);
   const [boardTool, setBoardTool] = useState<"pen" | "marker" | "eraser">("pen");
   const [boardColor, setBoardColor] = useState("#0f766e");
   const [syncStatus, setSyncStatus] = useState("Connecting to shared classroom…");
   const [pageDraft, setPageDraft] = useState("1");
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryKind, setLibraryKind] = useState("all");
   const revision = useRef(0); const dirty = useRef(false); const conflicted = useRef(false); const [conflict, setConflict] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null); const audioRef = useRef<HTMLAudioElement>(null);
   const drawing = useRef(false); const activeStroke = useRef<Point[]>([]); const lastAudioSync = useRef(0); const latest = useRef(""); const initialized = useRef(false); const suppressSave = useRef(false); const stateRef = useRef(state); stateRef.current = state;
-  const book = books.find(b => b.id === state.bookId) || null; const decoded = book ? decodeBook(book) : null; const unit = decoded?.units[state.unitIndex];
+  const book = books.find(b => b.id === state.bookId) || (remoteSelectedBook?.id === state.bookId ? remoteSelectedBook : null);
+  const decoded = book ? decodeBook(book) : null; const unit = decoded?.units[state.unitIndex];
+  // Students only receive the teacher's currently selected item. Tutors can
+  // browse the complete published catalogue maintained in the Admin panel.
+  const visibleBooks = isTutor ? books : book ? [book] : [];
+  const filteredBooks = visibleBooks.filter(item => {
+    const query = libraryQuery.trim().toLocaleLowerCase();
+    const searchable = `${item.title} ${item.category || ""} ${item.language || ""} ${item.level} ${item.description || ""}`.toLocaleLowerCase();
+    return (libraryKind === "all" || item.kind === libraryKind) && (!query || searchable.includes(query));
+  });
   useEffect(() => { setPageDraft(String(state.page)); }, [state.page]);
   const pdfUrl = book && decoded?.pdfRef ? `/api/private-files/material/${book.id}/asset?lesson=${lessonId}&asset=pdf` : "";
   const audioUrl = book && unit?.audioRef ? `/api/private-files/material/${book.id}/asset?lesson=${lessonId}&unit=${state.unitIndex}&type=audio` : "";
   const update = useCallback((patch: Partial<WorkspaceState>) => { dirty.current = true; setState(prev => ({ ...prev, ...patch })); }, []);
+
+  useEffect(() => {
+    if (isTutor || !state.bookId || books.some(item => item.id === state.bookId)) {
+      setRemoteSelectedBook(null);
+      return;
+    }
+    let alive = true;
+    const loadSelectedMaterial = async () => {
+      try {
+        const response = await fetch(`/api/lessons/${lessonId}/teaching-material`, { cache: "no-store" });
+        if (!response.ok) throw new Error("material unavailable");
+        const payload = await response.json() as { material?: Book | null };
+        if (alive && payload.material?.id === state.bookId) setRemoteSelectedBook(payload.material);
+        else if (alive) setRemoteSelectedBook(null);
+      } catch {
+        if (alive) setRemoteSelectedBook(null);
+      }
+    };
+    void loadSelectedMaterial();
+    return () => { alive = false; };
+  }, [lessonId, isTutor, state.bookId, books]);
 
   useEffect(() => {
     let alive = true;
@@ -38,7 +110,9 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
         if (payload.updatedAt && payload.updatedAt !== latest.current && !dirty.current && (!initialized.current || payload.updatedBy !== userId)) {
           const remote = payload.state || {};
           suppressSave.current = true; latest.current = payload.updatedAt;
-          setState(prev => ({ ...prev, ...remote, bookId: books.some(b => b.id === Number(remote.bookId)) ? Number(remote.bookId) : null, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : prev.boardStrokes } as WorkspaceState));
+          const remoteBookId = Number(remote.bookId);
+          const acceptedBookId = remote.bookId == null ? null : Number.isSafeInteger(remoteBookId) && remoteBookId > 0 && (!isTutor || books.some(item => item.id === remoteBookId)) ? remoteBookId : null;
+          setState(prev => ({ ...prev, ...remote, bookId: acceptedBookId, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : prev.boardStrokes } as WorkspaceState));
           window.setTimeout(() => { suppressSave.current = false; }, 150);
         }
         initialized.current = true;
@@ -47,7 +121,7 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
     };
     void poll(); const timer = window.setInterval(() => void poll(), 1800);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [lessonId, userId, books]);
+  }, [lessonId, userId, books, isTutor]);
 
   useEffect(() => {
     if (suppressSave.current) return;
@@ -71,7 +145,9 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
       suppressSave.current = true; dirty.current = false; conflicted.current = false; setConflict(false);
       revision.current = payload.revision ?? 0; latest.current = payload.updatedAt || "";
       const remote = payload.state || {};
-      setState({ ...blank, ...remote, bookId: books.some(b => b.id === Number(remote.bookId)) ? Number(remote.bookId) : null, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : [] } as WorkspaceState);
+      const remoteBookId = Number(remote.bookId);
+      const acceptedBookId = remote.bookId == null ? null : Number.isSafeInteger(remoteBookId) && remoteBookId > 0 && (!isTutor || books.some(item => item.id === remoteBookId)) ? remoteBookId : null;
+      setState({ ...blank, ...remote, bookId: acceptedBookId, boardStrokes: Array.isArray(remote.boardStrokes) ? remote.boardStrokes : [] } as WorkspaceState);
       window.setTimeout(() => { suppressSave.current = false; }, 200);
       setSyncStatus("Latest classroom version loaded");
     } catch { setSyncStatus("Could not load the latest classroom version"); }
@@ -89,6 +165,12 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
     if (state.audioPlaying && audio.paused) void audio.play().catch(() => {});
     if (!state.audioPlaying && !audio.paused) audio.pause();
   }, [audioUrl, state.audioTime, state.audioPlaying]);
+
+  const chooseBook = (id: number) => {
+    if (!isTutor) return;
+    update({ bookId: id || null, page: 1, unitIndex: 0, audioTime: 0, audioPlaying: false });
+    setLibraryQuery("");
+  };
 
   const point = (e: React.PointerEvent<HTMLCanvasElement>): Point => { const r=e.currentTarget.getBoundingClientRect(); return { x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)), y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height)) }; };
   const currentStrokeStyle = () => ({
@@ -128,10 +210,10 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
         <p className="mt-1 text-[10px] text-teal-100/80">{syncStatus}</p>
         {conflict && <button type="button" onClick={syncLatest} className="mt-2 rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-bold text-amber-950">Load latest shared version</button>}
       </div>
-      <label className="text-xs font-semibold">Lesson material
-        <select value={book?.id ?? ""} onChange={e => { const id = Number(e.target.value); update({ bookId: id || null, page: 1, unitIndex: 0, audioTime: 0, audioPlaying: false }); }} className="ml-2 max-w-56 rounded-lg bg-white px-3 py-2 text-slate-900" disabled={!books.length || !isTutor}>
-          <option value="">Choose textbook</option>
-          {books.map(b => <option key={b.id} value={b.id}>{b.title} · {(b.category || "general").replaceAll("_", " ")} · {b.level}</option>)}
+      <label className="text-xs font-semibold">Admin teaching library
+        <select value={book?.id ?? ""} onChange={e => chooseBook(Number(e.target.value))} className="ml-2 max-w-56 rounded-lg bg-white px-3 py-2 text-slate-900" disabled={!books.length || !isTutor}>
+          <option value="">Choose a resource</option>
+          {visibleBooks.map(b => <option key={b.id} value={b.id}>{materialKindLabel(b.kind)} · {b.title}</option>)}
         </select>
       </label>
     </header>
@@ -141,8 +223,37 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
       )}
     </nav>
 
-    {tab === "book" && (!book ? <div className="p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl">📚</div><p className="mt-4 text-sm font-bold text-slate-800">No textbook selected yet</p><p className="mt-1 text-xs text-slate-500">The teacher can choose an admin-approved textbook from the menu above.</p></div> : <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+    {tab === "book" && <div className="space-y-3 border-b border-slate-100 bg-slate-50/70 px-4 py-4">
+      {isTutor ? <>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-black text-slate-800">Published materials from Admin</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">All published textbooks, audio courses and worksheets are available here for teacher-led lessons.</p>
+          </div>
+          <span className="rounded-full bg-teal-100 px-3 py-1.5 text-[10px] font-bold text-teal-900">{books.length} resources</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_190px]">
+          <input value={libraryQuery} onChange={e => setLibraryQuery(e.target.value)} placeholder="Search by title, category, level or language…" aria-label="Search admin teaching materials" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-teal-500" />
+          <select value={libraryKind} onChange={e => setLibraryKind(e.target.value)} aria-label="Filter material type" className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-700">
+            <option value="all">All material types</option><option value="textbook">Textbooks</option><option value="audio">Audio courses</option><option value="worksheet">Worksheets</option>
+          </select>
+        </div>
+        {filteredBooks.length ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredBooks.map(item => <button key={item.id} type="button" onClick={() => chooseBook(item.id)} aria-pressed={book?.id === item.id} className={`flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition ${book?.id === item.id ? "border-teal-500 bg-teal-50 ring-1 ring-teal-200" : "border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50/50"}`}>
+            {item.coverUrl?.startsWith("storage://") ? <img src={`/api/private-files/material/${item.id}/asset?lesson=${lessonId}&asset=cover`} alt="" loading="lazy" className="h-12 w-10 shrink-0 rounded-lg border border-slate-100 bg-slate-50 object-cover" /> : <span className="grid h-12 w-10 shrink-0 place-items-center rounded-lg bg-teal-50 text-lg">{item.kind === "audio" ? "🎧" : item.kind === "worksheet" ? "📝" : "📘"}</span>}
+            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold text-slate-900">{item.title}</span><span className="mt-1 block text-[10px] text-teal-800">{materialKindLabel(item.kind)}</span><span className="mt-1 block truncate text-[10px] text-slate-500">{(item.category || "general").replaceAll("_", " ")} · {item.language || "English"} · {item.level}</span></span>
+            {book?.id === item.id && <span className="text-xs font-black text-teal-700">✓</span>}
+          </button>)}
+        </div> : <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-xs text-slate-500">{books.length ? "No materials match this search or filter." : "No published materials are available yet. Publish a textbook, audio course or worksheet in Admin → Materials."}</p>}
+      </> : <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-teal-100 text-lg">📚</span><div><p className="text-xs font-bold text-slate-800">Teacher-selected lesson material</p><p className="mt-0.5 text-[10px] text-slate-500">The selected resource and lesson progress are synchronized with your teacher.</p></div></div>}
+    </div>}
+
+    {tab === "book" && (!book ? <div className="p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-2xl">📚</div><p className="mt-4 text-sm font-bold text-slate-800">{isTutor ? "Choose a resource to start teaching" : "Waiting for your teacher to select a resource"}</p><p className="mt-1 text-xs text-slate-500">{isTutor ? "Choose any published item from the Admin teaching library above." : "Your teacher can select a published textbook, audio course or worksheet from the admin library."}</p></div> : <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
       <div className="min-w-0 space-y-3">
+        <div className="flex flex-wrap items-start gap-3 rounded-xl border border-teal-100 bg-teal-50/70 p-3">
+          {book.coverUrl?.startsWith("storage://") && <img src={`/api/private-files/material/${book.id}/asset?lesson=${lessonId}&asset=cover`} alt="" className="h-16 w-12 shrink-0 rounded-lg border border-teal-100 bg-white object-cover" />}
+          <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-wider text-teal-800">{materialKindLabel(book.kind)} · {(book.category || "general").replaceAll("_", " ")}</p><h3 className="mt-1 text-sm font-black text-slate-900">{book.title}</h3><p className="mt-1 text-[10px] text-slate-600">{book.language || "English"} · {book.level}</p>{book.description && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">{book.description}</p>}</div>
+        </div>
         {pdfUrl ? <>
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3"><span className="text-xs font-bold text-slate-700">{book.title} · PDF reader</span><div className="flex flex-wrap items-center gap-2">
             <button disabled={!isTutor || state.page <= 1} className="rounded-lg border bg-white px-3 py-1.5 text-xs disabled:opacity-40" onClick={() => update({ page: Math.max(1, state.page - 1) })}>Previous</button>
@@ -153,14 +264,14 @@ export default function ClassroomTeachingWorkspace({ lessonId, books, isTutor, u
             <button disabled={!isTutor || (!!decoded?.pageCount && state.page >= decoded.pageCount)} className="rounded-lg border bg-white px-3 py-1.5 text-xs disabled:opacity-40" onClick={() => update({ page: state.page + 1 })}>Next</button>
           </div></div>
           <iframe title={`${book.title} PDF`} src={`${pdfUrl}#page=${state.page}&toolbar=0`} className="h-[65vh] min-h-[440px] w-full rounded-xl border border-slate-200 bg-slate-100" />
-        </> : <div className="rounded-xl border border-dashed p-6 text-sm text-slate-500">This book has no PDF uploaded. Use the lesson text and audio below, or upload a PDF in Admin → Materials.</div>}
+        </> : <div className="rounded-xl border border-dashed border-teal-200 bg-teal-50/40 p-5 text-sm text-slate-600">{book.kind === "audio" ? "This audio course is taught through its lesson tracks below." : book.kind === "worksheet" ? "This worksheet is taught through its lesson activities and text below." : "No PDF file is attached to this resource. Use the lesson content and audio below."}</div>}
         {unit && <div className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-[10px] font-bold uppercase tracking-wider text-teal-700">Lesson {state.unitIndex + 1} of {decoded?.units.length}</p><h3 className="mt-1 font-bold text-slate-900">{unit.title}</h3></div><div className="flex gap-2"><button type="button" disabled={!isTutor || state.unitIndex <= 0} onClick={() => update({ unitIndex: state.unitIndex - 1, audioTime: 0, audioPlaying: false })} className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40">Previous lesson</button><button type="button" disabled={!isTutor || state.unitIndex >= (decoded?.units.length || 1) - 1} onClick={() => update({ unitIndex: state.unitIndex + 1, audioTime: 0, audioPlaying: false })} className="rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40">Next lesson</button></div></div>
           {unit.imageRef && <img src={`/api/private-files/material/${book.id}/asset?lesson=${lessonId}&unit=${state.unitIndex}&type=image`} alt={`${unit.title} lesson illustration`} loading="lazy" className="mt-3 max-h-72 w-full rounded-xl border border-slate-100 bg-slate-50 object-contain" />}
           <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{unit.content}</p>
-          {audioUrl && <audio ref={audioRef} key={audioUrl} controls={isTutor} preload="none" controlsList="nodownload" src={audioUrl} className="mt-3 w-full" onPlay={e => update({ audioPlaying: true, audioTime: e.currentTarget.currentTime })} onPause={e => update({ audioPlaying: false, audioTime: e.currentTarget.currentTime })} onSeeked={e => update({ audioTime: e.currentTarget.currentTime })} onTimeUpdate={e => { if (isTutor && !e.currentTarget.paused && e.currentTarget.currentTime - lastAudioSync.current >= 3) { lastAudioSync.current = e.currentTarget.currentTime; update({ audioTime: e.currentTarget.currentTime }); } }} />}
+          {audioUrl && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-teal-800">Shared lesson audio</p><audio ref={audioRef} key={audioUrl} controls preload="metadata" controlsList="nodownload" src={audioUrl} className="w-full" onPlay={e => { if (isTutor) update({ audioPlaying: true, audioTime: e.currentTarget.currentTime }); }} onPause={e => { if (isTutor) update({ audioPlaying: false, audioTime: e.currentTarget.currentTime }); }} onSeeked={e => { if (isTutor) update({ audioTime: e.currentTarget.currentTime }); }} onTimeUpdate={e => { if (isTutor && !e.currentTarget.paused && e.currentTarget.currentTime - lastAudioSync.current >= 3) { lastAudioSync.current = e.currentTarget.currentTime; update({ audioTime: e.currentTarget.currentTime }); } }} /><p className="mt-2 text-[10px] leading-5 text-slate-500">{isTutor ? "Play, pause or seek to synchronize the audio position with the student." : "Use Play once to enable audio in your browser. The track follows your teacher's shared playback position."}</p></div>}
         </div>}
       </div>
-      <aside className="space-y-3"><div className="rounded-2xl bg-teal-50 p-4"><p className="text-xs font-bold text-teal-900">Teaching controls</p><p className="mt-1 text-xs leading-5 text-teal-800">{isTutor ? "Guide the PDF page and audio track, annotate the shared board and review the student's answer." : "Follow the selected page and track, listen to the audio and work through the teacher's prompt."}</p></div><div className="rounded-2xl border p-4"><label className="block text-xs font-bold text-slate-700">Lesson / audio track<select value={state.unitIndex} disabled={!isTutor} onChange={e => update({ unitIndex: Number(e.target.value), audioTime: 0, audioPlaying: false })} className="mt-2 w-full rounded-lg border bg-white p-2.5 text-sm">{(decoded?.units || []).map((u, i) => <option value={i} key={i}>{i + 1}. {u.title}</option>)}</select></label>{!decoded?.units.length && <p className="mt-2 text-xs text-slate-500">No lesson units were added to this textbook.</p>}</div><div className="rounded-2xl border p-4"><p className="text-xs font-bold text-slate-700">Session tips</p><ul className="mt-2 list-disc space-y-2 pl-4 text-xs leading-5 text-slate-500"><li>Ask the student to read aloud.</li><li>Replay audio to practice pronunciation.</li><li>Use the whiteboard for corrections.</li><li>Finish with a short speaking prompt.</li></ul></div></aside>
+      <aside className="space-y-3"><div className="rounded-2xl bg-teal-50 p-4"><p className="text-xs font-bold text-teal-900">Teaching controls</p><p className="mt-1 text-xs leading-5 text-teal-800">{isTutor ? "Guide the PDF page and audio track, annotate the shared board and review the student's answer." : "Follow the selected page and track, listen to the audio and work through the teacher's prompt."}</p></div><div className="rounded-2xl border p-4"><label className="block text-xs font-bold text-slate-700">Lesson / audio track<select value={state.unitIndex} disabled={!isTutor} onChange={e => update({ unitIndex: Number(e.target.value), audioTime: 0, audioPlaying: false })} className="mt-2 w-full rounded-lg border bg-white p-2.5 text-sm">{(decoded?.units || []).map((u, i) => <option value={i} key={i}>{i + 1}. {u.title}</option>)}</select></label>{!decoded?.units.length && <p className="mt-2 text-xs text-slate-500">No lesson units were added to this resource.</p>}</div><div className="rounded-2xl border p-4"><p className="text-xs font-bold text-slate-700">Session tips</p><ul className="mt-2 list-disc space-y-2 pl-4 text-xs leading-5 text-slate-500"><li>Ask the student to read aloud.</li><li>Replay audio to practice pronunciation.</li><li>Use the whiteboard for corrections.</li><li>Finish with a short speaking prompt.</li></ul></div></aside>
     </div>)}
 
     {tab === "board" && <div className="space-y-3 p-4">

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users, teacherDocuments, referralLessonCredits, userPresence, lessonParticipants, reviews } from "@/db/schema";
+import { lessonPackages, lessons, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users, teacherDocuments, referralLessonCredits, userPresence, lessonParticipants, reviews, learningMaterials } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -103,6 +103,21 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const teacherDocs = isTutor && (tab === "profile" || tab === "overview")
     ? await db.select().from(teacherDocuments).where(eq(teacherDocuments.teacherId, user.id)).orderBy(asc(teacherDocuments.createdAt))
     : [];
+  const demoMaterials = isTutor && tab === "test"
+    ? await db.select({
+        id: learningMaterials.id,
+        title: learningMaterials.title,
+        kind: learningMaterials.kind,
+        category: learningMaterials.category,
+        language: learningMaterials.language,
+        level: learningMaterials.level,
+        fileUrl: learningMaterials.fileUrl,
+        coverUrl: learningMaterials.coverUrl,
+        description: learningMaterials.description,
+      }).from(learningMaterials)
+        .where(eq(learningMaterials.published, true))
+        .orderBy(asc(learningMaterials.kind), asc(learningMaterials.category), asc(learningMaterials.title))
+    : [];
   const identityVerified = teacherDocs.some(d => d.documentType === "identity" && d.status === "verified");
   const identityPending = teacherDocs.some(d => d.documentType === "identity" && d.status === "pending");
   const teacherProfileItems = isTutor ? [
@@ -161,7 +176,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
   } else if (tab === "test" && isTutor) {
-    content = <TeacherClassTest />;
+    content = <TeacherClassTest materials={demoMaterials} />;
   } else if (tab === "schedule" && isTutor) {
     content = <TimetableManager teacherId={user.id} tzOffset={tutor?.tzOffset ?? 0} timeZone={tutor?.timeZone || user.timeZone || "UTC"} initialSlots={weeklySlots} blocked={blockedSlots} booked={scheduleBookings} t={t} lang={lang} viewerLabel={tzFor(lang, user.timeZone).label} okMsg={sp.ok === "saved" ? t.saved : ""} errMsg={sp.err ? (t[`err_${sp.err}` as keyof typeof t] || t.err_generic) : ""} />;
   } else if (tab === "wallet") {

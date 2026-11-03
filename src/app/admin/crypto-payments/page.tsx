@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cryptoPaymentOrders, users } from "@/db/schema";
 import { approveCryptoPayment, rejectCryptoPayment } from "@/lib/crypto-admin-actions";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Crypto payments · Lingorain Admin" };
@@ -9,11 +10,13 @@ const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 export default async function AdminCryptoPayments({ searchParams }: { searchParams: Promise<{ result?: string }> }) {
   const sp = await searchParams;
+  const schemaReady = await isCryptoPaymentsSchemaReady();
+  if (!schemaReady) return <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6"><p className="text-xs font-bold uppercase tracking-wider text-amber-800">Wallet funding setup</p><h1 className="mt-2 text-2xl font-black text-amber-950">Crypto payments are not initialized</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900">The database table for crypto payment orders is not available. Back up Neon, then apply <code>drizzle/0017_crypto_payments.sql</code> using the controlled migration procedure in DEPLOYMENT.md. No wallet balance will be credited until the schema is ready and payment verification succeeds.</p></section>;
   const rows = await db.select({ order: cryptoPaymentOrders, studentName: users.name, studentEmail: users.email })
     .from(cryptoPaymentOrders).innerJoin(users, eq(users.id, cryptoPaymentOrders.userId))
     .orderBy(desc(cryptoPaymentOrders.createdAt)).limit(150);
   const pending = rows.filter(row => row.order.status === "pending_review").length;
-  const result = sp.result === "approved" ? "Payment approved and wallet credited." : sp.result === "rejected" ? "Payment rejected." : sp.result === "note_required" ? "Enter a reason before rejecting a payment." : sp.result === "already_reviewed" ? "This payment has already been reviewed." : sp.result === "invalid" ? "Invalid payment request." : "";
+  const result = sp.result === "approved" ? "Payment approved and wallet credited." : sp.result === "rejected" ? "Payment rejected." : sp.result === "note_required" ? "Enter a reason before rejecting a payment." : sp.result === "already_reviewed" ? "This payment has already been reviewed." : sp.result === "invalid" ? "Invalid payment request." : sp.result === "setup_required" ? "Crypto payment database setup is required before this action can be completed." : "";
   return <>
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-teal-700">Wallet funding</p><h1 className="mt-1 text-3xl font-black text-teal-950">Crypto payments</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Review direct wallet transfers here, including USDT, BNB and TRX. A submitted transaction hash does not credit the student's wallet; only an explicit admin approval does.</p></div><div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">{pending} awaiting review</div></div>
     {result&&<p role="status" className="mb-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-teal-900">{result}</p>}

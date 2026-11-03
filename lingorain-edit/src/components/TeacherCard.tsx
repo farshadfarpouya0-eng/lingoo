@@ -1,7 +1,0 @@
-import Link from "next/link";
-import type { T } from "@/lib/i18n";
-import Icon from "./Icon";
-export type TeacherRow={id:number;name:string;avatar:string|null;headline:string;country:string;accent:string;price:number;rating:number;reviewsCount:number;lessonsCount:number;speaks:string;tags:string;certified:boolean;credentialVerified?:boolean};
-export default function TeacherCard({tr,t}:{tr:TeacherRow;t:T}) {
-  return <Link href={`/teachers/${tr.id}`} className="tutor-profile-card"><div className="tutor-profile-top"><div className="tutor-portrait"><img src={tr.avatar||""} alt={tr.name} width={64} height={64} loading="lazy" decoding="async"/></div><div className="tutor-profile-info"><div className="tutor-name-row"><h3>{tr.name}</h3></div><p className="tutor-rating"><span>★ {tr.rating.toFixed(1)}</span><span>{tr.reviewsCount} {t.reviews}</span></p></div></div><p className="tutor-headline">{tr.headline}</p><p className="tutor-languages"><span>{t.speaks}</span>{tr.speaks}</p><div className="tutor-topics">{tr.tags.split(",").filter(Boolean).slice(0,3).map(g=><span key={g}>{g.trim()}</span>)}</div><div className="tutor-price-row"><div><b>US${(tr.price/100).toFixed(2)}</b><span>{t.perLesson}</span></div><span className="tutor-card-arrow"><Icon name="arrow" width={17} height={17}/></span></div><p className="tutor-trial-note">{t.trial} · 25 {t.perLesson.includes("分")?"分":"min"} · US${(Math.round(Math.round(tr.price/2)/2)/100).toFixed(2)}</p></Link>;
-}

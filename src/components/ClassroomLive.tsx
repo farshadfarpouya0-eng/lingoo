@@ -7,6 +7,7 @@ import type { Platform, RoomSnapshot } from "@/lib/room-service";
 import { saveClassroom, requestClassroomSwitch } from "@/lib/classroom-actions";
 import Icon from "./Icon";
 import LingoRoom from "./LingoRoom";
+import type { ClassroomMaterial } from "@/lib/classroom-material";
 
 const D = {
   pickTitle: "Choose your classroom",
@@ -195,7 +196,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
 export default function ClassroomLive({ initial, isTutor, preference, c, startLabel, startAtMs, serverNowMs, durationMinutes, books, userId }: {
   initial: RoomSnapshot; isTutor: boolean; preference: string; c: LearningCopy;
   startLabel: string; startAtMs: number; serverNowMs: number; durationMinutes: number;
-  books: { id: number; title: string; category: string; level: string; fileUrl: string; description: string | null }[];
+  books: ClassroomMaterial[];
   userId: number;
 }) {
   const [room, setRoom] = useState(initial);

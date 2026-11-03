@@ -6,11 +6,13 @@ import { cryptoPaymentOrders, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { ledgerOnce } from "@/lib/money";
 import { revalidatePath } from "next/cache";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
 const safeNote = (value: FormDataEntryValue | null) => String(value ?? "").trim().slice(0, 300);
 
 export async function approveCryptoPayment(fd: FormData) {
   const admin = await requireAdmin();
+  if (!await isCryptoPaymentsSchemaReady()) redirect("/admin/crypto-payments?result=setup_required");
   const id = Number(fd.get("id"));
   if (!Number.isSafeInteger(id) || id < 1) redirect("/admin/crypto-payments?result=invalid");
   await db.transaction(async tx => {
@@ -34,6 +36,7 @@ export async function approveCryptoPayment(fd: FormData) {
 
 export async function rejectCryptoPayment(fd: FormData) {
   const admin = await requireAdmin();
+  if (!await isCryptoPaymentsSchemaReady()) redirect("/admin/crypto-payments?result=setup_required");
   const id = Number(fd.get("id"));
   const note = safeNote(fd.get("note"));
   if (!Number.isSafeInteger(id) || id < 1 || !note) redirect("/admin/crypto-payments?result=note_required");

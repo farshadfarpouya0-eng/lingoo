@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getIntegrationConfig } from "@/lib/integration-config";
 import { updateProviderPayment } from "@/lib/crypto-payment-settlement";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ function validSignature(payload: Record<string, unknown>, signature: string | nu
 }
 
 export async function POST(req: Request) {
+  if (!await isCryptoPaymentsSchemaReady()) return new Response("crypto payments database migration required", { status: 503 });
   const config = (await getIntegrationConfig()).crypto;
   if (!config.nowPaymentsApiKey || !config.nowPaymentsIpnSecret) return new Response("not configured", { status: 404 });
   let payload: Record<string, unknown>;

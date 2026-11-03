@@ -177,6 +177,8 @@ npm run db:encrypt-payout-data -- --apply
 
 این نسخه فقط **شارژ کیف پول دانشجو** را پشتیبانی می‌کند؛ قابلیت برداشت یا ارسال رمزارز از طرف Lingorain اضافه نشده است.
 
+**اگر صفحه Wallet پیام `This page could not load` نشان می‌دهد:** نسخهٔ فعلی ابتدا وجود جدول `public.crypto_payment_orders` را بررسی می‌کند. اگر migration `0017_crypto_payments.sql` هنوز روی Neon اعمال نشده باشد، صفحهٔ اصلی Wallet، موجودی و تاریخچهٔ تراکنش‌ها همچنان نمایش داده می‌شوند؛ اما بخش پرداخت کریپتو تا زمان اجرای migration غیرفعال می‌ماند. پس از backup و بررسی دیتابیس، مراحل بخش 4 را با اتصال Direct اجرا کنید. این migration را از Build Command اجرا نکنید.
+
 - در **Admin → Integrations → Crypto payments** می‌توانید کلیدهای NOWPayments و Plisio را ذخیره کنید. credentialها در تنظیمات یکپارچه‌سازی با AES-256-GCM رمز می‌شوند.
 - callbackها باید از اینترنت و بدون ورود کاربر قابل دسترسی باشند: `/api/crypto/nowpayments` و `/api/crypto/plisio?json=true`. آدرس عمومی سایت را در `APP_URL` با HTTPS ثبت کنید.
 - NOWPayments: کلید API و IPN Secret را از پنل پذیرنده بردارید و callback URL را در تنظیمات IPN ثبت کنید. اگر WAF/Firewall دارید، درخواست‌های callback را طبق مستندات رسمی و با بررسی امضای HMAC-SHA512 مجاز کنید.

@@ -31,7 +31,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let reference = "";
   if (asset === "cover") reference = material.coverUrl || "";
   else if (asset === "pdf") {
-    try { const parsed = JSON.parse(material.fileUrl); reference = String(parsed.pdfRef || ""); } catch { return Response.json({ error: "Not found" }, { status: 404 }); }
+    try {
+      const parsed = JSON.parse(material.fileUrl);
+      reference = typeof parsed.pdfRef === "string" ? parsed.pdfRef : "";
+    } catch {
+      // Backward compatibility for older admin uploads that stored a single
+      // private PDF reference directly in learning_materials.file_url.
+      const directRef = material.fileUrl.trim();
+      if (["textbook", "worksheet"].includes(material.kind) && directRef.startsWith("storage://") && directRef.toLowerCase().endsWith(".pdf")) reference = directRef;
+    }
   } else {
     const unitIndex = Number(url.searchParams.get("unit"));
     const type = url.searchParams.get("type");
@@ -40,7 +48,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       const parsed = JSON.parse(material.fileUrl);
       const unit = Array.isArray(parsed.units) ? parsed.units[unitIndex] : null;
       reference = type === "audio" ? String(unit?.audioRef || "") : String(unit?.imageRef || "");
-    } catch { return Response.json({ error: "Not found" }, { status: 404 }); }
+    } catch {
+      // Older audio courses stored their sole audio file directly in file_url.
+      const directRef = material.fileUrl.trim();
+      if (type === "audio" && unitIndex === 0 && material.kind === "audio" && directRef.startsWith("storage://") && /\.(mp3|wav|ogg|m4a|aac)$/i.test(directRef)) reference = directRef;
+    }
   }
   if (!reference.startsWith("storage://") || !reference.includes("/materials/")) return Response.json({ error: "Not found" }, { status: 404 });
   try {

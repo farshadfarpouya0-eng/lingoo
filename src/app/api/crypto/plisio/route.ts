@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { cryptoPaymentOrders } from "@/db/schema";
 import { getIntegrationConfig } from "@/lib/integration-config";
 import { updateProviderPayment } from "@/lib/crypto-payment-settlement";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ function validSignature(payload: Record<string, unknown>, secret: string) {
 }
 
 export async function POST(req: Request) {
+  if (!await isCryptoPaymentsSchemaReady()) return new Response("crypto payments database migration required", { status: 503 });
   const secret = (await getIntegrationConfig()).crypto.plisioSecretKey;
   if (!secret) return new Response("not configured", { status: 404 });
   let payload: Record<string, unknown>;

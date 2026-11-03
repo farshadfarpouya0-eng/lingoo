@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { and, desc, eq, asc, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, lessonPackages, lessonParticipants } from "@/db/schema";
+import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterials, lessonPackages, lessonParticipants, classroomWorkspaceStates } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
@@ -54,7 +54,36 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const sessionTotal = packageRow?.totalLessons ?? courseLessons.length;
   // Textbooks and audio are admin-managed teaching assets. They are available
   // inside the classroom only; students never get a standalone library view.
-  const teachingMaterials = await db.select({ id: learningMaterials.id, title: learningMaterials.title, category: learningMaterials.category, level: learningMaterials.level, fileUrl: learningMaterials.fileUrl, description: learningMaterials.description }).from(learningMaterials).where(eq(learningMaterials.published, true)).orderBy(asc(learningMaterials.title)).limit(200);
+  // The teacher's in-room library is sourced from every published item in the
+  // Admin → Materials catalogue (textbooks, audio courses and worksheets).
+  // Drafts deliberately remain private until an administrator publishes them.
+  const materialProjection = {
+    id: learningMaterials.id,
+    title: learningMaterials.title,
+    kind: learningMaterials.kind,
+    category: learningMaterials.category,
+    language: learningMaterials.language,
+    level: learningMaterials.level,
+    fileUrl: learningMaterials.fileUrl,
+    coverUrl: learningMaterials.coverUrl,
+    description: learningMaterials.description,
+  };
+  const teachingMaterials = isTutor
+    ? await db.select(materialProjection).from(learningMaterials)
+        .where(eq(learningMaterials.published, true))
+        .orderBy(asc(learningMaterials.kind), asc(learningMaterials.category), asc(learningMaterials.title))
+    : await (async () => {
+        // Do not serialize the entire admin catalogue or its lesson text/private
+        // storage references to students. Only send the item the tutor selected.
+        const [workspace] = await db.select({ state: classroomWorkspaceStates.state })
+          .from(classroomWorkspaceStates).where(eq(classroomWorkspaceStates.lessonId, id)).limit(1);
+        const selectedId = workspace?.state && typeof workspace.state === "object"
+          ? Number((workspace.state as Record<string, unknown>).bookId)
+          : NaN;
+        if (!Number.isSafeInteger(selectedId) || selectedId < 1) return [];
+        return db.select(materialProjection).from(learningMaterials)
+          .where(and(eq(learningMaterials.id, selectedId), eq(learningMaterials.published, true))).limit(1);
+      })();
   const history = await db.select().from(lessonPlatformEvents).where(eq(lessonPlatformEvents.lessonId, id)).orderBy(desc(lessonPlatformEvents.createdAt), desc(lessonPlatformEvents.id)).limit(6);
   const labels: Record<string, string> = {
     undecided: c.pendingBadge || "Not chosen",
