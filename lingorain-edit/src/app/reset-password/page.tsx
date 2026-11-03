@@ -1,0 +1,4 @@
+import Link from "next/link";
+import ResetPasswordForm from "@/components/ResetPasswordForm";
+export const dynamic = "force-dynamic";
+export default async function ResetPasswordPage({ searchParams }: { searchParams: Promise<{ token?: string }> }) { const { token = "" } = await searchParams; const validShape = token.length >= 30 && token.length <= 100; return <main className="mx-auto max-w-lg px-4 py-16"><div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-xl"><h1 className="text-2xl font-black text-teal-950">Set a new password</h1>{validShape ? <ResetPasswordForm token={token} /> : <><p className="mt-3 text-sm text-red-700">This password reset link is missing or invalid.</p><Link href="/forgot-password" className="mt-5 inline-block rounded-xl bg-teal-700 px-5 py-3 font-bold text-white">Request a new link</Link></>}</div></main>; }

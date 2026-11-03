@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Icon from "./Icon";
+import Icon, { type IconName } from "./Icon";
 import ClassroomChat from "@/components/ClassroomChat";
 import ClassroomTeachingWorkspace from "@/components/ClassroomTeachingWorkspace";
 
@@ -28,16 +28,19 @@ type JitsiApi = {
 type JitsiConstructor = new (domain: string, options: Record<string, unknown>) => JitsiApi;
 declare global { interface Window { JitsiMeetExternalAPI?: JitsiConstructor } }
 
-let jitsiScriptPromise: Promise<JitsiConstructor> | null = null;
+let jitsiScriptPromise: Promise<JitsiConstructor> | undefined;
 function loadJitsiApi(domain: string): Promise<JitsiConstructor> {
-  if (typeof window !== "undefined" && window.JitsiMeetExternalAPI) return Promise.resolve(window.JitsiMeetExternalAPI);
+  const availableConstructor = typeof window !== "undefined" ? window.JitsiMeetExternalAPI : undefined;
+  if (availableConstructor) return Promise.resolve(availableConstructor);
   if (jitsiScriptPromise) return jitsiScriptPromise;
-  jitsiScriptPromise = new Promise((resolve, reject) => {
+
+  const pending = new Promise<JitsiConstructor>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[data-lingorain-jitsi="${domain}"]`);
     const script = existing || document.createElement("script");
-    const cleanup = () => { jitsiScriptPromise = null; };
+    const cleanup = () => { jitsiScriptPromise = undefined; };
     script.addEventListener("load", () => {
-      if (window.JitsiMeetExternalAPI) resolve(window.JitsiMeetExternalAPI);
+      const constructor = window.JitsiMeetExternalAPI;
+      if (constructor) resolve(constructor);
       else { cleanup(); reject(new Error("The video room controls could not be loaded.")); }
     }, { once: true });
     script.addEventListener("error", () => { cleanup(); reject(new Error("The video service could not be reached. Check your connection and try again.")); }, { once: true });
@@ -47,8 +50,13 @@ function loadJitsiApi(domain: string): Promise<JitsiConstructor> {
       script.dataset.lingorainJitsi = domain;
       document.head.appendChild(script);
     }
-  }).catch(error => { jitsiScriptPromise = null; throw error; });
-  return jitsiScriptPromise;
+  });
+  const tracked: Promise<JitsiConstructor> = pending.catch((error: unknown) => {
+    jitsiScriptPromise = undefined;
+    throw error;
+  });
+  jitsiScriptPromise = tracked;
+  return tracked;
 }
 
 const tool = "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40";
@@ -212,7 +220,16 @@ export default function LingoRoom({ joinUrl, roomName, displayName, onNameChange
                 <div><p className="text-lg font-extrabold">A better way to learn together</p><p className="mt-1 text-xs text-white/65">Video · Screen share · Whiteboard · Materials</p></div>
               </div>
               <div className="mt-6 grid grid-cols-3 gap-2">
-                {[ ["video","HD video"], ["box","Shared tools"], ["messages","Live chat"] ].map(([icon,label])=><div key={label} className="rounded-xl border border-white/10 bg-black/10 px-3 py-3"><Icon name={icon} width={17} height={17} /><p className="mt-2 text-[10px] font-semibold text-white/75">{label}</p></div>)}
+                {([
+                  { icon: "video", label: "HD video" },
+                  { icon: "box", label: "Shared tools" },
+                  { icon: "messages", label: "Live chat" },
+                ] satisfies ReadonlyArray<{ icon: IconName; label: string }>).map(({ icon, label }) => (
+                  <div key={label} className="rounded-xl border border-white/10 bg-black/10 px-3 py-3">
+                    <Icon name={icon} width={17} height={17} />
+                    <p className="mt-2 text-[10px] font-semibold text-white/75">{label}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

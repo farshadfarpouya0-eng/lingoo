@@ -1,0 +1,102 @@
+import "dotenv/config";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { db, pool } from "../src/db";
+import { lessonPackages, lessonPlatformEvents, lessons, teacherProfiles, transactions, users } from "../src/db/schema";
+import { quotePackage } from "../src/lib/package-pricing";
+import { purchaseLessonPackage } from "../src/lib/package-service";
+import { reserveLesson, changeLessonStatus } from "../src/lib/lesson-service";
+import { chooseClassroom, classroomSnapshot, reportConnectionProblem, validMeetingLink } from "../src/lib/room-service";
+import { teacherShare } from "../src/lib/money";
+
+async function run() {
+  const ids:number[]=[];
+  const tag=randomUUID();
+  try {
+    assert.equal(quotePackage(2750,50,5).unitPrice,2613);
+    assert.equal(quotePackage(2750,50,10).unitPrice,2475);
+    assert.equal(quotePackage(2750,50,20).unitPrice,2338);
+    assert.equal(quotePackage(2750,25,10).unitPrice,1306);
+    assert.equal(quotePackage(2750,25,20).unitPrice,1238);
+    assert.equal(quotePackage(2750,25,40).unitPrice,1169);
+    assert.throws(()=>quotePackage(2750,25,5));
+    console.log("PASS screenshot prices and duration-specific package counts");
+    const create=async(role:string)=>{const [u]=await db.insert(users).values({name:`Flow test ${role}`,email:`${role}-${randomUUID()}@test.invalid`,passwordHash:"not-a-login-account",role,balance:100000}).returning();ids.push(u.id);return u;};
+    const student=await create("student"), stranger=await create("student"), teacher=await create("teacher"), otherTeacher=await create("teacher");
+    await db.insert(teacherProfiles).values([teacher,otherTeacher].map(u=>({userId:u.id,headline:"Integration test",price:2750,startHour:0,endHour:24,tzOffset:0,platformDefault:"zoom"})));
+    const input={teacherId:teacher.id,duration:50,count:5,purchaseKey:tag,expectedTotal:13065};
+    const [pack,repeat]=await Promise.all([purchaseLessonPackage(student.id,input),purchaseLessonPackage(student.id,input)]);
+    assert.equal(pack.id,repeat.id);
+    const balance=async(id:number)=>(await db.select().from(users).where(eq(users.id,id)))[0].balance;
+    const credits=async(id:number)=>(await db.select().from(lessonPackages).where(eq(lessonPackages.id,id)))[0].remainingLessons;
+    assert.equal(await balance(student.id),86935);assert.equal(await credits(pack.id),5);
+    console.log("PASS concurrent purchase is charged exactly once");
+    await assert.rejects(purchaseLessonPackage(teacher.id,{...input,purchaseKey:randomUUID()}),/forbidden/);
+    await assert.rejects(purchaseLessonPackage(student.id,{...input,purchaseKey:randomUUID(),expectedTotal:1}),/plan/);
+    await assert.rejects(purchaseLessonPackage(student.id,{teacherId:teacher.id,duration:50,count:20,purchaseKey:randomUUID(),expectedTotal:0}),/plan/);
+    console.log("PASS role authorization and stale/tampered checkout price protection");
+    let offset=4;
+    const slot=()=>new Date(Math.ceil(Date.now()/3600_000)*3600_000+(offset++)*3600_000);
+    const lesson=await reserveLesson(student.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id});
+const l = lesson as any;assert.equal(l.platform,"undecided");assert.equal(l.price,2613);assert.equal(l.packageId,pack.id);
+    assert.equal(await credits(pack.id),4);assert.equal(await balance(student.id),86935);
+    console.log("PASS booking consumes one package credit with no wallet debit or preselected platform");
+    await assert.rejects(reserveLesson(stranger.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id}),/credit/);
+    await assert.rejects(reserveLesson(student.id,{teacherId:otherTeacher.id,duration:50,startAt:slot(),packageId:pack.id}),/credit/);
+    await assert.rejects(reserveLesson(student.id,{teacherId:teacher.id,duration:25,startAt:slot(),packageId:pack.id}),/credit/);
+    console.log("PASS packages are owner-, tutor- and duration-bound");
+    await changeLessonStatus(teacher.id,lesson.id,"confirm");
+    await db.update(lessons).set({startAt:new Date(Date.now()-5*60_000)}).where(eq(lessons.id,lesson.id));
+    await assert.rejects(chooseClassroom(student.id,lesson.id,"lingo",""),/forbidden/);
+    await assert.rejects(chooseClassroom(otherTeacher.id,lesson.id,"lingo",""),/forbidden/);
+    for(const raw of ["javascript:alert(1)","http://meet.google.com/abc-defg-hij","https://evilmeet.google.com/abc-defg-hij","https://meet.google.com.attacker.test/abc-defg-hij","https://zoom.us@attacker.test/j/123","https://fakezoom.us/j/123"]){assert.equal(validMeetingLink(raw.includes("zoom")?"zoom":"meet",raw),"");}
+    assert.equal(validMeetingLink("meet","https://zoom.us/j/123456"),"");
+    console.log("PASS only the owning tutor can choose a platform; hostile links rejected");
+    await chooseClassroom(teacher.id,lesson.id,"zoom","https://us02web.zoom.us/j/123456789?pwd=test");
+    let snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.state,"open");assert.equal(snap.platform,"zoom");assert.equal(snap.revision,1);assert.ok(snap.joinUrl.includes("zoom.us"));
+    await chooseClassroom(teacher.id,lesson.id,"meet","https://meet.google.com/abc-defg-hij");
+    snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.revision,2);assert.equal(snap.platform,"meet");assert.equal(snap.joinUrl,"https://meet.google.com/abc-defg-hij");
+    await reportConnectionProblem(student.id,lesson.id);assert.equal((await classroomSnapshot(teacher.id,lesson.id,"Tutor")).issueReported,true);
+    await chooseClassroom(teacher.id,lesson.id,"lingo","");
+    snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.revision,3);assert.equal(snap.issueReported,false);assert.ok(snap.joinUrl.includes("lingorain-"));
+    assert.equal(await credits(pack.id),4);assert.equal(await balance(student.id),86935);
+    console.log("PASS live Zoom → Meet → Lingo switching, problem reports and unchanged billing");
+    await assert.rejects(classroomSnapshot(stranger.id,lesson.id,"Other"),/forbidden/);
+    const [events]=await db.select({count:sql<number>`count(*)::int`}).from(lessonPlatformEvents).where(eq(lessonPlatformEvents.lessonId,lesson.id));assert.equal(events.count,3);
+    console.log("PASS private classroom access and platform change audit history");
+    await db.update(lessons).set({startAt:slot()}).where(eq(lessons.id,lesson.id));
+    await Promise.all([changeLessonStatus(student.id,lesson.id,"cancel"),changeLessonStatus(student.id,lesson.id,"cancel")]);
+    // This slot is less than 12h away, so a confirmed student cancellation is late.
+    assert.equal(await credits(pack.id),4);
+    assert.equal(await balance(teacher.id),100000+teacherShare(2613));
+    console.log("PASS late package cancellation consumes credit and pays the tutor once");
+    const early=await reserveLesson(student.id,{teacherId:teacher.id,duration:50,startAt:new Date(Math.ceil(Date.now()/3600_000)*3600_000+48*3600_000),packageId:pack.id});
+    await changeLessonStatus(teacher.id,early.id,"confirm");
+    await Promise.all([changeLessonStatus(student.id,early.id,"cancel"),changeLessonStatus(student.id,early.id,"cancel")]);
+    assert.equal(await credits(pack.id),4);assert.equal(await balance(student.id),86935);
+    console.log("PASS timely cancellation restores one credit, not cash, exactly once");
+    await db.update(teacherProfiles).set({price:9999}).where(eq(teacherProfiles.userId,teacher.id));
+    const frozen=await reserveLesson(student.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id});assert.equal(frozen.price,2613);
+    await changeLessonStatus(teacher.id,frozen.id,"confirm");
+    await db.update(lessons).set({startAt:new Date(Date.now()-60*60_000)}).where(eq(lessons.id,frozen.id));
+    const before=await balance(teacher.id);
+    await Promise.all([changeLessonStatus(teacher.id,frozen.id,"complete"),changeLessonStatus(teacher.id,frozen.id,"complete")]);
+    assert.equal(await balance(teacher.id),before+teacherShare(2613));
+    await assert.rejects(chooseClassroom(teacher.id,frozen.id,"lingo",""),/closed/);
+    console.log("PASS frozen package price, per-lesson earnings and completed room lock");
+    const shared=slot();
+    const results=await Promise.allSettled([reserveLesson(student.id,{teacherId:otherTeacher.id,duration:50,startAt:shared}),reserveLesson(stranger.id,{teacherId:otherTeacher.id,duration:50,startAt:shared})]);
+    assert.equal(results.filter(r=>r.status==="fulfilled").length,1);
+    console.log("PASS concurrent double-booking prevented");
+    const halfHour=new Date(slot().getTime()+30*60_000);
+    await reserveLesson(stranger.id,{teacherId:otherTeacher.id,duration:25,startAt:halfHour});
+    await assert.rejects(reserveLesson(student.id,{teacherId:otherTeacher.id,duration:50,startAt:new Date(halfHour.getTime()-30*60_000)}),/slot/);
+    console.log("PASS overlapping 25/50-minute reservations prevented");
+    console.log("All learning-flow integration tests passed.");
+  } finally {
+    if(ids.length){await db.delete(lessons).where(inArray(lessons.studentId,ids));await db.delete(lessonPackages).where(inArray(lessonPackages.studentId,ids));await db.delete(transactions).where(inArray(transactions.userId,ids));await db.delete(teacherProfiles).where(inArray(teacherProfiles.userId,ids));await db.delete(users).where(inArray(users.id,ids));}
+    await pool.end();
+  }
+}
+run().catch(e=>{console.error(e);process.exitCode=1;});
