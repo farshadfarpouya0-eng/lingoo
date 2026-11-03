@@ -19,6 +19,7 @@ const items: NavItem[] = [
   { key: "/admin/testing", label: "Testing", icon: "M9 3h6M10 3v5L5 19a2 2 0 002 3h10a2 2 0 002-3l-5-11V3M8 14h8", hint: "Sandbox lessons" },
   { key: "/admin/lessons", label: "Lessons", icon: "M8 2v4M16 2v4M3 8h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z", hint: "All lessons" },
   { key: "/admin/payouts", label: "Payouts", icon: "M3 7h18v10H3zM12 12a2 2 0 100-4 2 2 0 000 4z", hint: "Approve payouts" },
+  { key: "/admin/crypto-payments", label: "Crypto payments", icon: "M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", hint: "Review direct transfers" },
   { key: "/admin/audit", label: "Audit log", icon: "M4 5h16M4 12h16M4 19h10M7 2v6M17 2v6", hint: "Admin financial actions" },
   { key: "/admin/operations", label: "Operations", icon: "M3 12h4l3-8 4 16 3-8h4", hint: "Scheduled job health" },
   { key: "/admin/teacher-bonuses", label: "Teacher bonuses", icon: "M12 2l2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9z", hint: "Rating-based bonuses" },

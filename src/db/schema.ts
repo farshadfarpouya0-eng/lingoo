@@ -120,6 +120,39 @@ export const transactions = pgTable("transactions", {
   type: text("type").notNull(), amount: integer("amount").notNull(), lessonId: integer("lesson_id"), ref: text("ref").unique(),
   note: text("note").notNull().default(""), createdAt: timestamp("created_at").defaultNow().notNull(),
 }, t => [index("tx_user_idx").on(t.userId, t.createdAt)]);
+
+// Crypto top-ups are tracked separately from the wallet ledger. Provider callbacks
+// and admin-reviewed direct transfers credit the wallet only once, through ledgerOnce.
+export const cryptoPaymentOrders = pgTable("crypto_payment_orders", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  method: text("method").notNull(), // provider | direct
+  provider: text("provider").notNull(), // nowpayments | plisio | direct
+  asset: text("asset").notNull(),
+  network: text("network").notNull(),
+  amountUsd: integer("amount_usd").notNull(), // USD cents
+  payAmount: text("pay_amount").notNull().default(""),
+  payAddress: text("pay_address").notNull().default(""),
+  checkoutUrl: text("checkout_url").notNull().default(""),
+  qrCode: text("qr_code").notNull().default(""),
+  providerPaymentId: text("provider_payment_id").notNull().default(""),
+  txHash: text("tx_hash").notNull().default(""),
+  status: text("status").notNull().default("pending"),
+  providerStatus: text("provider_status").notNull().default(""),
+  adminNote: text("admin_note").notNull().default(""),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+  submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "date" }),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true, mode: "date" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+}, t => [
+  index("crypto_orders_user_created_idx").on(t.userId, t.createdAt),
+  index("crypto_orders_status_created_idx").on(t.status, t.createdAt),
+  uniqueIndex("crypto_orders_provider_payment_unique").on(t.provider, t.providerPaymentId).where(sql`${t.providerPaymentId} <> ''`),
+  uniqueIndex("crypto_orders_network_txhash_unique").on(t.network, t.txHash).where(sql`${t.txHash} <> ''`),
+  check("crypto_orders_amount_check", sql`${t.amountUsd} in (2000, 5000, 10000, 20000)`),
+  check("crypto_orders_method_check", sql`${t.method} in ('provider','direct')`),
+]);
 // Double-entry journal for every non-zero wallet transaction. The `platform_clearing`
 // account is the balancing control account; it should reconcile to the cash/payment
 // and payable accounts maintained by the business outside this app.

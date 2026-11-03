@@ -32,7 +32,7 @@
 
 ## Required hosted setup still owned by the operator
 
-1. Back up the target Neon database and apply all outstanding migrations through `0015_temporary_suspensions.sql` using the Direct connection.
+1. Back up the target Neon database and apply all outstanding migrations through `0016_timezone_safe_lesson_instants.sql` using the Direct connection. Migration 0016 changes lesson and blocked-slot columns to `timestamptz` while interpreting existing stored values as UTC; review this assumption against the existing data before applying it.
 2. Keep `SESSION_SECRET`, `PAYOUT_ENCRYPTION_KEY`, `CRON_SECRET`, `REMINDER_CRON_SECRET` stable and distinct. Preserve the old `SESSION_SECRET` if it was used to encrypt existing integration settings; do not rotate integration encryption without a data migration.
 3. Run the payout-data encryption script in dry-run mode, inspect the row count, and only then run `--apply` against the intended database.
 4. Configure `APP_URL`, Resend, private Supabase Storage, Stripe/webhooks, Daily/webhooks and the external scheduler as required by the enabled features.

@@ -23,7 +23,7 @@ type PersistedConfig = {
   publicConfig: Record<string, string>;
   encryptedSecrets: Record<string, string>;
 };
-type Provider = "email" | "storage" | "payments" | "video" | "recording" | "realtime" | "rateLimit";
+type Provider = "email" | "storage" | "payments" | "cryptoPayments" | "video" | "recording" | "realtime" | "rateLimit";
 
 function encryptSecret(value: string): string {
   const iv = randomBytes(12);
@@ -84,6 +84,15 @@ export async function getIntegrationConfig() {
       secretKey: secretValue("stripeSecretKey", "STRIPE_SECRET_KEY"),
       webhookSecret: secretValue("stripeWebhookSecret", "STRIPE_WEBHOOK_SECRET"),
     },
+    crypto: {
+      nowPaymentsApiKey: secretValue("nowPaymentsApiKey", "NOWPAYMENTS_API_KEY"),
+      nowPaymentsIpnSecret: secretValue("nowPaymentsIpnSecret", "NOWPAYMENTS_IPN_SECRET"),
+      plisioSecretKey: secretValue("plisioSecretKey", "PLISIO_SECRET_KEY"),
+      directUsdtTrc20: publicValue("cryptoDirectUsdtTrc20", "CRYPTO_DIRECT_USDT_TRC20"),
+      directUsdtBep20: publicValue("cryptoDirectUsdtBep20", "CRYPTO_DIRECT_USDT_BEP20"),
+      directBnbBep20: publicValue("cryptoDirectBnbBep20", "CRYPTO_DIRECT_BNB_BEP20"),
+      directTrxTron: publicValue("cryptoDirectTrxTron", "CRYPTO_DIRECT_TRX_TRON"),
+    },
     video: {
       jitsiDomain: publicValue("jitsiDomain", "JITSI_DOMAIN", "meet.jit.si"),
     },
@@ -116,6 +125,15 @@ export async function getIntegrationStatus() {
     email: { configured: !!(c.email.apiKey && c.email.from), from: c.email.from },
     storage: { configured: !!(c.storage.url && c.storage.serviceRoleKey && c.storage.bucket), bucket: c.storage.bucket },
     payments: { configured: !!(c.payments.secretKey && c.payments.webhookSecret) },
+    crypto: {
+      nowPaymentsConfigured: !!(c.crypto.nowPaymentsApiKey && c.crypto.nowPaymentsIpnSecret),
+      plisioConfigured: !!c.crypto.plisioSecretKey,
+      directConfigured: !!(c.crypto.directUsdtTrc20 || c.crypto.directUsdtBep20 || c.crypto.directBnbBep20 || c.crypto.directTrxTron),
+      directUsdtTrc20: !!c.crypto.directUsdtTrc20,
+      directUsdtBep20: !!c.crypto.directUsdtBep20,
+      directBnbBep20: !!c.crypto.directBnbBep20,
+      directTrxTron: !!c.crypto.directTrxTron,
+    },
     video: { configured: !!c.video.jitsiDomain, domain: c.video.jitsiDomain },
     realtime: { configured: c.realtime.provider === "pusher" && !!(c.realtime.appId && c.realtime.key && c.realtime.secret && c.realtime.cluster), provider: c.realtime.provider, cluster: c.realtime.cluster },
     recording: { configured: c.recording.provider === "daily" && !!c.recording.dailyApiKey && !!c.recording.dailyDomain, provider: c.recording.provider, domain: c.recording.dailyDomain },
@@ -168,6 +186,23 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
       saveSecret("stripeSecretKey", "stripeSecretKey", 500);
       saveSecret("stripeWebhookSecret", "stripeWebhookSecret", 500);
       break;
+    case "cryptoPayments": {
+      saveSecret("nowPaymentsApiKey", "nowPaymentsApiKey", 1000);
+      saveSecret("nowPaymentsIpnSecret", "nowPaymentsIpnSecret", 1000);
+      saveSecret("plisioSecretKey", "plisioSecretKey", 1000);
+      const address = (field: string, key: string, pattern: RegExp, hint: string) => {
+        if (fd.get(`clear_${field}`) === "on") { delete pub[key]; return; }
+        const value = val(field, 160);
+        if (!value) return;
+        if (!pattern.test(value)) throw new Error(`Enter a valid public ${hint} receiving address. Never enter a private key or recovery phrase.`);
+        pub[key] = value;
+      };
+      address("cryptoDirectUsdtTrc20", "cryptoDirectUsdtTrc20", /^T[1-9A-HJ-NP-Za-km-z]{33}$/, "TRON/TRC20");
+      address("cryptoDirectUsdtBep20", "cryptoDirectUsdtBep20", /^0x[a-fA-F0-9]{40}$/, "BNB Smart Chain/BEP20");
+      address("cryptoDirectBnbBep20", "cryptoDirectBnbBep20", /^0x[a-fA-F0-9]{40}$/, "BNB Smart Chain/BNB");
+      address("cryptoDirectTrxTron", "cryptoDirectTrxTron", /^T[1-9A-HJ-NP-Za-km-z]{33}$/, "TRON/TRX");
+      break;
+    }
     case "video": {
       const domain = val("jitsiDomain", 253).toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
       if (domain && (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(domain) || domain.includes(".."))) throw new Error("Enter a hostname only, e.g. meet.jit.si.");
@@ -228,6 +263,24 @@ export async function testIntegrationProvider(provider: Provider) {
     case "payments":
       if (!c.payments.secretKey) throw new Error("Enter a Stripe secret key first.");
       url = "https://api.stripe.com/v1/account"; headers = { Authorization: `Bearer ${c.payments.secretKey}` }; break;
+    case "cryptoPayments": {
+      const hasDirect = !!(c.crypto.directUsdtTrc20 || c.crypto.directUsdtBep20 || c.crypto.directBnbBep20 || c.crypto.directTrxTron);
+      const checks: string[] = [];
+      if (c.crypto.nowPaymentsApiKey || c.crypto.nowPaymentsIpnSecret) {
+        if (!c.crypto.nowPaymentsApiKey || !c.crypto.nowPaymentsIpnSecret) throw new Error("NOWPayments requires both the API key and the IPN secret.");
+        const response = await fetch("https://api.nowpayments.io/v1/currencies", { headers: { "x-api-key": c.crypto.nowPaymentsApiKey }, cache: "no-store", signal: AbortSignal.timeout(12_000) });
+        if (!response.ok) throw new Error(`NOWPayments connection check failed (HTTP ${response.status}). Check the API key.`);
+        checks.push("NOWPayments API connected");
+      }
+      if (c.crypto.plisioSecretKey) {
+        const response = await fetch(`https://api.plisio.net/api/v1/shops?api_key=${encodeURIComponent(c.crypto.plisioSecretKey)}`, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+        const result = await response.json().catch(() => ({})) as { status?: string };
+        if (!response.ok || result.status !== "success") throw new Error(`Plisio connection check failed (HTTP ${response.status}). Check the Shop Secret and API permissions.`);
+        checks.push("Plisio API connected");
+      }
+      if (!checks.length && !hasDirect) throw new Error("Configure at least one crypto payment provider or direct wallet address first.");
+      return true;
+    }
     case "video":
       if (!c.video.jitsiDomain) throw new Error("Enter a Jitsi hostname first.");
       url = `https://${c.video.jitsiDomain}/config.js`; break;

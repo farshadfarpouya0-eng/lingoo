@@ -105,15 +105,20 @@ export function isSlotAvailable(d: Date, a: TeacherAvail, duration = 50) {
 }
 export const MIN_LEAD_MS = 30 * 60_000;
 export const HORIZON_DAYS = 14;
+
+/** A slot remains bookable only while at least 30 exact minutes remain. */
+export function isBookingLeadTimeOpen(d: Date | number | string, now = Date.now()) {
+  const startMs = d instanceof Date ? d.getTime() : typeof d === "number" ? d : Date.parse(d);
+  return Number.isFinite(startMs) && startMs - now >= MIN_LEAD_MS;
+}
+
 export function slotIsBookable(d: Date, a: TeacherAvail, now = Date.now(), duration = 50) {
-  const bookingCutoff = Math.floor(now / 60_000) * 60_000 + MIN_LEAD_MS;
-  return d.getTime() >= bookingCutoff && d.getTime() <= now + HORIZON_DAYS * 86400_000 && isSlotAvailable(d, a, duration);
+  return isBookingLeadTimeOpen(d, now) && d.getTime() <= now + HORIZON_DAYS * 86400_000 && isSlotAvailable(d, a, duration);
 }
 export function buildSlots(lang: Lang, a: TeacherAvail, taken: Set<number>, duration = 50) {
   const timeZone = isValidTimeZone(a.timeZone) ? a.timeZone! : (a.tzOffset === 9 ? "Asia/Tokyo" : a.tzOffset === 8 ? "Asia/Shanghai" : "UTC");
   const now = Date.now();
   const horizon = now + HORIZON_DAYS * 86400_000;
-  const bookingCutoff = Math.floor(now / 60_000) * 60_000 + MIN_LEAD_MS;
   const current = zonedParts(new Date(now), timeZone);
   const startDay = Date.UTC(current.year, current.month - 1, current.day);
   const groups = new Map<string, { key: string; label: string; slots: { iso: string; label: string }[] }>();
@@ -126,7 +131,7 @@ export function buildSlots(lang: Lang, a: TeacherAvail, taken: Set<number>, dura
       const slot = zonedLocalToUtc(dateStr, timeStr, timeZone);
       if (!slot) continue; // Skip nonexistent local times during DST spring-forward.
       const time = slot.getTime();
-      if (time < bookingCutoff || time > horizon) continue;
+      if (!isBookingLeadTimeOpen(time, now) || time > horizon) continue;
       if (!isSlotAvailable(slot, { ...a, timeZone }, duration)) continue;
       if (taken.has(time) || (duration > 30 && (taken.has(time - 30 * 60_000) || taken.has(time + 30 * 60_000)))) continue;
       const key = dateStr;

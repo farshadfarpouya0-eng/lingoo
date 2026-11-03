@@ -12,6 +12,10 @@ function permissionLabel(state: PermissionState) {
 
 export default function TeacherClassTest() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const shareVideoRef = useRef<HTMLVideoElement>(null);
+  const demoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const demoDrawingRef = useRef(false);
+  const shareStreamRef = useRef<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -28,7 +32,8 @@ export default function TeacherClassTest() {
   const [demoTab, setDemoTab] = useState<"board" | "chat" | "materials">("board");
   const [demoChat, setDemoChat] = useState([{ from: "Student", text: "Could you explain this example again?" }]);
   const [demoMessage, setDemoMessage] = useState("");
-  const [demoBoard, setDemoBoard] = useState("Today's lesson\n1. Introductions\n2. Speaking practice\n3. Feedback");
+  const [demoBoardColor, setDemoBoardColor] = useState("#0f766e");
+  const [screenTest, setScreenTest] = useState(false);
   const [demoBook, setDemoBook] = useState("Everyday English · Unit 1");
 
   useEffect(() => {
@@ -64,6 +69,10 @@ export default function TeacherClassTest() {
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    shareStreamRef.current?.getTracks().forEach(track => track.stop());
+    shareStreamRef.current = null;
+    if (shareVideoRef.current) shareVideoRef.current.srcObject = null;
+    setScreenTest(false);
     void audioContextRef.current?.close();
     audioContextRef.current = null;
     analyserRef.current = null;
@@ -74,6 +83,7 @@ export default function TeacherClassTest() {
   useEffect(() => () => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     streamRef.current?.getTracks().forEach(track => track.stop());
+    shareStreamRef.current?.getTracks().forEach(track => track.stop());
     void audioContextRef.current?.close();
   }, []);
 
@@ -158,6 +168,72 @@ export default function TeacherClassTest() {
     }
   };
 
+
+  useEffect(() => {
+    if (!screenTest || !shareVideoRef.current || !shareStreamRef.current) return;
+    shareVideoRef.current.srcObject = shareStreamRef.current;
+    void shareVideoRef.current.play().catch(() => undefined);
+  }, [screenTest]);
+
+  const startScreenShareTest = async () => {
+    setError("");
+    try {
+      if (!navigator.mediaDevices?.getDisplayMedia) throw new Error("Screen sharing is not supported in this browser. Try a current desktop browser over HTTPS.");
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      shareStreamRef.current = stream;
+      if (shareVideoRef.current) {
+        shareVideoRef.current.srcObject = stream;
+        await shareVideoRef.current.play().catch(() => undefined);
+      }
+      setScreenTest(true);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        shareStreamRef.current?.getTracks().forEach(track => track.stop());
+        shareStreamRef.current = null;
+        if (shareVideoRef.current) shareVideoRef.current.srcObject = null;
+        setScreenTest(false);
+      }, { once: true });
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "";
+      setError(name === "NotAllowedError" ? "Screen sharing was cancelled or blocked. You can try again when ready." : err instanceof Error ? err.message : "Could not start the screen-share test.");
+      setScreenTest(false);
+    }
+  };
+
+  const stopScreenShareTest = () => {
+    shareStreamRef.current?.getTracks().forEach(track => track.stop());
+    shareStreamRef.current = null;
+    if (shareVideoRef.current) shareVideoRef.current.srcObject = null;
+    setScreenTest(false);
+  };
+
+  const demoPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: ((event.clientX - rect.left) / rect.width) * event.currentTarget.width, y: ((event.clientY - rect.top) / rect.height) * event.currentTarget.height };
+  };
+  const startDemoDraw = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const ctx = canvas.getContext("2d");
+    const point = demoPoint(event);
+    if (!ctx) return;
+    demoDrawingRef.current = true;
+    canvas.setPointerCapture(event.pointerId);
+    ctx.strokeStyle = demoBoardColor; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(point.x, point.y);
+  };
+  const drawDemo = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!demoDrawingRef.current) return;
+    const ctx = event.currentTarget.getContext("2d");
+    if (!ctx) return;
+    const point = demoPoint(event);
+    ctx.strokeStyle = demoBoardColor; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.lineTo(point.x, point.y); ctx.stroke();
+  };
+  const stopDemoDraw = () => { demoDrawingRef.current = false; };
+  const clearDemoBoard = () => {
+    const ctx = demoCanvasRef.current?.getContext("2d");
+    if (ctx && demoCanvasRef.current) ctx.clearRect(0, 0, demoCanvasRef.current.width, demoCanvasRef.current.height);
+  };
+
   const statusText = (state: CheckState) => state === "ok" ? "Ready" : state === "error" ? "Needs attention" : "Not tested";
   const statusClass = (state: CheckState) => state === "ok" ? "bg-emerald-50 text-emerald-700" : state === "error" ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-500";
 
@@ -202,11 +278,20 @@ export default function TeacherClassTest() {
             <div><h3 className="text-sm font-bold text-teal-950">Practice Classroom</h3><p className="mt-1 text-[11px] text-slate-500">Try the teaching workflow with simulated content. Nothing is saved to a real lesson.</p></div>
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800">Demo only</span>
           </div>
-          <div className="flex gap-1 border-b border-slate-100 bg-slate-50 p-2">
-            {([{id:"board",label:"Whiteboard"},{id:"chat",label:"Class Chat"},{id:"materials",label:"Textbook & Audio"}] as const).map(tab => <button key={tab.id} type="button" onClick={() => setDemoTab(tab.id)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${demoTab===tab.id?"bg-white text-teal-800 shadow-sm":"text-slate-500 hover:bg-white"}`}>{tab.label}</button>)}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 p-3">
+            <div className="flex gap-1">
+              {([{id:"board",label:"Whiteboard"},{id:"chat",label:"Class Chat"},{id:"materials",label:"Textbook & Audio"}] as const).map(tab => <button key={tab.id} type="button" onClick={() => setDemoTab(tab.id)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${demoTab===tab.id?"bg-white text-teal-800 shadow-sm":"text-slate-500 hover:bg-white"}`}>{tab.label}</button>)}
+            </div>
+            <div className="flex items-center gap-2">
+              {!screenTest ? <button type="button" onClick={startScreenShareTest} className="rounded-lg bg-teal-800 px-3 py-2 text-xs font-bold text-white hover:bg-teal-900">Test screen share</button> : <button type="button" onClick={stopScreenShareTest} className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700">Stop screen test</button>}
+            </div>
           </div>
+          {screenTest && <div className="border-b border-teal-100 bg-teal-50 p-3"><p className="mb-2 text-[11px] font-bold text-teal-900">Local screen-share preview · visible only to you in this demo</p><video ref={shareVideoRef} autoPlay playsInline muted className="max-h-64 w-full rounded-xl bg-slate-950 object-contain" /></div>}
           <div className="p-4">
-            {demoTab === "board" && <div><label className="block text-xs font-semibold text-slate-600">Shared whiteboard · editable practice notes</label><textarea value={demoBoard} onChange={e=>setDemoBoard(e.target.value)} rows={6} className="mt-2 w-full rounded-xl border border-slate-200 p-3 text-sm leading-6 text-slate-700 outline-none focus:border-teal-500"/><p className="mt-2 text-[11px] text-slate-400">Changes are temporary and stay in this browser session.</p></div>}
+            {demoTab === "board" && <div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold text-slate-700">Interactive whiteboard</p><p className="mt-1 text-[11px] text-slate-400">Try drawing and changing the pen color. This demo board is local only.</p></div><div className="flex items-center gap-2">{(["#0f766e", "#2563eb", "#dc2626", "#7c3aed", "#111827"] as const).map(color => <button key={color} type="button" aria-label={`Pen color ${color}`} aria-pressed={demoBoardColor===color} onClick={() => setDemoBoardColor(color)} className={`h-7 w-7 rounded-full border-2 ${demoBoardColor===color?"border-slate-900 ring-2 ring-teal-200":"border-white shadow"}`} style={{backgroundColor:color}} />)}<button type="button" onClick={clearDemoBoard} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">Clear</button></div></div>
+              <canvas ref={demoCanvasRef} width={1100} height={500} onPointerDown={startDemoDraw} onPointerMove={drawDemo} onPointerUp={stopDemoDraw} onPointerCancel={stopDemoDraw} className="h-[42vh] min-h-[300px] w-full touch-none rounded-xl border border-slate-200 bg-white" style={{backgroundImage:"linear-gradient(rgba(15,118,110,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(15,118,110,.055) 1px, transparent 1px)",backgroundSize:"26px 26px"}} />
+            </div>}
             {demoTab === "chat" && <div><div className="mb-3 max-h-36 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">{demoChat.map((m,i)=><div key={i} className="rounded-lg bg-white p-2.5 text-xs"><b className="text-teal-800">{m.from}</b><p className="mt-1 text-slate-600">{m.text}</p></div>)}</div><form onSubmit={e=>{e.preventDefault();const msg=demoMessage.trim();if(msg){setDemoChat(v=>[...v,{from:"You",text:msg}]);setDemoMessage("");}}} className="flex gap-2"><input value={demoMessage} onChange={e=>setDemoMessage(e.target.value)} maxLength={300} placeholder="Send a practice message…" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs"/><button className="rounded-lg bg-teal-800 px-4 py-2 text-xs font-bold text-white">Send</button></form></div>}
             {demoTab === "materials" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-600">Practice textbook<select value={demoBook} onChange={e=>setDemoBook(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-xs"><option>Everyday English · Unit 1</option><option>IELTS Speaking · Part 1</option><option>Kids English · Lesson 1</option></select></label><div className="rounded-xl bg-teal-50 p-3"><p className="text-xs font-bold text-teal-900">Selected lesson</p><p className="mt-2 text-xs text-teal-800">{demoBook}</p><button type="button" onClick={testSpeaker} className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-teal-800">Play sample audio</button></div></div>}
           </div>

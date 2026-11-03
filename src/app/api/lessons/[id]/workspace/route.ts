@@ -19,7 +19,7 @@ type WorkspaceState = {
   question?: string;
   answer?: string;
   feedback?: string;
-  boardStrokes?: Array<{ color: string; points: Array<{ x: number; y: number }> }>;
+  boardStrokes?: Array<{ color: string; width?: number; points: Array<{ x: number; y: number }> }>;
 };
 
 function validateState(input: unknown): WorkspaceState | null {
@@ -36,12 +36,15 @@ function validateState(input: unknown): WorkspaceState | null {
   if ((bookId !== null && (!Number.isSafeInteger(bookId) || bookId < 1)) || !Number.isSafeInteger(page) || page < 1 || page > 10000 || !Number.isSafeInteger(unitIndex) || unitIndex < 0 || unitIndex > 1000 || !Number.isFinite(audioTime) || audioTime < 0 || audioTime > 86400) return null;
   if (question.length > 4000 || answer.length > 12000 || feedback.length > 4000) return null;
   const rawStrokes = Array.isArray(v.boardStrokes) ? v.boardStrokes : [];
-  if (rawStrokes.length > 200) return null;
+  if (rawStrokes.length > 300) return null;
   const boardStrokes: NonNullable<WorkspaceState["boardStrokes"]> = [];
   for (const raw of rawStrokes) {
     if (!raw || typeof raw !== "object") return null;
     const stroke = raw as Record<string, unknown>;
-    const color = typeof stroke.color === "string" && /^#[0-9a-fA-F]{6}$/.test(stroke.color) ? stroke.color : "#0f766e";
+    const suppliedColor = typeof stroke.color === "string" ? stroke.color : "";
+    const color = /^#[0-9a-fA-F]{6}$/.test(suppliedColor) || suppliedColor === "rgba(250, 204, 21, 0.34)" ? suppliedColor : "#0f766e";
+    const width = Number(stroke.width ?? 3.5);
+    if (!Number.isFinite(width) || width < 1 || width > 30) return null;
     if (!Array.isArray(stroke.points) || stroke.points.length > 1000) return null;
     const points: Array<{x:number;y:number}> = [];
     for (const point of stroke.points) {
@@ -51,7 +54,7 @@ function validateState(input: unknown): WorkspaceState | null {
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) return null;
       points.push({x,y});
     }
-    boardStrokes.push({ color, points });
+    boardStrokes.push({ color, width, points });
   }
   return { bookId, page, unitIndex, audioTime, audioPlaying, question, answer, feedback, boardStrokes };
 }
@@ -97,14 +100,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (currentRevision !== expectedRevisionRaw) return { conflict: true as const, revision: currentRevision, state: previous?.state ?? {} };
     if (auth.user.role !== "teacher" && auth.user.role !== "admin") {
       const oldState = (previous?.state && typeof previous.state === "object") ? previous.state as Record<string, unknown> : {};
-      // Teacher controls the selected book, PDF page, audio playback and board.
-      // Students can submit their answer, but cannot steer the shared lesson.
+      // Teachers control the selected book, PDF page and audio playback.
+      // Students may add marks to the shared whiteboard, but cannot erase or
+      // replace the existing board content or steer the lesson.
       state.bookId = typeof oldState.bookId === "number" ? oldState.bookId : null;
       state.page = typeof oldState.page === "number" ? oldState.page : 1;
       state.unitIndex = typeof oldState.unitIndex === "number" ? oldState.unitIndex : 0;
       state.audioTime = typeof oldState.audioTime === "number" ? oldState.audioTime : 0;
       state.audioPlaying = oldState.audioPlaying === true;
-      state.boardStrokes = Array.isArray(oldState.boardStrokes) ? oldState.boardStrokes as typeof state.boardStrokes : [];
+      const oldBoard = Array.isArray(oldState.boardStrokes) ? oldState.boardStrokes as NonNullable<typeof state.boardStrokes> : [];
+      const proposedBoard = state.boardStrokes || [];
+      const preservesExisting = proposedBoard.length >= oldBoard.length && oldBoard.every((stroke, index) => {
+        const proposed = proposedBoard[index];
+        return !!proposed
+          && proposed.color === (stroke.color || "#0f766e")
+          && Number(proposed.width ?? 3.5) === Number(stroke.width ?? 3.5)
+          && JSON.stringify(proposed.points) === JSON.stringify(stroke.points);
+      });
+      state.boardStrokes = preservesExisting ? proposedBoard : oldBoard;
       state.question = typeof oldState.question === "string" ? oldState.question : "";
       state.feedback = typeof oldState.feedback === "string" ? oldState.feedback : "";
     }
