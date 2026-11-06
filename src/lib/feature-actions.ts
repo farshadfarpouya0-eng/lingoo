@@ -8,6 +8,7 @@ import { validateUploadedPrivateFile } from "@/lib/private-storage";
 import { getUser, requireAdmin } from "@/lib/auth";
 import { canAccessLesson } from "@/lib/lesson-access";
 import { ledger } from "@/lib/money";
+import { decodeMaterial } from "@/lib/material-content";
 
 const val=(fd:FormData,key:string,max=200)=>String(fd.get(key)||"").trim().slice(0,max);
 
@@ -102,6 +103,27 @@ export async function uploadTeacherDocument(fd: FormData) {
 export async function updateMaterialStatus(fd:FormData){
   await requireAdmin(); const id=Number(fd.get("id")); if(!Number.isInteger(id))return {ok:false};
   await db.update(learningMaterials).set({published:fd.get("published")==="on"}).where(eq(learningMaterials.id,id)); revalidatePath("/admin/materials"); revalidatePath("/dashboard?tab=materials"); return {ok:true};
+}
+export async function updateMaterialPdf(fd: FormData) {
+  const admin = await requireAdmin();
+  const id = Number(fd.get("id"));
+  const pdfRef = val(fd, "pdfRef", 2000);
+  const pageCountRaw = String(fd.get("pageCount") || "").trim();
+  const pageCount = pageCountRaw ? Number(pageCountRaw) : null;
+  if (!Number.isSafeInteger(id) || id < 1 || !pdfRef.startsWith("storage://")) return { ok: false, error: "Upload a private PDF first." };
+  if (pageCount !== null && (!Number.isSafeInteger(pageCount) || pageCount < 1 || pageCount > 10000)) return { ok: false, error: "Page count must be between 1 and 10,000." };
+  try {
+    const file = await validateUploadedPrivateFile(pdfRef, "materials", admin.id, "material");
+    if (file.extension !== "pdf") return { ok: false, error: "Choose a PDF file." };
+    const [material] = await db.select().from(learningMaterials).where(eq(learningMaterials.id, id)).limit(1);
+    if (!material) return { ok: false, error: "Course not found." };
+    if (!["textbook", "worksheet"].includes(material.kind)) return { ok: false, error: "PDF attachments are for textbooks and worksheets." };
+    const decoded = decodeMaterial(material);
+    const fileUrl = JSON.stringify({ pdfRef, pageCount, units: decoded.units });
+    await db.update(learningMaterials).set({ fileUrl }).where(eq(learningMaterials.id, id));
+    revalidatePath("/admin/materials"); revalidatePath("/dashboard");
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Could not attach the PDF." }; }
 }
 export async function createReferralLink(_fd: FormData){
   const user=await getUser();

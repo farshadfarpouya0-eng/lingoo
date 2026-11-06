@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cryptoPaymentOrders } from "@/db/schema";
@@ -8,14 +9,11 @@ import { getIntegrationConfig } from "@/lib/integration-config";
 import { hit } from "@/lib/ratelimit";
 import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
+import { CRYPTO_ASSETS as ASSETS, type CryptoAsset } from "@/lib/crypto-networks";
+import { getCryptoNetworkOptions, isCryptoSettingsReady } from "@/lib/crypto-settings";
+
 const AMOUNTS = new Set([2000, 5000, 10000, 20000]);
-const ASSETS = {
-  usdt_trc20: { label: "USDT", network: "TRON · TRC20", plisio: "USDT_TRX", now: "usdttrc20", directKey: "directUsdtTrc20", coingecko: "" },
-  usdt_bep20: { label: "USDT", network: "BNB Smart Chain · BEP20", plisio: "USDT_BSC", now: "usdtbsc", directKey: "directUsdtBep20", coingecko: "" },
-  bnb_bep20: { label: "BNB", network: "BNB Smart Chain · native BNB", plisio: "BNB", now: "bnbbsc", directKey: "directBnbBep20", coingecko: "binancecoin" },
-  trx_tron: { label: "TRX", network: "TRON · native TRX", plisio: "TRX", now: "trx", directKey: "directTrxTron", coingecko: "tron" },
-} as const;
-type AssetKey = keyof typeof ASSETS;
+type AssetKey = CryptoAsset;
 const validAsset = (v: string): v is AssetKey => Object.prototype.hasOwnProperty.call(ASSETS, v);
 
 async function appOrigin() {
@@ -39,13 +37,16 @@ export async function createCryptoTopUp(fd: FormData) {
   const provider = String(fd.get("provider") || "");
   const assetKey = String(fd.get("asset") || "") as AssetKey;
   if (!AMOUNTS.has(amountUsd) || !validAsset(assetKey)) redirect("/dashboard?tab=wallet&err=crypto");
-  if (!await isCryptoPaymentsSchemaReady()) redirect("/dashboard?tab=wallet&err=crypto_setup");
+  if (!await isCryptoPaymentsSchemaReady() || !await isCryptoSettingsReady()) redirect("/dashboard?tab=wallet&err=crypto_setup");
   if (!await hit(`crypto-topup:${user.id}`, 5, 3600_000)) redirect("/dashboard?tab=wallet&err=rate");
   const asset = ASSETS[assetKey];
   const cfg = await getIntegrationConfig();
+  const networkOption = (await getCryptoNetworkOptions()).find(option => option.asset === assetKey);
+  if (!networkOption) redirect("/dashboard?tab=wallet&err=crypto_unavailable");
 
   if (method === "direct") {
-    const address = cfg.crypto[asset.directKey];
+    if (!networkOption.directEnabled) redirect("/dashboard?tab=wallet&err=crypto_unavailable");
+    const address = networkOption.address;
     if (!address) redirect("/dashboard?tab=wallet&err=crypto_unavailable");
     let payAmount: string;
     let expiresAt: Date;
@@ -54,9 +55,12 @@ export async function createCryptoTopUp(fd: FormData) {
       expiresAt = new Date(Date.now() + 30 * 60_000);
     } else {
       const quoteUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(asset.coingecko)}&vs_currencies=usd`;
-      const quoteResponse = await fetch(quoteUrl, { cache: "no-store", signal: AbortSignal.timeout(8_000), headers: { accept: "application/json" } });
-      const quote = await quoteResponse.json().catch(() => ({})) as Record<string, { usd?: number }>;
-      const usdPrice = quoteResponse.ok ? Number(quote[asset.coingecko]?.usd) : 0;
+      let usdPrice = 0;
+      try {
+        const quoteResponse = await fetch(quoteUrl, { cache: "no-store", signal: AbortSignal.timeout(8_000), headers: { accept: "application/json" } });
+        const quote = await quoteResponse.json().catch(() => ({})) as Record<string, { usd?: number }>;
+        usdPrice = quoteResponse.ok ? Number(quote[asset.coingecko]?.usd) : 0;
+      } catch { redirect("/dashboard?tab=wallet&err=crypto_quote"); }
       if (!Number.isFinite(usdPrice) || usdPrice <= 0) redirect("/dashboard?tab=wallet&err=crypto_quote");
       const decimals = assetKey === "bnb_bep20" ? 8 : 6;
       payAmount = ((amountUsd / 100) / usdPrice).toFixed(decimals);
@@ -67,10 +71,12 @@ export async function createCryptoTopUp(fd: FormData) {
       network: asset.network, amountUsd, payAmount, payAddress: address,
       status: "awaiting_payment", providerStatus: asset.coingecko ? "coingecko_quote" : "fixed_usdt_quote", expiresAt,
     }).returning({ id: cryptoPaymentOrders.id });
+    revalidatePath("/dashboard");
     redirect(`/dashboard?tab=wallet&crypto=${order.id}`);
   }
 
   if (method !== "provider" || !["nowpayments", "plisio"].includes(provider)) redirect("/dashboard?tab=wallet&err=crypto");
+  if ((provider === "nowpayments" && !networkOption.nowpaymentsEnabled) || (provider === "plisio" && !networkOption.plisioEnabled)) redirect("/dashboard?tab=wallet&err=crypto_unavailable");
   const origin = await appOrigin();
   const [order] = await db.insert(cryptoPaymentOrders).values({
     userId: user.id, method: "provider", provider, asset: assetKey, network: asset.network,
@@ -134,6 +140,7 @@ export async function createCryptoTopUp(fd: FormData) {
     await db.update(cryptoPaymentOrders).set({ status: "failed", providerStatus: "invoice_creation_failed" }).where(eq(cryptoPaymentOrders.id, order.id));
     redirect("/dashboard?tab=wallet&err=crypto_provider");
   }
+  revalidatePath("/dashboard");
   redirect(`/dashboard?tab=wallet&crypto=${order.id}`);
 }
 
@@ -162,5 +169,6 @@ export async function submitDirectCryptoProof(fd: FormData) {
   } catch {
     redirect("/dashboard?tab=wallet&err=crypto_duplicate");
   }
-  redirect(`/dashboard?tab=wallet&crypto=${id}`);
+  revalidatePath("/dashboard");
+  redirect(`/dashboard?tab=wallet&crypto=${id}&submitted=1`);
 }

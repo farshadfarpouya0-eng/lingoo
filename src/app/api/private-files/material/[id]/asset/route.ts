@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { learningMaterials, classroomWorkspaceStates } from "@/db/schema";
 import { getUser } from "@/lib/auth";
-import { fetchPrivateFile, privateFileContentType, privateFileExtension } from "@/lib/private-storage";
+import { fetchPrivateFile, privateFileContentType } from "@/lib/private-storage";
 import { canAccessLesson } from "@/lib/lesson-access";
+import { materialAssetReference } from "@/lib/material-content";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,47 +19,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const lessonId = Number(url.searchParams.get("lesson"));
   if (user.role !== "admin") {
-    if (!Number.isSafeInteger(lessonId) || lessonId < 1 || !(await canAccessLesson(lessonId, user.id))) {
-      return Response.json({ error: "Classroom access required" }, { status: 403 });
-    }
+    if (!Number.isSafeInteger(lessonId) || lessonId < 1 || !(await canAccessLesson(lessonId, user.id))) return Response.json({ error: "Classroom access required" }, { status: 403 });
     if (user.role !== "teacher") {
       const [workspace] = await db.select({ state: classroomWorkspaceStates.state }).from(classroomWorkspaceStates).where(eq(classroomWorkspaceStates.lessonId, lessonId)).limit(1);
       const selectedBookId = workspace?.state && typeof workspace.state === "object" ? Number((workspace.state as Record<string, unknown>).bookId) : NaN;
       if (selectedBookId !== id) return Response.json({ error: "This material is not selected for this classroom" }, { status: 403 });
     }
   }
-  const asset = url.searchParams.get("asset");
-  let reference = "";
-  if (asset === "cover") reference = material.coverUrl || "";
-  else if (asset === "pdf") {
-    try {
-      const parsed = JSON.parse(material.fileUrl);
-      reference = typeof parsed.pdfRef === "string" ? parsed.pdfRef : "";
-    } catch {
-      // Backward compatibility for older admin uploads that stored a single
-      // private PDF reference directly in learning_materials.file_url.
-      const directRef = material.fileUrl.trim();
-      if (["textbook", "worksheet"].includes(material.kind) && directRef.startsWith("storage://") && directRef.toLowerCase().endsWith(".pdf")) reference = directRef;
-    }
-  } else {
-    const unitIndex = Number(url.searchParams.get("unit"));
-    const type = url.searchParams.get("type");
-    if (!Number.isSafeInteger(unitIndex) || unitIndex < 0 || !["audio", "image"].includes(type || "")) return Response.json({ error: "Not found" }, { status: 404 });
-    try {
-      const parsed = JSON.parse(material.fileUrl);
-      const unit = Array.isArray(parsed.units) ? parsed.units[unitIndex] : null;
-      reference = type === "audio" ? String(unit?.audioRef || "") : String(unit?.imageRef || "");
-    } catch {
-      // Older audio courses stored their sole audio file directly in file_url.
-      const directRef = material.fileUrl.trim();
-      if (type === "audio" && unitIndex === 0 && material.kind === "audio" && directRef.startsWith("storage://") && /\.(mp3|wav|ogg|m4a|aac)$/i.test(directRef)) reference = directRef;
-    }
-  }
-  if (!reference.startsWith("storage://") || !reference.includes("/materials/")) return Response.json({ error: "Not found" }, { status: 404 });
+  const asset = url.searchParams.get("asset") || "";
+  const unitIndex = Number(url.searchParams.get("unit") || 0);
+  const type = url.searchParams.get("type") || "";
+  if (asset !== "cover" && asset !== "pdf" && !["audio", "image"].includes(type)) return Response.json({ error: "Not found" }, { status: 404 });
+  if (["audio", "image"].includes(type) && (!Number.isSafeInteger(unitIndex) || unitIndex < 0 || unitIndex > 1000)) return Response.json({ error: "Not found" }, { status: 404 });
+  const reference = asset === "cover" ? material.coverUrl : materialAssetReference(material, asset === "pdf" ? "pdf" : type, unitIndex);
+  if (!reference.startsWith("storage://") || !reference.includes("/materials/")) return Response.json({ error: "This asset is missing. Ask an administrator to re-upload it in Admin → Materials." }, { status: 404 });
   try {
     const upstream = await fetchPrivateFile(reference, req.headers.get("range"));
     const headers = new Headers({ "Content-Type": privateFileContentType(reference), "Content-Disposition": "inline", "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Accept-Ranges": "bytes" });
     for (const key of ["content-length", "content-range"]) { const value = upstream.headers.get(key); if (value) headers.set(key, value); }
     return new Response(upstream.body, { status: upstream.status, headers });
-  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "File unavailable" }, { status: 502 }); }
+  } catch { return Response.json({ error: "The private file could not be retrieved. Check storage configuration or re-upload the file." }, { status: 502 }); }
 }

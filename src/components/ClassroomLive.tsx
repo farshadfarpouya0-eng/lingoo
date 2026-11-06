@@ -15,7 +15,8 @@ const D = {
   tutorPick: "Waiting for the student to pick a classroom",
   tutorPickText: "The student chooses the platform. You can still change it here.",
   switchTitle: "Change the classroom",
-  lingo: "Lingo Room", lingoDesc: "Runs right here — no install, no account.",
+  lingo: "Lingo Room", lingoDesc: "Secure embedded video — no separate Jitsi login.",
+  lingoOff: "Video setup is required. Ask the administrator to connect JaaS or a private Jitsi server, or choose another available classroom.",
   daily: "Daily secure room", dailyDesc: "Private video room with optional consent-based cloud recording.",
   meet: "Google Meet", meetDesc: "Opens in a new tab. Set up by your tutor.",
   zoom: "Zoom", zoomDesc: "Opens in Zoom. Set up by your tutor.",
@@ -117,7 +118,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   useEffect(() => { if (result?.ok) onSaved(); }, [result, onSaved]);
 
   const cards: { key: Platform; code: string; title: string; desc: string; tag: string }[] = [
-    { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: "FREE" },
+    { key: "lingo", code: "LR", title: D.lingo, desc: D.lingoDesc, tag: initial.videoProvider === "unconfigured" ? "SETUP" : "SECURE" },
     { key: "daily", code: "DY", title: D.daily, desc: D.dailyDesc, tag: isTutor ? "RECORDING" : "TUTOR" },
     { key: "meet", code: "GM", title: D.meet, desc: D.meetDesc, tag: isTutor ? "LINK" : "TUTOR" },
     { key: "zoom", code: "ZM", title: D.zoom, desc: D.zoomDesc, tag: isTutor ? "LINK" : "TUTOR" },
@@ -170,6 +171,8 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
         })}
       </div>
 
+      {platform === "lingo" && initial.videoProvider === "unconfigured" && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-900">{D.lingoOff}</p>}
+
       {isTutor && (platform === "meet" || platform === "zoom") && (
         <label className="mt-5 block text-xs font-bold text-slate-600">
           {D.link}
@@ -193,8 +196,8 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor }: {
   );
 }
 
-export default function ClassroomLive({ initial, isTutor, preference, c, startLabel, startAtMs, serverNowMs, durationMinutes, books, userId }: {
-  initial: RoomSnapshot; isTutor: boolean; preference: string; c: LearningCopy;
+export default function ClassroomLive({ initial, isTutor, displayName, isAdmin = false, preference, c, startLabel, startAtMs, serverNowMs, durationMinutes, books, userId }: {
+  initial: RoomSnapshot; isTutor: boolean; displayName: string; isAdmin?: boolean; preference: string; c: LearningCopy;
   startLabel: string; startAtMs: number; serverNowMs: number; durationMinutes: number;
   books: ClassroomMaterial[];
   userId: number;
@@ -203,7 +206,6 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
   const [clientClockBase] = useState(() => Date.now());
   const [updated, setUpdated] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [name, setName] = useState("");
   const [issuePending, startIssue] = useTransition();
   const busy = useRef(false);
   const [failures, setFailures] = useState(0);
@@ -213,6 +215,7 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
   /* Daily rooms need a personal token from the server before they can open. */
   const [dailyUrl, setDailyUrl] = useState("");
   const [dailyError, setDailyError] = useState("");
+  const [dailyRetry, setDailyRetry] = useState(0);
 
   const refresh = useCallback(async () => {
     if (busy.current) return;
@@ -234,22 +237,25 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
   }, [initial.lessonId]);
 
   useEffect(() => {
-    let cancelled = false;
     if (room.platform !== "daily" || room.state !== "open") {
-      setDailyUrl("");
-      setDailyError("");
-      return;
+      setDailyUrl(""); setDailyError(""); return;
     }
+    const controller = new AbortController();
+    let cancelled = false;
+    const timer = window.setTimeout(() => controller.abort(), 30_000);
     setDailyError("");
-    fetch(`/api/lessons/${room.lessonId}/daily-token`, { method: "POST", cache: "no-store" })
+    fetch(`/api/lessons/${room.lessonId}/daily-token`, { method: "POST", cache: "no-store", signal: controller.signal })
       .then(async r => {
         const d = await r.json() as { joinUrl?: string; error?: string };
         if (!r.ok || !d.joinUrl) throw new Error(d.error || D.dailyError);
         if (!cancelled) setDailyUrl(d.joinUrl);
       })
-      .catch(e => { if (!cancelled) setDailyError(e instanceof Error && e.message ? e.message : D.dailyError); });
-    return () => { cancelled = true; };
-  }, [room.lessonId, room.platform, room.state, room.revision]);
+      .catch((error: unknown) => {
+        if (!cancelled) setDailyError(error instanceof Error && error.name !== "AbortError" && error.message ? error.message : D.dailyError);
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => { cancelled = true; window.clearTimeout(timer); controller.abort(); };
+  }, [room.lessonId, room.platform, room.state, room.revision, dailyRetry]);
 
   const pollDelay = roomPollDelay(room.state, offline ? failures : 0);
   useEffect(() => {
@@ -303,15 +309,16 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
         <PlatformForm lessonId={room.lessonId} initial={room} preference={preference} onSaved={refresh} isTutor={isTutor} />
       )}
 
-      {room.state === "open" && room.platform === "lingo" && room.joinUrl ? (
+      {room.state === "open" && room.platform === "lingo" ? (
         <LingoRoom
-          joinUrl={room.joinUrl}
           roomName={`lingorain-${room.lessonId}`}
-          displayName={name}
-          onNameChange={setName}
+          displayName={displayName}
+          videoProvider={room.videoProvider}
+          videoMessage={room.videoMessage}
           startLabel={startLabel}
           minutesLeft={minutesLeft}
           isTutor={isTutor}
+          isAdmin={isAdmin}
           lessonId={room.lessonId}
           books={books}
           userId={userId}
@@ -334,7 +341,7 @@ export default function ClassroomLive({ initial, isTutor, preference, c, startLa
         <section className="rounded-[26px] border border-amber-200 bg-amber-50 p-8 text-center">
           <p className="text-sm font-semibold text-amber-900">{dailyError}</p>
           <p className="mt-2 text-xs text-amber-800">{D.dailyError}</p>
-          <button type="button" onClick={() => void refresh()} className="mt-4 rounded-xl bg-teal-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-900">Try again</button>
+          <button type="button" onClick={() => { setDailyUrl(""); setDailyError(""); setDailyRetry(value => value + 1); void refresh(); }} className="mt-4 rounded-xl bg-teal-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-teal-900">Try again</button>
         </section>
       ) : room.state === "open" && room.platform === "daily" ? (
         <section className="rounded-[26px] border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">{D.dailyLoading}</section>

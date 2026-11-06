@@ -9,19 +9,7 @@ type CourseUnit = { title: string; content: string; audioUrl?: string; imageUrl?
 const input = "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500";
 type AssetTicket = { signedUrl?: string; reference?: string; contentType?: string; error?: string };
 
-async function uploadAsset(file: File, materialKind: "textbook" | "audio" | "worksheet") {
-  const prep = await fetch("/api/private-files/upload/prepare", {
-    method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
-    body: JSON.stringify({ purpose: "material", materialKind, fileName: file.name, mimeType: file.type, size: file.size }),
-  });
-  const ticket = await prep.json() as AssetTicket;
-  if (!prep.ok || !ticket.signedUrl || !ticket.reference || !ticket.contentType) {
-    throw new Error(ticket.error || "Could not prepare private upload. Check Admin → Integrations → Private storage.");
-  }
-  const uploaded = await fetch(ticket.signedUrl, { method: "PUT", headers: { "Content-Type": ticket.contentType, "x-upsert": "false" }, body: file, cache: "no-store" });
-  if (!uploaded.ok) throw new Error(`Storage rejected ${file.name}. Check private bucket CORS and file-size settings.`);
-  return ticket.reference;
-}
+import { uploadMaterialAsset as uploadAsset } from "@/lib/material-upload-client";
 
 export default function MaterialUploadForm() {
   const router = useRouter();

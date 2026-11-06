@@ -40,6 +40,6 @@ export async function POST(req: Request) {
     || payCurrency !== ({ usdt_trc20: "usdttrc20", usdt_bep20: "usdtbsc", bnb_bep20: "bnbbsc", trx_tron: "trx" } as Record<string,string>)[order.asset]) {
     return new Response("payment mismatch", { status: 400 });
   }
-  await updateProviderPayment({ id, provider: "nowpayments", providerPaymentId: paymentId, status });
+  await updateProviderPayment({ id, provider: "nowpayments", providerPaymentId: paymentId, status, paidAmount: payload.actually_paid == null ? undefined : String(payload.actually_paid), txHash: typeof payload.payin_hash === "string" ? payload.payin_hash : undefined });
   return Response.json({ received: true });
 }

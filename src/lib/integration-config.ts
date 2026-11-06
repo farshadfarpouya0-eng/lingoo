@@ -2,6 +2,8 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { siteSettings } from "@/db/schema";
+import { resolveVideoProvider, isJaasAppId, isVideoHostname, isPublicJitsiHost, VIDEO_SETUP_MESSAGE } from "./video-provider";
+import { validateJaasPrivateKey } from "./video-keys";
 
 /**
  * Integration credentials entered in the admin console are encrypted at rest.
@@ -94,7 +96,13 @@ export async function getIntegrationConfig() {
       directTrxTron: publicValue("cryptoDirectTrxTron", "CRYPTO_DIRECT_TRX_TRON"),
     },
     video: {
-      jitsiDomain: publicValue("jitsiDomain", "JITSI_DOMAIN", "meet.jit.si"),
+      mode: publicValue("videoProvider", "VIDEO_PROVIDER", "auto"),
+      jitsiDomain: publicValue("jitsiDomain", "JITSI_DOMAIN").toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, ""),
+      jaasAppId: publicValue("jaasAppId", "JAAS_APP_ID"),
+      jaasApiKeyId: secretValue("jaasApiKeyId", "JAAS_API_KEY_ID"),
+      jaasPrivateKey: secretValue("jaasPrivateKey", "JAAS_PRIVATE_KEY"),
+      jitsiAppId: publicValue("jitsiAppId", "JITSI_APP_ID", "lingorain"),
+      jitsiAppSecret: secretValue("jitsiAppSecret", "JITSI_APP_SECRET"),
     },
     realtime: {
       provider: (publicValue("realtimeProvider", "REALTIME_PROVIDER", "polling") === "pusher" ? "pusher" : "polling") as "pusher" | "polling",
@@ -134,7 +142,16 @@ export async function getIntegrationStatus() {
       directBnbBep20: !!c.crypto.directBnbBep20,
       directTrxTron: !!c.crypto.directTrxTron,
     },
-    video: { configured: !!c.video.jitsiDomain, domain: c.video.jitsiDomain },
+    video: {
+      configured: resolveVideoProvider(c.video) !== "unconfigured",
+      provider: resolveVideoProvider(c.video),
+      mode: c.video.mode,
+      domain: resolveVideoProvider(c.video) === "jaas" ? "8x8.vc" : c.video.jitsiDomain,
+      jaasAppId: c.video.jaasAppId,
+      jaasApiKeyIdSaved: !!c.video.jaasApiKeyId,
+      jaasPrivateKeySaved: !!c.video.jaasPrivateKey,
+      jitsiAppSecretSaved: !!c.video.jitsiAppSecret,
+    },
     realtime: { configured: c.realtime.provider === "pusher" && !!(c.realtime.appId && c.realtime.key && c.realtime.secret && c.realtime.cluster), provider: c.realtime.provider, cluster: c.realtime.cluster },
     recording: { configured: c.recording.provider === "daily" && !!c.recording.dailyApiKey && !!c.recording.dailyDomain, provider: c.recording.provider, domain: c.recording.dailyDomain },
     rateLimit: { configured: !!(c.rateLimit.url && c.rateLimit.token), provider: c.rateLimit.url && c.rateLimit.token ? "upstash" : "postgres" },
@@ -204,9 +221,32 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
       break;
     }
     case "video": {
+      const mode = val("videoProvider", 20) || "auto";
+      if (!["auto", "jaas", "self-hosted", "disabled"].includes(mode)) throw new Error("Select a supported video provider.");
       const domain = val("jitsiDomain", 253).toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
-      if (domain && (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(domain) || domain.includes(".."))) throw new Error("Enter a hostname only, e.g. meet.jit.si.");
-      if (domain) pub.jitsiDomain = domain;
+      if (domain && !isVideoHostname(domain)) throw new Error("Enter a hostname only, such as meet.your-school.com, without a path or port.");
+      if (domain && mode !== "jaas" && domain !== "8x8.vc" && isPublicJitsiHost(domain)) throw new Error("Public meet.jit.si has a five-minute embedding limit. Use 8x8 JaaS or your own JWT-protected Jitsi server.");
+      if (mode === "jaas" && domain && domain !== "8x8.vc") throw new Error("JaaS meetings use 8x8.vc. Leave the hostname blank or enter 8x8.vc.");
+      const appId = val("jaasAppId", 80);
+      if (appId && !isJaasAppId(appId)) throw new Error("Copy the complete JaaS App ID beginning with vpaas-magic-cookie-.");
+      const keyId = val("jaasApiKeyId", 200);
+      if (keyId && !/^(?:vpaas-magic-cookie-[a-f0-9]{32}\/)?[a-zA-Z0-9_-]+$/i.test(keyId)) throw new Error("Enter the API key ID from the JaaS console, not an unrelated API secret.");
+      const privateKey = val("jaasPrivateKey", 12_000);
+      if (privateKey) validateJaasPrivateKey(privateKey);
+      const jitsiAppId = val("jitsiAppId", 100);
+      if (jitsiAppId && !/^[a-zA-Z0-9_-]+$/.test(jitsiAppId)) throw new Error("The JWT application ID may contain letters, numbers, hyphens and underscores only.");
+      const appSecret = val("jitsiAppSecret", 500);
+      if (appSecret && appSecret.length < 32) throw new Error("Use a random JWT application secret with at least 32 characters.");
+      pub.videoProvider = mode;
+      if (fd.get("clear_jitsiDomain") === "on") delete pub.jitsiDomain;
+      else if (domain) pub.jitsiDomain = domain;
+      else if (mode === "jaas") pub.jitsiDomain = "8x8.vc";
+      if (fd.get("clear_jaasAppId") === "on") delete pub.jaasAppId;
+      else if (appId) pub.jaasAppId = appId;
+      if (jitsiAppId) pub.jitsiAppId = jitsiAppId;
+      saveSecret("jaasApiKeyId", "jaasApiKeyId", 200);
+      saveSecret("jaasPrivateKey", "jaasPrivateKey", 12_000);
+      saveSecret("jitsiAppSecret", "jitsiAppSecret", 500);
       break;
     }
     case "realtime": {
@@ -281,9 +321,17 @@ export async function testIntegrationProvider(provider: Provider) {
       if (!checks.length && !hasDirect) throw new Error("Configure at least one crypto payment provider or direct wallet address first.");
       return true;
     }
-    case "video":
-      if (!c.video.jitsiDomain) throw new Error("Enter a Jitsi hostname first.");
-      url = `https://${c.video.jitsiDomain}/config.js`; break;
+    case "video": {
+      const provider = resolveVideoProvider(c.video);
+      if (provider === "unconfigured") throw new Error(VIDEO_SETUP_MESSAGE);
+      const { createJitsiTicket } = await import("./jitsi-video");
+      // Validates the signing key and key ID without exposing either to the browser.
+      createJitsiTicket({ video: c.video, room: "lingorain-connection-check", userId: 1, displayName: "Configuration check", isTeacher: true, lessonEndsAt: new Date(Date.now() + 60 * 60_000) });
+      const domain = provider === "jaas" ? "8x8.vc" : c.video.jitsiDomain;
+      const tenant = provider === "jaas" ? `${c.video.jaasAppId}/` : "";
+      url = `https://${domain}/${tenant}external_api.js`;
+      break;
+    }
     case "realtime":
       if (c.realtime.provider !== "pusher" || !c.realtime.appId || !c.realtime.key || !c.realtime.secret || !c.realtime.cluster) throw new Error("Select Pusher and enter app ID, app key, app secret and cluster first.");
       {
@@ -304,6 +352,11 @@ export async function testIntegrationProvider(provider: Provider) {
   }
   const response = await fetch(url, { method: provider === "video" ? "GET" : "GET", headers, cache: "no-store", signal: AbortSignal.timeout(12_000) });
   if (!response.ok) throw new Error(`${provider} connection check failed (HTTP ${response.status}). Check credentials and provider permissions.`);
+  if (provider === "video") {
+    const script = await response.text();
+    if (!script.includes("JitsiMeetExternalAPI")) throw new Error("The hostname responded, but it is not serving the Jitsi external API. Check the video hostname and reverse proxy.");
+    // This checks configuration/signing and API reachability, not provider billing or a live media join.
+  }
   if (provider === "rateLimit") {
     const result = await response.json().catch(() => ({})) as { result?: unknown };
     if (String(result.result || "").toUpperCase() !== "PONG") throw new Error("Upstash replied, but the Redis PING response was not PONG.");

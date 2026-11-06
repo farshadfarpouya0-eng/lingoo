@@ -140,6 +140,8 @@ export const cryptoPaymentOrders = pgTable("crypto_payment_orders", {
   status: text("status").notNull().default("pending"),
   providerStatus: text("provider_status").notNull().default(""),
   adminNote: text("admin_note").notNull().default(""),
+  verifiedAmount: text("verified_amount").notNull().default(""),
+  explorerUrl: text("explorer_url").notNull().default(""),
   expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
   submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "date" }),
   reviewedBy: integer("reviewed_by").references(() => users.id),
@@ -153,6 +155,19 @@ export const cryptoPaymentOrders = pgTable("crypto_payment_orders", {
   check("crypto_orders_amount_check", sql`${t.amountUsd} in (2000, 5000, 10000, 20000)`),
   check("crypto_orders_method_check", sql`${t.method} in ('provider','direct')`),
 ]);
+export const cryptoNetworkSettings = pgTable("crypto_network_settings", {
+  asset: text("asset").primaryKey(),
+  directEnabled: boolean("direct_enabled").notNull().default(false),
+  nowpaymentsEnabled: boolean("nowpayments_enabled").notNull().default(true),
+  plisioEnabled: boolean("plisio_enabled").notNull().default(true),
+  receiveAddress: text("receive_address").notNull().default(""),
+  updatedBy: integer("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+}, t => [
+  check("crypto_network_asset_check", sql`${t.asset} in ('usdt_trc20','usdt_bep20','bnb_bep20','trx_tron')`),
+  check("crypto_network_address_check", sql`not ${t.directEnabled} or ${t.receiveAddress} <> ''`),
+]);
+
 // Double-entry journal for every non-zero wallet transaction. The `platform_clearing`
 // account is the balancing control account; it should reconcile to the cash/payment
 // and payable accounts maintained by the business outside this app.

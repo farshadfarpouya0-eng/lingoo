@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Icon from "./Icon";
 import type { ClassroomMaterial } from "@/lib/classroom-material";
+import { decodeMaterial } from "@/lib/material-content";
+import PdfReader from "@/components/PdfReader";
 
 type CheckState = "idle" | "ok" | "error";
 type DemoUnit = { title: string; content: string; audioRef?: string; imageRef?: string };
@@ -11,32 +13,7 @@ type DemoMaterial = ClassroomMaterial;
 type DemoMaterialContent = { pdfRef: string; pageCount: number | null; units: DemoUnit[] };
 
 function decodeDemoMaterial(material: DemoMaterial): DemoMaterialContent {
-  const raw = (material.fileUrl || "").trim();
-  try {
-    const parsed = JSON.parse(raw) as { pdfRef?: unknown; pageCount?: unknown; units?: unknown; audioRef?: unknown };
-    const units: DemoUnit[] = Array.isArray(parsed.units) ? parsed.units.flatMap((value): DemoUnit[] => {
-      if (!value || typeof value !== "object") return [];
-      const unit = value as Record<string, unknown>;
-      return [{
-        title: typeof unit.title === "string" && unit.title.trim() ? unit.title : "Lesson",
-        content: typeof unit.content === "string" ? unit.content : "",
-        audioRef: typeof unit.audioRef === "string" ? unit.audioRef : "",
-        imageRef: typeof unit.imageRef === "string" ? unit.imageRef : "",
-      }];
-    }) : [];
-    if (!units.length && typeof parsed.audioRef === "string" && parsed.audioRef) units.push({ title: material.title, content: material.description || "", audioRef: parsed.audioRef });
-    const count = Number(parsed.pageCount);
-    return {
-      pdfRef: typeof parsed.pdfRef === "string" ? parsed.pdfRef : "",
-      pageCount: Number.isSafeInteger(count) && count > 0 ? count : null,
-      units: units.length ? units : [{ title: material.title, content: material.description || "" }],
-    };
-  } catch {
-    const extension = raw.split("/").pop()?.split("?")[0]?.split(".").pop()?.toLowerCase() || "";
-    if (raw.startsWith("storage://") && extension === "pdf") return { pdfRef: raw, pageCount: null, units: [{ title: material.title, content: material.description || "" }] };
-    if (raw.startsWith("storage://") && ["mp3", "wav", "ogg", "m4a", "aac"].includes(extension)) return { pdfRef: "", pageCount: null, units: [{ title: material.title, content: material.description || "", audioRef: raw }] };
-    return { pdfRef: "", pageCount: null, units: [{ title: material.title, content: material.description || "" }] };
-  }
+  return decodeMaterial(material);
 }
 
 const demoMaterialKind = (kind: string) => kind === "audio" ? "Audio course" : kind === "worksheet" ? "Interactive worksheet" : "Textbook";
@@ -356,7 +333,7 @@ export default function TeacherClassTest({ materials }: { materials: DemoMateria
                 </div>
                 {demoPdfUrl ? <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-slate-700">Textbook PDF</p><div className="flex items-center gap-2"><button type="button" disabled={demoPage <= 1} onClick={() => setDemoPage(value => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40">Previous</button><span className="text-[11px] text-slate-500">Page {demoPage}{demoContent.pageCount ? ` / ${demoContent.pageCount}` : ""}</span><button type="button" disabled={!!demoContent.pageCount && demoPage >= demoContent.pageCount} onClick={() => setDemoPage(value => value + 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold disabled:opacity-40">Next</button></div></div>
-                  <iframe title={`${demoBook.title} PDF preview`} src={`${demoPdfUrl}#page=${demoPage}&toolbar=0`} className="h-[55vh] min-h-[340px] w-full rounded-xl border border-slate-200 bg-slate-100" />
+                  <PdfReader src={demoPdfUrl} page={demoPage} title={`${demoBook.title} PDF preview`} onPageCount={count => setDemoPage(current => Math.min(current, count))} />
                 </div> : <div className="rounded-xl border border-dashed border-teal-200 bg-teal-50/50 p-4 text-xs text-slate-600">This resource is taught through its lesson text and media below.</div>}
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
                   <div className="space-y-3 rounded-xl border border-slate-200 p-3">

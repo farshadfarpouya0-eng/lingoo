@@ -6,10 +6,12 @@ import { classroomSecret } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
 import { canAccessLesson } from "./lesson-access";
 import { isAccountSuspended } from "./account-status";
+import { resolveVideoProvider, videoJoinUrl, VIDEO_SETUP_MESSAGE, type VideoProvider } from "./video-provider";
 
 export type Platform = "undecided" | "lingo" | "daily" | "meet" | "zoom";
 export type RoomSnapshot = {
   lessonId: number; platform: Platform; revision: number; meetingUrl: string; joinUrl: string;
+  videoProvider: VideoProvider; videoMessage: string;
   state: "pending" | "early" | "open" | "closed"; issueReported: boolean; updatedAt: string | null;
 };
 export function validMeetingLink(platform: string, raw: string) {
@@ -36,7 +38,11 @@ function roomState(l: Pick<typeof lessons.$inferSelect, "status" | "startAt" | "
   if (now < startsAt - earlyMinutes * 60_000) return "early" as const;
   return "open" as const;
 }
-export async function classroomSnapshot(actorId: number, lessonId: number, displayName: string): Promise<RoomSnapshot> {
+export function jitsiRoomName(lessonId: number) {
+  return "lingorain-" + createHmac("sha256", classroomSecret()).update(`lesson:${lessonId}`).digest("hex").slice(0, 24);
+}
+
+export async function classroomSnapshot(actorId: number, lessonId: number, _displayName = ""): Promise<RoomSnapshot> {
   const [l] = await db.select({
     id: lessons.id, studentId: lessons.studentId, teacherId: lessons.teacherId,
     status: lessons.status, startAt: lessons.startAt, duration: lessons.duration,
@@ -52,18 +58,19 @@ export async function classroomSnapshot(actorId: number, lessonId: number, displ
   if (!actor || isAccountSuspended(actor.suspended, actor.suspendedUntil) || !actorRole) throw new Error("forbidden");
   const state = roomState(l, actorRole);
   let joinUrl = "";
+  let videoProvider: VideoProvider = "unconfigured";
   if (state === "open" && platform === "lingo") {
     const cfg = await getIntegrationConfig();
-    const domain = (cfg.video.jitsiDomain || "meet.jit.si").replace(/[^a-z0-9.-]/gi, "");
-    const room = "lingorain-" + createHmac("sha256", classroomSecret()).update(`lesson:${l.id}`).digest("hex").slice(0, 24);
-    joinUrl = `https://${domain}/${room}#userInfo.displayName=${encodeURIComponent(JSON.stringify(displayName))}&config.disableDeepLinking=true&interfaceConfigOverwrite.SHOW_JITSI_WATERMARK=false`;
+    videoProvider = resolveVideoProvider(cfg.video);
+    joinUrl = videoJoinUrl(cfg.video, videoProvider, jitsiRoomName(l.id));
   } else if (state === "open" && platform === "daily") {
-    // A short-lived, participant-specific Daily meeting token is issued by the separate daily-token endpoint.
+    // Personal Daily tokens are issued by the dedicated authenticated endpoint.
     joinUrl = "";
   } else if (state === "open" && (platform === "meet" || platform === "zoom")) {
     joinUrl = validMeetingLink(platform, l.meetingUrl);
   }
-  return { lessonId, platform, revision: l.platformRevision, state, joinUrl,
+  return { lessonId, platform, revision: l.platformRevision, state, joinUrl, videoProvider,
+    videoMessage: platform === "lingo" && videoProvider === "unconfigured" ? VIDEO_SETUP_MESSAGE : "",
     meetingUrl: actorId === l.teacherId || state === "open" ? l.meetingUrl : "",
     issueReported: !!l.platformIssueAt, updatedAt: l.platformUpdatedAt?.toISOString() ?? null };
 }

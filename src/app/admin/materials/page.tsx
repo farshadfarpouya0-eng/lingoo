@@ -5,6 +5,8 @@ import { learningMaterials } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { updateMaterialStatus } from "@/lib/feature-actions";
 import MaterialUploadForm from "@/components/MaterialUploadForm";
+import MaterialPdfForm from "@/components/MaterialPdfForm";
+import { decodeMaterial } from "@/lib/material-content";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +31,8 @@ function summarizeCourse(fileUrl: string) {
       const count = Array.isArray(parsed.units) ? parsed.units.length : 1;
       const audioCount = Array.isArray(parsed.units) ? parsed.units.filter((u: any) => !!(u?.audioRef || u?.audioUrl)).length : 0;
       const mode = "Teacher-led";
-      return `${count} lesson${count === 1 ? "" : "s"} · ${audioCount} audio track${audioCount === 1 ? "" : "s"} · ${mode}`;
+      const pdf = decodeMaterial({ title: "", fileUrl }).pdfRef ? "PDF attached" : "No PDF";
+      return `${count} lesson${count === 1 ? "" : "s"} · ${audioCount} audio track${audioCount === 1 ? "" : "s"} · ${pdf} · ${mode}`;
     }
   } catch {}
   return "1 lesson · Standard resource";
@@ -77,6 +80,8 @@ export default async function AdminMaterials() {
                   Save status
                 </button>
               </form>
+
+              {["textbook", "worksheet"].includes(m.kind) && <MaterialPdfForm id={m.id} hasPdf={!!decodeMaterial(m).pdfRef} />}
 
               <form action={deleteMaterial}>
                 <input type="hidden" name="id" value={m.id} />

@@ -107,13 +107,13 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
         <Link href="/dashboard?tab=lessons" className="text-sm font-semibold text-teal-700">← {t.dashboard}</Link>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
+      <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-5">
           <div className="min-w-0 space-y-3">
             <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
               <Icon name="video" /> Live classroom
             </div>
-            <ClassroomLive initial={snapshot} isTutor={isTutor} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} />
+            <ClassroomLive initial={snapshot} isTutor={isTutor} displayName={user.name} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} isAdmin={user.role === "admin"} />
           </div>
           <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
           <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">

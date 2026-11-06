@@ -10,8 +10,10 @@ import type { LearningCopy } from "@/lib/learning-i18n";
 import Icon from "./Icon";
 import { demoPaymentsEnabled } from "@/lib/runtime-policy";
 import { getIntegrationConfig } from "@/lib/integration-config";
-import { createCryptoTopUp, submitDirectCryptoProof } from "@/lib/crypto-payment-actions";
+import { submitDirectCryptoProof } from "@/lib/crypto-payment-actions";
 import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
+import { getCryptoNetworkOptions, isCryptoSettingsReady, type CryptoNetworkOption } from "@/lib/crypto-settings";
+import CryptoTopUpForm from "@/components/CryptoTopUpForm";
 const card="rounded-[24px] border border-slate-200 bg-white p-6", input="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-teal-500";
 export default async function WalletPanel({ userId, isTutor, balance, escrow, tutor, t, c, lang, timeZone, ok, err }: { userId:number; isTutor:boolean; balance:number; escrow:number; tutor?:typeof teacherProfiles.$inferSelect; t:T; c:LearningCopy; lang:Lang; timeZone?:string; ok?:string; err?:string }) {
   const [txs,withdrawals,[earned]]=await Promise.all([
@@ -21,38 +23,28 @@ export default async function WalletPanel({ userId, isTutor, balance, escrow, tu
   ]);
   // Optional crypto features must never take down the ordinary wallet. In
   // particular, migration 0017 may not yet exist on an older Neon database.
-  const [cryptoSchemaReady, integrationResult] = await Promise.all([
+  const [cryptoSchemaReady, integrationResult, settingsSchemaReady] = await Promise.all([
     isCryptoPaymentsSchemaReady(),
-    getIntegrationConfig().then(config => ({ config, failed: false as const }))
-      .catch(() => ({ config: null, failed: true as const })),
+    getIntegrationConfig().then(config => ({ config, failed: false as const })).catch(() => ({ config: null, failed: true as const })),
+    isCryptoSettingsReady(),
   ]);
   const integration = integrationResult.config;
   const cryptoConfig = integration?.crypto;
   const realPaymentsConfigured = Boolean(integration?.payments.secretKey);
   let cryptoOrders: (typeof cryptoPaymentOrders.$inferSelect)[] = [];
   let cryptoOrdersLoadFailed = false;
+  let networkOptions: CryptoNetworkOption[] = [];
+  let settingsLoadFailed = false;
   if (!isTutor && cryptoSchemaReady) {
-    try {
-      cryptoOrders = await db.select().from(cryptoPaymentOrders)
-        .where(eq(cryptoPaymentOrders.userId, userId)).orderBy(desc(cryptoPaymentOrders.createdAt)).limit(8);
-    } catch {
-      // Continue rendering balance and ledger history. The setup notice below
-      // tells the administrator that crypto order storage needs attention.
-      cryptoOrdersLoadFailed = true;
-    }
+    try { cryptoOrders = await db.select().from(cryptoPaymentOrders).where(eq(cryptoPaymentOrders.userId, userId)).orderBy(desc(cryptoPaymentOrders.createdAt)).limit(8); }
+    catch { cryptoOrdersLoadFailed = true; }
+  }
+  if (!isTutor && cryptoSchemaReady && settingsSchemaReady && integration) {
+    try { networkOptions = await getCryptoNetworkOptions(); } catch { settingsLoadFailed = true; }
   }
   const cryptoStorageReady = cryptoSchemaReady && !cryptoOrdersLoadFailed;
   const cryptoConfigReady = Boolean(integration);
-  const gatewayOptions = [
-    ...(cryptoConfig && cryptoConfig.nowPaymentsApiKey && cryptoConfig.nowPaymentsIpnSecret ? ["nowpayments"] : []),
-    ...(cryptoConfig && cryptoConfig.plisioSecretKey ? ["plisio"] : []),
-  ];
-  const directNetworks = [
-    ...(cryptoConfig && cryptoConfig.directUsdtTrc20 ? [{ value: "usdt_trc20", label: "USDT · TRC20", address: cryptoConfig.directUsdtTrc20 }] : []),
-    ...(cryptoConfig && cryptoConfig.directUsdtBep20 ? [{ value: "usdt_bep20", label: "USDT · BEP20", address: cryptoConfig.directUsdtBep20 }] : []),
-    ...(cryptoConfig && cryptoConfig.directBnbBep20 ? [{ value: "bnb_bep20", label: "BNB · BNB Smart Chain", address: cryptoConfig.directBnbBep20 }] : []),
-    ...(cryptoConfig && cryptoConfig.directTrxTron ? [{ value: "trx_tron", label: "TRX · TRON", address: cryptoConfig.directTrxTron }] : []),
-  ];
+  const cryptoSettingsAvailable = settingsSchemaReady && !settingsLoadFailed;
   const canTopUp = realPaymentsConfigured || demoPaymentsEnabled();
   const unavailable = { en: "Online payments are not configured yet. Wallet top-ups are unavailable.", zh: "在线支付尚未配置，暂时无法充值钱包。", ja: "オンライン決済は未設定です。ウォレットへのチャージは利用できません。" }[lang];
   const labels:Record<string,string>={package_purchase:c.packageTx,package_booking:c.packageBookingTx,package_restore:c.packageRestoreTx};
@@ -64,28 +56,8 @@ export default async function WalletPanel({ userId, isTutor, balance, escrow, tu
       {!cryptoStorageReady&&<div role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><b className="block">Crypto payment setup is not complete yet.</b><span>{cryptoOrdersLoadFailed ? "The crypto payment table could not be read. Ask an administrator to check the Neon database and migration 0017." : "The crypto payment table is not available in Neon. If migration 0017 has not already been applied, an administrator must apply drizzle/0017_crypto_payments.sql before crypto top-ups can be used. Your existing wallet balance and transaction history remain available."}</span></div>}
       {cryptoStorageReady&&!cryptoConfigReady&&<div role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-950"><b className="block">Payment settings could not be loaded.</b><span>An administrator should check the integration encryption key and saved provider settings. Your existing wallet balance and history remain available.</span></div>}
       {cryptoStorageReady&&cryptoConfigReady&&<>
-      {gatewayOptions.length>0&&<form action={createCryptoTopUp as unknown as (fd:FormData)=>Promise<void>} className="mt-5 rounded-2xl border border-slate-200 p-4">
-        <input type="hidden" name="method" value="provider" />
-        <h3 className="text-sm font-bold text-teal-950">Automatic payment gateway</h3>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <label className="text-xs font-semibold text-slate-500">Amount<select name="amount" required defaultValue="2000" className={input}><option value="2000">$20.00</option><option value="5000">$50.00</option><option value="10000">$100.00</option><option value="20000">$200.00</option></select></label>
-          <label className="text-xs font-semibold text-slate-500">Payment provider<select name="provider" required defaultValue={gatewayOptions[0]} className={input}>{gatewayOptions.map(p=><option key={p} value={p}>{p === "nowpayments" ? "NOWPayments" : "Plisio"}</option>)}</select></label>
-          <label className="text-xs font-semibold text-slate-500">Coin / network<select name="asset" required defaultValue="usdt_trc20" className={input}><option value="usdt_trc20">USDT · TRC20</option><option value="usdt_bep20">USDT · BEP20</option><option value="bnb_bep20">BNB · BEP20</option><option value="trx_tron">TRON · TRX (native)</option></select></label>
-        </div>
-        <button className="mt-4 rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white hover:bg-teal-900">Create secure crypto payment</button>
-        <p className="mt-2 text-[11px] leading-5 text-slate-400">The amount shown by the provider is the amount to send. Do not send funds to an old or different invoice address. TRX is the native coin on TRON; TRC20 identifies tokens such as USDT on that network.</p>
-      </form>}
-      {directNetworks.length>0&&<form action={createCryptoTopUp as unknown as (fd:FormData)=>Promise<void>} className="mt-4 rounded-2xl border border-slate-200 p-4">
-        <input type="hidden" name="method" value="direct" />
-        <h3 className="text-sm font-bold text-teal-950">Direct wallet transfer · admin approval</h3>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <label className="text-xs font-semibold text-slate-500">Amount<select name="amount" required defaultValue="2000" className={input}><option value="2000">$20.00</option><option value="5000">$50.00</option><option value="10000">$100.00</option><option value="20000">$200.00</option></select></label>
-          <label className="text-xs font-semibold text-slate-500">Network<select name="asset" required defaultValue={directNetworks[0].value} className={input}>{directNetworks.map(n=><option key={n.value} value={n.value}>{n.label}</option>)}</select></label>
-        </div>
-        <button className="mt-4 rounded-xl border border-teal-800 px-5 py-3 text-sm font-bold text-teal-900 hover:bg-teal-50">Create direct transfer request</button>
-        <p className="mt-2 text-[11px] leading-5 text-slate-400">For USDT, the requested amount is USD-equivalent 1:1. BNB/TRX use a live quote that expires after 10 minutes. The wallet balance stays unchanged until an administrator verifies the exact transaction and approves it.</p>
-      </form>}
-      {!gatewayOptions.length&&!directNetworks.length&&<p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">Crypto payments are not configured yet. An administrator must save at least one gateway credential or direct receiving address in Admin → Integrations.</p>}
+      {cryptoStorageReady&&cryptoConfigReady&&!cryptoSettingsAvailable&&<p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Crypto network settings need migration 0018. Existing orders and wallet balance remain available.</p>}
+      {cryptoStorageReady&&cryptoConfigReady&&cryptoSettingsAvailable&&<CryptoTopUpForm networks={networkOptions} nowConfigured={!!(cryptoConfig?.nowPaymentsApiKey && cryptoConfig?.nowPaymentsIpnSecret)} plisioConfigured={!!cryptoConfig?.plisioSecretKey}/>}
       {!!cryptoOrders.length&&<div className="mt-5 space-y-3"><h3 className="text-sm font-bold text-teal-950">Recent crypto payment requests</h3>{cryptoOrders.map(order=><div key={order.id} className="rounded-2xl border border-slate-200 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2"><div><b className="text-sm text-teal-950">Payment #{order.id} · {money(order.amountUsd)}</b><p className="mt-1 text-xs text-slate-500">{order.provider === "nowpayments" ? "NOWPayments" : order.provider === "plisio" ? "Plisio" : "Direct wallet"} · {order.asset.toUpperCase()} · {order.network}</p></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${order.status === "paid" ? "bg-emerald-50 text-emerald-700" : order.status === "rejected" || order.status === "failed" || order.status === "expired" ? "bg-red-50 text-red-700" : order.status === "pending_review" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>{order.status.replaceAll("_", " ")}</span></div>
         {order.payAddress&&<div className="mt-3 rounded-xl bg-slate-50 p-3"><p className="text-[11px] font-semibold text-slate-500">Receiving address</p><code className="mt-1 block break-all text-xs text-slate-800">{order.payAddress}</code><p className="mt-2 text-xs text-slate-600">Send exactly <b>{order.payAmount} {order.asset.startsWith("usdt")?"USDT":order.asset.startsWith("bnb")?"BNB":"TRX"}</b> on <b>{order.network}</b>.</p></div>}

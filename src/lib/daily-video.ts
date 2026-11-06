@@ -35,15 +35,19 @@ export async function ensureDailyRoom(lesson: { id: number; startAt: Date; durat
   const expires = Math.floor((lesson.startAt.getTime() + (lesson.duration + 45) * 60_000) / 1000);
   const properties = { enable_recording: "cloud", max_participants: Math.min(5, Math.max(2, lesson.capacity + 1)), exp: expires, eject_at_room_exp: true };
   const body = JSON.stringify({ name, privacy: "private", properties });
+  if (!cfg.recording.dailyApiKey) throw new Error("Enter the Daily API key in Admin → Integrations.");
   const first = await fetch("https://api.daily.co/v1/rooms", { method: "POST", headers: { Authorization: `Bearer ${cfg.recording.dailyApiKey}`, "Content-Type": "application/json" }, body, cache: "no-store", signal: AbortSignal.timeout(12_000) });
   if (first.ok) return name;
-  if (first.status === 409) {
-    // Enforce privacy/expiry even if an earlier request partially created the room.
-    const update = await dailyRequest(`/rooms/${encodeURIComponent(name)}`, { method: "POST", body });
+  const err = await first.json().catch(() => ({})) as { info?: string; error?: string };
+  const detail = err.info || err.error || `HTTP ${first.status}`;
+  if ((first.status === 400 || first.status === 409) && /already exists|already in use/i.test(detail)) {
+    const existing = await dailyRequest(`/rooms/${encodeURIComponent(name)}`);
+    if (existing.name !== name || existing.privacy !== "private") throw new Error("The existing Daily room is not private. Contact the administrator.");
+    // The update endpoint accepts privacy/properties, not the create endpoint's name field.
+    const update = await dailyRequest(`/rooms/${encodeURIComponent(name)}`, { method: "POST", body: JSON.stringify({ privacy: "private", properties }) });
     if (update.name === name) return name;
   }
-  const err = await first.json().catch(() => ({})) as { info?: string; error?: string };
-  throw new Error(`Could not provision a private Daily room: ${err.info || err.error || `HTTP ${first.status}`}`);
+  throw new Error(`Could not provision a private Daily room: ${detail}`);
 }
 
 export async function createDailyToken(input: { lesson: { id: number; startAt: Date; duration: number; capacity: number }; userId: number; displayName: string; isTeacher: boolean }) {
