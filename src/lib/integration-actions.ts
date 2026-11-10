@@ -4,14 +4,14 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { registerDailyWebhooks, saveIntegrationProvider, testIntegrationProvider } from "@/lib/integration-config";
 
-type Provider = "email" | "storage" | "payments" | "cryptoPayments" | "video" | "recording" | "realtime" | "rateLimit";
+type Provider = "email" | "storage" | "payments" | "cryptoPayments" | "video" | "zoom" | "recording" | "realtime" | "rateLimit";
 function safeMessage(error: unknown, fallback: string) {
   const text = error instanceof Error ? error.message : fallback;
   // Database driver errors contain the SQL and its parameters; never put those in a URL.
   if (/failed query|relation .* does not exist|ECONNREFUSED|connect /i.test(text)) return "Could not reach the database or the site_settings table is missing. Run the database migrations (npm run db:migrate) and try again.";
   return text;
 }
-const validProvider = (v: string): v is Provider => ["email", "storage", "payments", "cryptoPayments", "video", "recording", "realtime", "rateLimit"].includes(v);
+const validProvider = (v: string): v is Provider => ["email", "storage", "payments", "cryptoPayments", "video", "zoom", "recording", "realtime", "rateLimit"].includes(v);
 export async function saveProviderIntegration(fd: FormData) {
   await requireAdmin();
   const provider = String(fd.get("provider") || "");

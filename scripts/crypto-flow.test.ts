@@ -38,6 +38,12 @@ test("network settings and provider settlement are persistent, guarded and idemp
     const [plisioOrder] = await db.insert(cryptoPaymentOrders).values({ userId: student.id, method: "provider", provider: "plisio", asset: "usdt_bep20", network: "BNB Smart Chain · BEP20", amountUsd: 5000, payAmount: "50.000000", providerPaymentId: `plisio-${suffix}`, status: "pending" }).returning();
     orderIds.push(plisioOrder.id);
     await updateProviderPayment({ id: plisioOrder.id, provider: "plisio", providerPaymentId: plisioOrder.providerPaymentId, status: "completed" });
+    assert.equal((await db.select().from(cryptoPaymentOrders).where(eq(cryptoPaymentOrders.id, plisioOrder.id)))[0].status, "partially_paid", "completion without a verified amount must not credit");
+    assert.equal((await db.select().from(users).where(eq(users.id, student.id)))[0].balance, 2000);
+    await updateProviderPayment({ id: plisioOrder.id, provider: "plisio", providerPaymentId: plisioOrder.providerPaymentId, status: "confirming" });
+    assert.equal((await db.select().from(cryptoPaymentOrders).where(eq(cryptoPaymentOrders.id, plisioOrder.id)))[0].status, "partially_paid", "progress callbacks must not erase underpayment");
+    await updateProviderPayment({ id: plisioOrder.id, provider: "plisio", providerPaymentId: plisioOrder.providerPaymentId, status: "mismatch", paidAmount: "50.500000" });
+    assert.equal((await db.select().from(cryptoPaymentOrders).where(eq(cryptoPaymentOrders.id, plisioOrder.id)))[0].status, "paid", "Plisio overpayment settles once at the requested USD amount");
     assert.equal((await db.select().from(users).where(eq(users.id, student.id)))[0].balance, 7000);
   } finally {
     const txs = await db.select({ id: transactions.id }).from(transactions).where(eq(transactions.userId, student.id));

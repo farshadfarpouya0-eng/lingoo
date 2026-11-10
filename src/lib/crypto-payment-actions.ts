@@ -9,12 +9,13 @@ import { getIntegrationConfig } from "@/lib/integration-config";
 import { hit } from "@/lib/ratelimit";
 import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 
-import { CRYPTO_ASSETS as ASSETS, type CryptoAsset } from "@/lib/crypto-networks";
+import { CRYPTO_ASSETS as ASSETS, decimalUnits, isCryptoAsset, normalizeTxHash, validCheckoutUrl, validReceivingAddress, type CryptoAsset } from "@/lib/crypto-networks";
 import { getCryptoNetworkOptions, isCryptoSettingsReady } from "@/lib/crypto-settings";
 
 const AMOUNTS = new Set([2000, 5000, 10000, 20000]);
 type AssetKey = CryptoAsset;
-const validAsset = (v: string): v is AssetKey => Object.prototype.hasOwnProperty.call(ASSETS, v);
+const validAsset = (v: string): v is AssetKey => isCryptoAsset(v);
+const positiveAmount = (value: string) => { const units = decimalUnits(value); return units !== null && units > BigInt(0); };
 
 async function appOrigin() {
   const raw = process.env.APP_URL || "";
@@ -24,9 +25,8 @@ async function appOrigin() {
   return url.origin;
 }
 
-function safeCheckoutUrl(value: unknown) {
-  if (typeof value !== "string" || !value) return "";
-  try { const u = new URL(value); return u.protocol === "https:" ? u.toString() : ""; } catch { return ""; }
+function safeCheckoutUrl(provider: "nowpayments" | "plisio", value: unknown) {
+  return validCheckoutUrl(provider, value);
 }
 
 export async function createCryptoTopUp(fd: FormData) {
@@ -110,7 +110,7 @@ export async function createCryptoTopUp(fd: FormData) {
       }
       await db.update(cryptoPaymentOrders).set({
         providerPaymentId: String(data.payment_id), payAddress: data.pay_address || "",
-        payAmount, checkoutUrl: safeCheckoutUrl(data.invoice_url || data.payment_url),
+        payAmount, checkoutUrl: safeCheckoutUrl("nowpayments", data.invoice_url || data.payment_url),
         providerStatus: "waiting", status: "pending",
         expiresAt: expiry && Number.isFinite(Date.parse(expiry)) ? new Date(expiry) : new Date(Date.now() + 45 * 60_000),
       }).where(eq(cryptoPaymentOrders.id, order.id));
@@ -126,14 +126,16 @@ export async function createCryptoTopUp(fd: FormData) {
         api_key: cfg.crypto.plisioSecretKey,
       });
       const response = await fetch(`https://api.plisio.net/api/v1/invoices/new?${query.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
-      const result = await response.json().catch(() => ({})) as { status?: string; data?: { txn_id?: string; invoice_url?: string; amount?: string; wallet_hash?: string; currency?: string; qr_code?: string; expire_utc?: number } };
+      const result = await response.json().catch(() => ({})) as { status?: string; data?: { txn_id?: string; invoice_url?: string; amount?: string; wallet_hash?: string; currency?: string; psys_cid?: string; qr_code?: string; expire_utc?: number | string } };
       const data = result.data;
       if (!response.ok || result.status !== "success" || !data?.txn_id || !data.invoice_url) throw new Error("Plisio could not create the payment invoice.");
+      const returnedCurrency = String(data.psys_cid || data.currency || "").toUpperCase();
+      if (returnedCurrency && returnedCurrency !== asset.plisio) throw new Error("Plisio returned a different currency than selected.");
       await db.update(cryptoPaymentOrders).set({
-        providerPaymentId: data.txn_id, checkoutUrl: safeCheckoutUrl(data.invoice_url),
+        providerPaymentId: data.txn_id, checkoutUrl: safeCheckoutUrl("plisio", data.invoice_url),
         payAmount: data.amount || "", payAddress: data.wallet_hash || "", qrCode: data.qr_code || "",
         providerStatus: "new", status: "pending",
-        expiresAt: data.expire_utc ? new Date(data.expire_utc * 1000) : new Date(Date.now() + 10 * 60 * 60_000),
+        expiresAt: data.expire_utc ? new Date(Number(data.expire_utc) * 1000) : new Date(Date.now() + 10 * 60 * 60_000),
       }).where(eq(cryptoPaymentOrders.id, order.id));
     }
   } catch {
@@ -148,14 +150,21 @@ export async function submitDirectCryptoProof(fd: FormData) {
   const user = await getUser();
   if (!user || user.role !== "student") redirect("/login");
   const id = Number(fd.get("orderId"));
-  const txHash = String(fd.get("txHash") || "").trim();
-  if (!Number.isSafeInteger(id) || id < 1 || !/^(?:0x)?[a-fA-F0-9]{64}$/.test(txHash)) redirect("/dashboard?tab=wallet&err=crypto_hash");
+  const rawHash = String(fd.get("txHash") || "").trim();
+  if (!Number.isSafeInteger(id) || id < 1 || !/^(?:0x)?[a-fA-F0-9]{64}$/.test(rawHash)) redirect("/dashboard?tab=wallet&err=crypto_hash");
   if (!await isCryptoPaymentsSchemaReady()) redirect("/dashboard?tab=wallet&err=crypto_setup");
+  if (!await hit(`crypto-proof:${user.id}`, 10, 3600_000)) redirect("/dashboard?tab=wallet&err=rate");
   const [order] = await db.select().from(cryptoPaymentOrders).where(and(
-    eq(cryptoPaymentOrders.id, id), eq(cryptoPaymentOrders.userId, user.id),
-    eq(cryptoPaymentOrders.method, "direct"), eq(cryptoPaymentOrders.status, "awaiting_payment"),
+    eq(cryptoPaymentOrders.id, id), eq(cryptoPaymentOrders.userId, user.id), eq(cryptoPaymentOrders.method, "direct"),
   )).limit(1);
-  if (!order) redirect("/dashboard?tab=wallet&err=crypto_expired");
+  if (!order || order.status !== "awaiting_payment") redirect(`/dashboard?tab=wallet&err=${order?.status === "pending_review" ? "crypto_submitted" : "crypto_expired"}`);
+  if (!isCryptoAsset(order.asset)) redirect("/dashboard?tab=wallet&err=crypto");
+  const txHash = normalizeTxHash(order.asset, rawHash);
+  if (!txHash) redirect("/dashboard?tab=wallet&err=crypto_hash");
+  const [duplicate] = await db.select({ id: cryptoPaymentOrders.id }).from(cryptoPaymentOrders).where(and(
+    eq(cryptoPaymentOrders.network, order.network), eq(cryptoPaymentOrders.txHash, txHash),
+  )).limit(1);
+  if (duplicate && duplicate.id !== id) redirect("/dashboard?tab=wallet&err=crypto_duplicate");
   if (order.expiresAt && order.expiresAt <= new Date()) {
     await db.update(cryptoPaymentOrders).set({ status: "expired", providerStatus: "direct_quote_expired" }).where(and(
       eq(cryptoPaymentOrders.id, id), eq(cryptoPaymentOrders.userId, user.id), eq(cryptoPaymentOrders.status, "awaiting_payment"),
@@ -163,9 +172,10 @@ export async function submitDirectCryptoProof(fd: FormData) {
     redirect("/dashboard?tab=wallet&err=crypto_expired");
   }
   try {
-    await db.update(cryptoPaymentOrders).set({ txHash, status: "pending_review", submittedAt: new Date() }).where(and(
+    const updated = await db.update(cryptoPaymentOrders).set({ txHash, status: "pending_review", submittedAt: new Date() }).where(and(
       eq(cryptoPaymentOrders.id, id), eq(cryptoPaymentOrders.userId, user.id), eq(cryptoPaymentOrders.status, "awaiting_payment"),
-    ));
+    )).returning({ id: cryptoPaymentOrders.id });
+    if (!updated.length) redirect("/dashboard?tab=wallet&err=crypto_submitted");
   } catch {
     redirect("/dashboard?tab=wallet&err=crypto_duplicate");
   }

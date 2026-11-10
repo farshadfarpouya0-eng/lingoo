@@ -5,4 +5,5 @@ export type TRow = {
   startHour: number; endHour: number; tzOffset: number; timeZone: string; workDays: string;
   headline: string; bio: string; country: string; accent: string; speaks: string; tags: string;
   payoutMethod: string; payoutAccount: string; balance: number; idStatus: IdStatus;
+  meetUrl: string; zoomUrl: string; meetOpenAccess: boolean; zoomHostSaved: boolean;
 };

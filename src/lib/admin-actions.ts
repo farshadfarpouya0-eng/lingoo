@@ -8,6 +8,8 @@ import { requireAdmin } from "./auth";
 import { isValidTimeZone } from "./time";
 import { hit } from "./ratelimit";
 import { PUBLIC_TUTORS_TAG } from "./public-tutors";
+import { validMeetingLink, validZoomHostUrl } from "./meeting-links";
+import { encryptIntegrationSecret } from "./integration-config";
 import { refundStudent, refundGroupSeat, ledger } from "./money";
 import {
   saveContentAndSettings, resetContent as resetContentFn,
@@ -101,9 +103,26 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
   const rating = Number(fd.get("rating"));
   const payoutAccountInput = str(fd, "payoutAccount", 200);
   if (payoutAccountInput && payoutAccountInput.length < 4) return { ok: false, error: "payout_account" };
+  const meetInput = str(fd, "meetUrl", 500), zoomInput = str(fd, "zoomUrl", 500);
+  const meetUrl = meetInput ? validMeetingLink("meet", meetInput) : "";
+  const zoomUrl = zoomInput ? validMeetingLink("zoom", zoomInput) : "";
+  if (meetInput && !meetUrl) return { ok: false, error: "meet_url" };
+  if (zoomInput && !zoomUrl) return { ok: false, error: "zoom_url" };
+  const meetOpenAccess = fd.get("meetOpenAccess") === "on";
+  const zoomHostInput = str(fd, "zoomHostUrl", 4000);
+  const clearZoomHost = fd.get("clear_zoomHostUrl") === "on";
+  const zoomHostNormalized = zoomHostInput ? validZoomHostUrl(zoomHostInput) : "";
+  if (zoomHostInput && !zoomHostNormalized) return { ok: false, error: "zoom_host_url" };
 
   try {
     await db.transaction(async tx => {
+      const [previousLinks] = await tx.select({ meetUrl: teacherProfiles.meetUrl, zoomUrl: teacherProfiles.zoomUrl, meetOpenAccess: teacherProfiles.meetOpenAccess, zoomHostUrl: teacherProfiles.zoomHostUrl }).from(teacherProfiles).where(eq(teacherProfiles.userId, id)).limit(1);
+      let nextZoomHostUrl = previousLinks?.zoomHostUrl || "";
+      if (clearZoomHost) nextZoomHostUrl = "";
+      else if (zoomHostNormalized) nextZoomHostUrl = encryptIntegrationSecret(zoomHostNormalized);
+      if (previousLinks && (previousLinks.meetUrl !== meetUrl || previousLinks.zoomUrl !== zoomUrl || previousLinks.meetOpenAccess !== meetOpenAccess || previousLinks.zoomHostUrl !== nextZoomHostUrl)) {
+        await tx.insert(adminAuditLogs).values({ adminId: admin.id, targetUserId: id, action: "teacher.meeting_links.updated", reference: `user:${id}`, note: "Classroom links changed from Admin → Tutors", metadata: { meetChanged: previousLinks.meetUrl !== meetUrl, zoomChanged: previousLinks.zoomUrl !== zoomUrl, meetSet: !!meetUrl, zoomSet: !!zoomUrl, meetOpenAccess, zoomHostSaved: !!nextZoomHostUrl, zoomHostChanged: previousLinks.zoomHostUrl !== nextZoomHostUrl } });
+      }
       const nextSuspended = fd.get("suspended") === "on";
       const nextSuspendedUntil = nextSuspended && target.suspended ? target.suspendedUntil : null;
       await tx.update(users).set({
@@ -133,10 +152,12 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
         ...(payoutAccountInput ? { payoutAccount: encryptPayoutAccount(payoutAccountInput) } : {}),
         certified: fd.get("certified") === "on",
         active: fd.get("active") === "on",
+        meetUrl, zoomUrl, meetOpenAccess, zoomHostUrl: nextZoomHostUrl,
       }).where(eq(teacherProfiles.userId, id));
     });
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, error: "email_taken" };
+    if (error instanceof Error && /INTEGRATION_ENCRYPTION_KEY|encryption/i.test(error.message)) return { ok: false, error: "encryption_key" };
     throw error;
   }
   revalidateAll();

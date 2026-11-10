@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { siteSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { HOME } from "./home-i18n";
+import { HOME_ASSETS } from "./home-assets";
 
 export type Stat = { value: string; label: string };
 export type Goal = { tag: string; title: string; text: string };
@@ -34,7 +35,7 @@ export type HomeContent = {
 };
 export type Settings = { siteName: string; footerTagline: string; contactEmail: string; announcement: { enabled: boolean; text: string } };
 
-const DEFAULT_HERO = { en: "/images/hero-online.webp", zh: "/images/hero-online.webp", ja: "/images/hero-online.webp" };
+const DEFAULT_HERO = { en: HOME_ASSETS.heroOnline, zh: HOME_ASSETS.heroOnline, ja: HOME_ASSETS.heroOnline };
 const DEFAULT_TAGLINE = { en: "English learning made for Asia.", zh: "为亚洲学习者打造的英语学习平台。", ja: "アジアのための英語学習プラットフォーム。" };
 const DEFAULT_EMAIL = "hello@lingorain.com";
 

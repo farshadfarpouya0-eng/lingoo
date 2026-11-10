@@ -25,7 +25,11 @@ type PersistedConfig = {
   publicConfig: Record<string, string>;
   encryptedSecrets: Record<string, string>;
 };
-type Provider = "email" | "storage" | "payments" | "cryptoPayments" | "video" | "recording" | "realtime" | "rateLimit";
+type Provider = "email" | "storage" | "payments" | "cryptoPayments" | "video" | "zoom" | "recording" | "realtime" | "rateLimit";
+
+export const integrationEncryptionReady = () => rootSecret().length >= 32;
+export function encryptIntegrationSecret(value: string) { return encryptSecret(value); }
+export function decryptIntegrationSecret(value: string) { return decryptSecret(value); }
 
 function encryptSecret(value: string): string {
   const iv = randomBytes(12);
@@ -104,6 +108,11 @@ export async function getIntegrationConfig() {
       jitsiAppId: publicValue("jitsiAppId", "JITSI_APP_ID", "lingorain"),
       jitsiAppSecret: secretValue("jitsiAppSecret", "JITSI_APP_SECRET"),
     },
+    zoom: {
+      accountId: publicValue("zoomAccountId", "ZOOM_ACCOUNT_ID"),
+      clientId: secretValue("zoomClientId", "ZOOM_CLIENT_ID"),
+      clientSecret: secretValue("zoomClientSecret", "ZOOM_CLIENT_SECRET"),
+    },
     realtime: {
       provider: (publicValue("realtimeProvider", "REALTIME_PROVIDER", "polling") === "pusher" ? "pusher" : "polling") as "pusher" | "polling",
       appId: secretValue("pusherAppId", "PUSHER_APP_ID"),
@@ -152,6 +161,7 @@ export async function getIntegrationStatus() {
       jaasPrivateKeySaved: !!c.video.jaasPrivateKey,
       jitsiAppSecretSaved: !!c.video.jitsiAppSecret,
     },
+    zoom: { configured: !!(c.zoom.accountId && c.zoom.clientId && c.zoom.clientSecret), accountId: c.zoom.accountId },
     realtime: { configured: c.realtime.provider === "pusher" && !!(c.realtime.appId && c.realtime.key && c.realtime.secret && c.realtime.cluster), provider: c.realtime.provider, cluster: c.realtime.cluster },
     recording: { configured: c.recording.provider === "daily" && !!c.recording.dailyApiKey && !!c.recording.dailyDomain, provider: c.recording.provider, domain: c.recording.dailyDomain },
     rateLimit: { configured: !!(c.rateLimit.url && c.rateLimit.token), provider: c.rateLimit.url && c.rateLimit.token ? "upstash" : "postgres" },
@@ -249,6 +259,14 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
       saveSecret("jitsiAppSecret", "jitsiAppSecret", 500);
       break;
     }
+    case "zoom": {
+      const accountId = val("zoomAccountId", 200);
+      if (accountId) pub.zoomAccountId = accountId;
+      if (fd.get("clear_zoomAccountId") === "on") delete pub.zoomAccountId;
+      saveSecret("zoomClientId", "zoomClientId", 500);
+      saveSecret("zoomClientSecret", "zoomClientSecret", 1000);
+      break;
+    }
     case "realtime": {
       const selected = val("realtimeProvider", 20);
       if (!new Set(["polling", "pusher"]).has(selected)) throw new Error("Invalid realtime provider.");
@@ -291,6 +309,12 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
 
 export async function testIntegrationProvider(provider: Provider) {
   const c = await getIntegrationConfig();
+  if (provider === "zoom") {
+    const { getZoomAccessToken, zoomConfigured } = await import("./zoom-api");
+    if (!zoomConfigured(c.zoom)) throw new Error("Enter Zoom Account ID, Client ID and Client Secret first.");
+    await getZoomAccessToken(c.zoom);
+    return true;
+  }
   let url = "", headers: Record<string, string> = {};
   switch (provider) {
     case "email":

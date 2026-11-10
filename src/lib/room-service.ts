@@ -1,7 +1,16 @@
 import { createHmac } from "crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { lessonPlatformEvents, lessons, users } from "@/db/schema";
+import { lessonPlatformEvents, lessons, teacherProfiles, users } from "@/db/schema";
+import { validMeetingLink } from "./meeting-links";
+export { validMeetingLink };
+
+/** Fixed rooms an administrator assigned to this tutor (empty string when none/invalid). */
+export async function assignedTeacherLinks(teacherId: number) {
+  const [profile] = await db.select({ meetUrl: teacherProfiles.meetUrl, zoomUrl: teacherProfiles.zoomUrl })
+    .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);
+  return { meet: validMeetingLink("meet", profile?.meetUrl || ""), zoom: validMeetingLink("zoom", profile?.zoomUrl || "") };
+}
 import { classroomSecret } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
 import { canAccessLesson } from "./lesson-access";
@@ -14,15 +23,7 @@ export type RoomSnapshot = {
   videoProvider: VideoProvider; videoMessage: string;
   state: "pending" | "early" | "open" | "closed"; issueReported: boolean; updatedAt: string | null;
 };
-export function validMeetingLink(platform: string, raw: string) {
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== "https:" || u.username || u.password || (u.port && u.port !== "443")) return "";
-    if (platform === "meet" && u.hostname === "meet.google.com" && /^\/(?:[a-z]{3}-[a-z]{4}-[a-z]{3}|lookup\/[a-z0-9_-]+)\/?$/i.test(u.pathname)) return u.href;
-    if (platform === "zoom" && (u.hostname === "zoom.us" || u.hostname.endsWith(".zoom.us")) && /^\/(?:j|s|my|wc)\/[a-z0-9/_-]+\/?$/i.test(u.pathname)) return u.href;
-    return "";
-  } catch { return ""; }
-}
+
 function roomState(l: Pick<typeof lessons.$inferSelect, "status" | "startAt" | "duration">, role: "teacher" | "student") {
   const now = Date.now();
   const startsAt = l.startAt.getTime();
@@ -67,7 +68,8 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
     // Personal Daily tokens are issued by the dedicated authenticated endpoint.
     joinUrl = "";
   } else if (state === "open" && (platform === "meet" || platform === "zoom")) {
-    joinUrl = validMeetingLink(platform, l.meetingUrl);
+    // A lesson-specific link wins; otherwise use the tutor's admin-assigned fixed room.
+    joinUrl = validMeetingLink(platform, l.meetingUrl) || (await assignedTeacherLinks(l.teacherId))[platform];
   }
   return { lessonId, platform, revision: l.platformRevision, state, joinUrl, videoProvider,
     videoMessage: platform === "lingo" && videoProvider === "unconfigured" ? VIDEO_SETUP_MESSAGE : "",
@@ -75,13 +77,10 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
     issueReported: !!l.platformIssueAt, updatedAt: l.platformUpdatedAt?.toISOString() ?? null };
 }
 export async function chooseClassroom(actorId: number, lessonId: number, platform: string, meetingUrl: string) {
-  if (!["lingo", "daily", "meet", "zoom"].includes(platform)) throw new Error("platform");
-  if (platform === "daily") {
-    const cfg = await getIntegrationConfig();
-    if (cfg.recording.provider !== "daily" || !cfg.recording.dailyApiKey || !cfg.recording.dailyDomain) throw new Error("daily_off");
-  }
-  const url = platform === "lingo" || platform === "daily" ? "" : validMeetingLink(platform, meetingUrl.trim());
-  if (platform !== "lingo" && platform !== "daily" && !url) throw new Error("link");
+  // Existing Daily lessons remain accessible, but no new lesson may select Daily.
+  if (!["lingo", "meet", "zoom"].includes(platform)) throw new Error("platform");
+  const url = platform === "lingo" ? "" : validMeetingLink(platform, meetingUrl.trim());
+  if ((platform === "meet" || platform === "zoom") && !url && !(await assignedTeacherLinks(actorId))[platform]) throw new Error("link");
   return db.transaction(async tx => {
     const [l] = await tx.select().from(lessons).where(eq(lessons.id, lessonId)).for("update");
     if (!l || l.teacherId !== actorId) throw new Error("forbidden");

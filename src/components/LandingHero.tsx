@@ -3,6 +3,7 @@ import Icon from "./Icon";
 import type { LandingCopy } from "@/lib/landing-i18n";
 import { getLang } from "@/lib/i18n";
 import { getBranding } from "@/lib/branding";
+import { HOME_ASSETS } from "@/lib/home-assets";
 
 export default async function LandingHero({ c }: { c: LandingCopy }) {
   const lang = await getLang();
@@ -33,8 +34,8 @@ export default async function LandingHero({ c }: { c: LandingCopy }) {
           <article className="hero-path hero-path-adult" data-testid="adult-hero" aria-labelledby="adult-title">
             <img
               data-hero-image="adult"
-              src="/images/hero-adults.webp"
-              srcSet="/images/hero-adults-400.webp 400w, /images/hero-adults.webp 800w"
+              src={HOME_ASSETS.heroAdults}
+              srcSet={`${HOME_ASSETS.heroAdults400} 400w, ${HOME_ASSETS.heroAdults} 800w`}
               sizes="(max-width: 640px) 180px, (max-width: 1024px) 40vw, 380px"
               alt="An adult learner taking notes during an online English lesson"
               width={800} height={1000} fetchPriority="high" decoding="async"
@@ -61,7 +62,7 @@ export default async function LandingHero({ c }: { c: LandingCopy }) {
             <div className="kids-hero-orbit" aria-hidden="true" />
             <img
               data-hero-image="kids"
-              src="/images/hero-kids.webp"
+              src={HOME_ASSETS.heroKids}
               alt="Birdie, Teddy and Lulu practicing English with books and a microphone"
               width={700} height={780} fetchPriority="high" decoding="async"
               className="kids-hero-image"

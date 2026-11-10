@@ -46,6 +46,8 @@ export async function POST(req: Request) {
   if (String(payload.source_currency ?? "").toUpperCase() !== "USD" || !Number.isFinite(sourceAmount) || Math.abs(sourceAmount * 100 - order.amountUsd) > 1) return new Response("payment amount mismatch", { status: 400 });
   const txUrls = Array.isArray(payload.tx_urls) ? payload.tx_urls : typeof payload.tx_urls === "string" ? [payload.tx_urls] : [];
   const txHash = txUrls.map(value => String(value).match(/(?:0x)?[a-fA-F0-9]{64}/)?.[0]).find(Boolean);
-  await updateProviderPayment({ id, provider: "plisio", providerPaymentId: txnId, status, txHash });
+  const paidAmount = payload.amount == null || payload.amount === "" ? undefined : String(payload.amount);
+  if ((status === "completed" || status === "mismatch") && !paidAmount) return new Response("paid amount missing", { status: 400 });
+  await updateProviderPayment({ id, provider: "plisio", providerPaymentId: txnId, status, txHash, paidAmount });
   return Response.json({ received: true });
 }

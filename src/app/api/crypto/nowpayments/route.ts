@@ -27,6 +27,7 @@ export async function POST(req: Request) {
   const id = Number(payload.order_id);
   const paymentId = String(payload.payment_id ?? "");
   const status = String(payload.payment_status ?? "").toLowerCase();
+  if (status === "finished" && (payload.actually_paid == null || payload.actually_paid === "")) return new Response("paid amount missing", { status: 400 });
   const priceAmount = Number(payload.price_amount);
   const payCurrency = String(payload.pay_currency ?? "").toLowerCase();
   const priceCurrency = String(payload.price_currency ?? "").toLowerCase();

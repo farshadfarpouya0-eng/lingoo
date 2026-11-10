@@ -6,7 +6,7 @@ import { lessonPlatformEvents, lessons, teacherProfiles, users, learningMaterial
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
-import { classroomSnapshot } from "@/lib/room-service";
+import { assignedTeacherLinks, classroomSnapshot } from "@/lib/room-service";
 import { fmtAtZone } from "@/lib/time";
 import ClassroomLive from "@/components/ClassroomLive";
 import ClassroomPresence from "@/components/ClassroomPresence";
@@ -19,7 +19,7 @@ import Icon from "@/components/Icon";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Classroom", robots: { index: false, follow: false } };
 
-export default async function Classroom({ params }: { params: Promise<{ id: string }> }) {
+export default async function Classroom({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ join?: string }> }) {
   const user = await getUser();
   if (!user) redirect("/login");
   const id = Number((await params).id);
@@ -35,6 +35,10 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
   const reportTargets = (isTutor ? groupStudents : [{ id: other?.id || l.teacherId, name: other?.name || "Teacher", avatar: other?.avatar || "" }, ...groupStudents]).filter((person, index, all) => person.id !== user.id && all.findIndex(p => p.id === person.id) === index).map(p => ({ id: p.id, name: p.name }));
   const [pref] = isTutor ? await db.select({ platform: teacherProfiles.platformDefault }).from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : [];
   const snapshot = await classroomSnapshot(user.id, id, user.name);
+  const autoJoin = !isTutor && (await searchParams).join === "1" && snapshot.state === "open";
+  const teacherLinks = await assignedTeacherLinks(l.teacherId);
+  // Students learn only whether a room exists; the URL itself is revealed when the room opens.
+  const assignedLinks = { meet: !!teacherLinks.meet, zoom: !!teacherLinks.zoom, ...(isTutor ? { meetUrl: teacherLinks.meet, zoomUrl: teacherLinks.zoom } : {}) };
   const courseStudentId = !isTutor && l.classType === "semi_private" ? user.id : l.studentId;
   const enrolledGroupRows = !isTutor && l.classType === "semi_private"
     ? await db.select({ lessonId: lessonParticipants.lessonId }).from(lessonParticipants).where(and(eq(lessonParticipants.studentId, user.id), inArray(lessonParticipants.status, ["booked", "attended"])))
@@ -113,10 +117,12 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
               <Icon name="video" /> Live classroom
             </div>
-            <ClassroomLive initial={snapshot} isTutor={isTutor} displayName={user.name} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} isAdmin={user.role === "admin"} />
+            <ClassroomLive initial={snapshot} isTutor={isTutor} displayName={user.name} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} isAdmin={user.role === "admin"} profileTimeZone={user.timeZone || "UTC"} assignedLinks={assignedLinks} autoJoin={autoJoin} />
           </div>
-          <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />
-          <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          {snapshot.platform === "daily" && <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />}
+          <details className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-amber-950">Need help? Report a lesson issue</summary>
+          <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <h2 className="font-bold text-amber-950">Report a lesson issue</h2>
             <p className="mt-1 text-sm leading-6 text-amber-900/75">If internet or technical problems disrupt the lesson, report what happened. Support will review it; a report does not automatically guarantee a refund or replacement.</p>
             <form action={reportLessonIssue as unknown as (fd: FormData) => Promise<void>} className="mt-4 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
@@ -133,6 +139,7 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
             </form>
           </section>
           <ReportParticipantForm lessonId={id} targets={reportTargets} />
+          </details>
         </div>
 
         <aside className="space-y-4">
@@ -165,8 +172,8 @@ export default async function Classroom({ params }: { params: Promise<{ id: stri
           </div>
           <div className="rounded-[22px] bg-teal-50/80 p-5">
             <Icon name="swap" className="text-teal-700" />
-            <h2 className="mt-3 text-sm font-bold text-teal-950">{c.switchPlatform || "Change the classroom"}</h2>
-            <p className="mt-2 text-xs leading-6 text-slate-500">{c.switchRules || "The classroom can be changed until the lesson ends."}</p>
+            <h2 className="mt-3 text-sm font-bold text-teal-950">{isTutor ? (c.switchPlatform || "Change the classroom") : "Classroom selection"}</h2>
+            <p className="mt-2 text-xs leading-6 text-slate-500">{isTutor ? (c.switchRules || "The classroom can be changed until the lesson ends.") : "Only your tutor can choose or change the classroom. You will see the selected room here automatically."}</p>
           </div>
           {history.length > 0 && (
             <div className="rounded-[22px] border border-slate-200 bg-white p-5">

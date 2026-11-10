@@ -20,6 +20,7 @@ type Props = {
   lessonId: number;
   books: ClassroomMaterial[];
   userId: number;
+  autoJoin?: boolean;
 };
 type JitsiEvent = {
   muted?: boolean; on?: boolean; id?: string; displayName?: string; handRaised?: number;
@@ -70,8 +71,15 @@ const tabs = [
 ] as const;
 type SideTab = typeof tabs[number]["id"];
 
-export default function LingoRoom({ roomName, displayName, videoProvider, videoMessage, startLabel, minutesLeft, isTutor, isAdmin, lessonId, books, userId }: Props) {
+export default function LingoRoom({ roomName, displayName, videoProvider, videoMessage, startLabel, minutesLeft, isTutor, isAdmin, lessonId, books, userId, autoJoin = false }: Props) {
   const [joined, setJoined] = useState(false);
+  const autoJoinConsumed = useRef(false);
+  useEffect(() => {
+    if (autoJoin && !autoJoinConsumed.current && videoProvider !== "unconfigured") {
+      autoJoinConsumed.current = true;
+      setJoined(true);
+    }
+  }, [autoJoin, videoProvider]);
   const [tab, setTab] = useState<SideTab>("plan");
   const [notes, setNotes] = useState("");
   const [ticket, setTicket] = useState<VideoTicket | null>(null);
@@ -236,7 +244,7 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       <p className="mt-5 text-xs font-bold uppercase tracking-widest text-amber-700">Video integration required</p>
       <h2 className="mt-2 text-2xl font-bold text-teal-950">Let’s connect your classroom</h2>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{videoMessage}</p>
-      <p className="mt-3 text-sm leading-6 text-slate-500">{isAdmin ? "Configure the video integration below, then return to this lesson. No database migration is needed for these settings." : "Your teacher can choose Daily, Google Meet or Zoom above. Otherwise, ask the site administrator to finish the video setup."}</p>
+      <p className="mt-3 text-sm leading-6 text-slate-500">{isAdmin ? "Configure the video integration below, then return to this lesson. No database migration is needed for these settings." : "Your teacher can switch this lesson to Google Meet or Zoom. Otherwise, ask the site administrator to finish the video setup."}</p>
       {isAdmin && <Link href="/admin/integrations#provider-video" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white">Open video settings<Icon name="arrow" width={17}/></Link>}
     </section>;
   }
@@ -269,7 +277,7 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
             <div className="mt-5 rounded-xl border border-slate-200 px-4 py-3"><p className="text-xs font-bold text-slate-500">Joining as</p><p className="mt-1 text-sm font-semibold text-slate-800">{displayName} · {isTutor ? "Teacher" : "Student"}</p><p className="mt-1 text-[11px] leading-5 text-slate-400">Your account verifies your identity. No separate Jitsi login is needed.</p></div>
             <div className="mt-4 space-y-2 text-xs"><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-3"><span className="text-slate-500">Camera & microphone</span><span className="font-semibold text-slate-700">Browser will ask on entry</span></div><div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-3"><span className="text-slate-500">Lesson starts</span><span className="font-semibold text-slate-800">{startLabel}</span></div></div>
             {actionMessage && <p role="status" className="mt-3 text-xs leading-5 text-teal-700">{actionMessage}</p>}
-            <button type="button" onClick={reconnect} className="mt-5 inline-flex items-center justify-center gap-3 rounded-xl bg-teal-800 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-teal-900/15 transition hover:-translate-y-0.5 hover:bg-teal-900">Enter LingoRoom<Icon name="arrow" width={18}/></button>
+              <button type="button" onClick={reconnect} className="mt-5 inline-flex items-center justify-center gap-3 rounded-xl bg-teal-800 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-teal-900/15 transition hover:-translate-y-0.5 hover:bg-teal-900">{isTutor ? "Enter LingoRoom" : "Enter classroom"}<Icon name="arrow" width={18}/></button>
             <p className="mt-3 text-[11px] leading-5 text-slate-400">Recording is off by default. Any recording must use the classroom’s consent flow.</p>
           </div>
         </div>

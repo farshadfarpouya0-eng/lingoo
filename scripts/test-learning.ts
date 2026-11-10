@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, pool } from "../src/db";
-import { lessonPackages, lessonPlatformEvents, lessons, teacherProfiles, transactions, users } from "../src/db/schema";
+import { accountingEntries, lessonPackages, lessonPlatformEvents, lessons, teacherProfiles, transactions, users } from "../src/db/schema";
 import { quotePackage } from "../src/lib/package-pricing";
 import { purchaseLessonPackage } from "../src/lib/package-service";
 import { reserveLesson, changeLessonStatus } from "../src/lib/lesson-service";
@@ -59,7 +59,7 @@ const l = lesson as any;assert.equal(l.platform,"undecided");assert.equal(l.pric
     snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.revision,2);assert.equal(snap.platform,"meet");assert.equal(snap.joinUrl,"https://meet.google.com/abc-defg-hij");
     await reportConnectionProblem(student.id,lesson.id);assert.equal((await classroomSnapshot(teacher.id,lesson.id,"Tutor")).issueReported,true);
     await chooseClassroom(teacher.id,lesson.id,"lingo","");
-    snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.revision,3);assert.equal(snap.issueReported,false);assert.ok(snap.joinUrl.includes("lingorain-"));
+    snap=await classroomSnapshot(student.id,lesson.id,"Student");assert.equal(snap.revision,3);assert.equal(snap.issueReported,false);assert.equal(snap.platform,"lingo");assert.ok(snap.joinUrl===""||snap.joinUrl.includes("lingorain-"));
     assert.equal(await credits(pack.id),4);assert.equal(await balance(student.id),86935);
     console.log("PASS live Zoom → Meet → Lingo switching, problem reports and unchanged billing");
     await assert.rejects(classroomSnapshot(stranger.id,lesson.id,"Other"),/forbidden/);
@@ -79,7 +79,7 @@ const l = lesson as any;assert.equal(l.platform,"undecided");assert.equal(l.pric
     await db.update(teacherProfiles).set({price:9999}).where(eq(teacherProfiles.userId,teacher.id));
     const frozen=await reserveLesson(student.id,{teacherId:teacher.id,duration:50,startAt:slot(),packageId:pack.id});assert.equal(frozen.price,2613);
     await changeLessonStatus(teacher.id,frozen.id,"confirm");
-    await db.update(lessons).set({startAt:new Date(Date.now()-60*60_000)}).where(eq(lessons.id,frozen.id));
+    await db.update(lessons).set({startAt:new Date(Date.now()-70*60_000)}).where(eq(lessons.id,frozen.id));
     const before=await balance(teacher.id);
     await Promise.all([changeLessonStatus(teacher.id,frozen.id,"complete"),changeLessonStatus(teacher.id,frozen.id,"complete")]);
     assert.equal(await balance(teacher.id),before+teacherShare(2613));
@@ -95,7 +95,15 @@ const l = lesson as any;assert.equal(l.platform,"undecided");assert.equal(l.pric
     console.log("PASS overlapping 25/50-minute reservations prevented");
     console.log("All learning-flow integration tests passed.");
   } finally {
-    if(ids.length){await db.delete(lessons).where(inArray(lessons.studentId,ids));await db.delete(lessonPackages).where(inArray(lessonPackages.studentId,ids));await db.delete(transactions).where(inArray(transactions.userId,ids));await db.delete(teacherProfiles).where(inArray(teacherProfiles.userId,ids));await db.delete(users).where(inArray(users.id,ids));}
+    if(ids.length){
+      await db.delete(lessons).where(inArray(lessons.studentId,ids));
+      await db.delete(lessonPackages).where(inArray(lessonPackages.studentId,ids));
+      const txs=await db.select({id:transactions.id}).from(transactions).where(inArray(transactions.userId,ids));
+      if(txs.length) await db.delete(accountingEntries).where(inArray(accountingEntries.transactionId,txs.map(t=>t.id)));
+      await db.delete(transactions).where(inArray(transactions.userId,ids));
+      await db.delete(teacherProfiles).where(inArray(teacherProfiles.userId,ids));
+      await db.delete(users).where(inArray(users.id,ids));
+    }
     await pool.end();
   }
 }

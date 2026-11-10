@@ -9,6 +9,7 @@ import { ledgerOnce } from "@/lib/money";
 import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
 import { isCryptoSettingsReady } from "@/lib/crypto-settings";
 import { decimalAtLeast, isCryptoAsset, validExplorerUrl } from "@/lib/crypto-networks";
+import { syncCryptoProviderOrder } from "@/lib/crypto-provider-sync";
 
 const noteOf = (fd: FormData) => String(fd.get("note") || "").trim().slice(0, 300);
 const orderIdOf = (fd: FormData) => { const id = Number(fd.get("id")); return Number.isSafeInteger(id) && id > 0 ? id : 0; };
@@ -37,6 +38,17 @@ export async function approveCryptoPayment(fd: FormData) {
   });
   revalidatePath("/admin/crypto-payments"); revalidatePath("/admin/audit"); revalidatePath("/dashboard");
   redirect(`/admin/crypto-payments?result=${failure || "approved"}`);
+}
+
+export async function syncCryptoPayment(fd: FormData) {
+  await requireAdmin();
+  if (!await isCryptoPaymentsSchemaReady()) redirect("/admin/crypto-payments?result=setup_required");
+  const id = orderIdOf(fd);
+  if (!id) redirect("/admin/crypto-payments?result=invalid");
+  let failed = false;
+  try { await syncCryptoProviderOrder(id); } catch { failed = true; }
+  revalidatePath("/admin/crypto-payments"); revalidatePath("/dashboard");
+  redirect(`/admin/crypto-payments?result=${failed ? "sync_failed" : "synced"}`);
 }
 
 export async function rejectCryptoPayment(fd: FormData) {

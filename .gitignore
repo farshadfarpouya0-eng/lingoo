@@ -15,5 +15,13 @@ artifacts/
 # Temporary source bundles are only for this sandbox preview, never deploy them.
 /public/downloads/
 npm-debug.log*
+*.log
 .DS_Store
 .backup/
+/backups/
+*.dump
+*.sqlite
+*.pem
+*.key
+.idea/
+.vscode/

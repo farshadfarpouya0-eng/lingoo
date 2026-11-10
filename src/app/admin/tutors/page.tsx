@@ -43,9 +43,12 @@ export default async function AdminTutors({ searchParams }: { searchParams: Sear
       tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone, workDays: teacherProfiles.workDays, headline: teacherProfiles.headline, bio: teacherProfiles.bio,
       country: teacherProfiles.country, accent: teacherProfiles.accent, speaks: teacherProfiles.speaks, tags: teacherProfiles.tags,
       payoutMethod: teacherProfiles.payoutMethod, idStatus: idStatusSql,
+      meetUrl: teacherProfiles.meetUrl, zoomUrl: teacherProfiles.zoomUrl,
+      meetOpenAccess: teacherProfiles.meetOpenAccess, zoomHostUrl: teacherProfiles.zoomHostUrl,
     }).from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId)).where(and(eq(users.id, id), eq(users.role, "teacher")));
     if (!r) redirect("/admin/tutors");
-    const row: TRow = { ...r, avatar: r.avatar ?? "", nativeLang: r.nativeLang ?? "en", payoutAccount: "" };
+    const { zoomHostUrl, ...base } = r;
+    const row: TRow = { ...base, avatar: r.avatar ?? "", nativeLang: r.nativeLang ?? "en", payoutAccount: "", zoomHostSaved: !!zoomHostUrl };
     return (
       <>
         <div className="mb-5"><Link href="/admin/tutors" className="text-sm font-semibold text-teal-700">← Back to tutors</Link><h1 className="mt-2 text-3xl font-black text-teal-950">Edit tutor · {row.name}</h1></div>

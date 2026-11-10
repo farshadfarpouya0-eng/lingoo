@@ -13,6 +13,10 @@ const ERRORS: Record<string, string> = {
   id: "Invalid tutor.", not_found: "This tutor no longer exists.", name: "Please enter a name.",
   email: "Please enter a valid email address.", email_taken: "Another account already uses this email.",
   avatar: "The photo must be an https:// link.", payout_account: "A payout account must contain at least 4 characters.",
+  meet_url: "Google Meet link must look like https://meet.google.com/abc-defg-hij",
+  zoom_url: "Zoom link must look like https://zoom.us/j/1234567890 (a ?pwd= passcode is allowed).",
+  zoom_host_url: "Zoom host/start link must be a zoom.us HTTPS link.",
+  encryption_key: "Set INTEGRATION_ENCRYPTION_KEY before saving a secret Zoom host link.",
 };
 const ID_LABEL = { verified: "ID verified", pending: "ID uploaded — waiting for review", rejected: "ID rejected", none: "No ID uploaded yet" } as const;
 
@@ -77,6 +81,18 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
                 ))}
               </div>
             </div>
+          </div>
+          <div className="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-5">
+            <h2 className="mb-1 text-lg font-bold text-teal-950">Classroom links · managed by admin</h2>
+            <p className="mb-3 text-xs leading-5 text-slate-600">Create one fixed room per tutor in the tutor&apos;s own Google / Zoom account and paste it here. Lessons on Google Meet or Zoom use it automatically — the tutor doesn&apos;t paste anything. Leave blank to remove. Store account passwords in a password manager, not on this site.</p>
+            <div className="grid gap-3">
+              <label className={lab}>Google Meet room<input name="meetUrl" type="url" maxLength={500} defaultValue={row.meetUrl} placeholder="https://meet.google.com/abc-defg-hij" className={inp} /></label>
+              <label className={lab}>Zoom room<input name="zoomUrl" type="url" maxLength={500} defaultValue={row.zoomUrl} placeholder="https://zoom.us/j/1234567890?pwd=…" className={inp} /></label>
+              <label className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold leading-5 text-emerald-900"><input type="checkbox" name="meetOpenAccess" defaultChecked={row.meetOpenAccess} className="mt-0.5" />This Google Meet room is Open / guest-friendly: teacher and student can join without the teacher signing in to admit guests.</label>
+              <label className={lab}>Zoom host/start link · secret, optional<input name="zoomHostUrl" type="password" maxLength={4000} autoComplete="off" placeholder={row.zoomHostSaved ? "Saved securely — leave blank to keep" : "Optional fallback if Zoom API is not connected"} className={inp} /></label>
+              <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" name="clear_zoomHostUrl" />Remove saved Zoom host/start link</label>
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-amber-800">For no-login teaching: set the Meet room to Open access, or connect Zoom in Admin → Integrations so the site can refresh a host start link. A plain Zoom join link may still ask the teacher to sign in. Free Zoom ends every meeting after 40 minutes from when the host opens it.</p>
           </div>
           <div className="rounded-3xl border border-slate-200 bg-white p-5">
             <h2 className="mb-1 text-lg font-bold text-teal-950">Payout details</h2>

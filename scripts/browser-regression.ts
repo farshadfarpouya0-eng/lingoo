@@ -59,6 +59,7 @@ async function main() {
     await mockVideo(teacherContext, lesson.id); await mockVideo(studentContext, lesson.id);
     const teacherPage = await teacherContext.newPage();
     await teacherPage.goto(`${base}/classroom/${lesson.id}`);
+    assert.equal(await teacherPage.getByRole("button", { name: "Daily secure room" }).count(), 0, "Daily is not offered for new classes");
     await teacherPage.getByRole("button", { name: "Enter LingoRoom" }).click({ timeout: 20000 });
     await teacherPage.getByText("Connected", { exact: true }).waitFor();
     await teacherPage.getByRole("button", { name: "Studio tools", exact: true }).click();
@@ -66,9 +67,14 @@ async function main() {
     await teacherPage.locator('canvas[role="img"]').waitFor();
     await teacherPage.waitForTimeout(1200);
     const studentPage = await studentContext.newPage();
-    await studentPage.goto(`${base}/classroom/${lesson.id}`);
-    await studentPage.getByRole("button", { name: "Enter LingoRoom" }).click({ timeout: 20000 });
+    await studentPage.goto(`${base}/dashboard?tab=lessons`);
+    const enterLink = studentPage.getByRole("link", { name: "Enter classroom" }).first();
+    await enterLink.waitFor();
+    await enterLink.click();
+    await studentPage.waitForURL(new RegExp(`/classroom/${lesson.id}\\?join=1`));
     await studentPage.getByText("Connected", { exact: true }).waitFor();
+    assert.equal(await studentPage.getByRole("button", { name: "Save classroom" }).count(), 0);
+    assert.equal(await studentPage.getByRole("button", { name: "Report a problem" }).count(), 0);
     await studentPage.getByRole("button", { name: "Studio tools", exact: true }).click();
     await studentPage.getByText(material.title, { exact: true }).first().waitFor();
     await studentPage.locator('canvas[role="img"]').waitFor();
@@ -83,6 +89,17 @@ async function main() {
     }
     await teacherPage.getByRole("button", { name: "Video room", exact: true }).click();
     await teacherPage.getByText("Connected", { exact: true }).waitFor();
+
+    const [meetLesson] = await db.insert(lessons).values({ teacherId: teacher.id, studentId: student.id, startAt: new Date(Date.now() - 4 * 60000), duration: 25, status: "confirmed", platform: "meet", meetingUrl: "https://meet.google.com/abc-defg-hij", price: 0, topic: "Meet one-click test" }).returning();
+    lessonIds.push(meetLesson.id);
+    const meetPage = await studentContext.newPage();
+    await meetPage.goto(`${base}/classroom/${meetLesson.id}`);
+    assert.equal(await meetPage.getByRole("button", { name: "Save classroom" }).count(), 0);
+    assert.equal(await meetPage.getByRole("link", { name: "Open the classroom" }).count(), 1);
+    await studentContext.route("https://meet.google.com/**", route => route.fulfill({ contentType: "text/html", body: "<html><body>Meet reached</body></html>" }));
+    await meetPage.goto(`${base}/dashboard?tab=lessons`);
+    await meetPage.locator(`a[href="/classroom/${meetLesson.id}?join=1"]`).click();
+    await meetPage.waitForURL(/meet\.google\.com\/abc-defg-hij/, { timeout: 15000 });
 
     const adminPage = await adminContext.newPage();
     await adminPage.goto(`${base}/admin/crypto-settings`);

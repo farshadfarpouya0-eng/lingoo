@@ -1,4 +1,5 @@
 import type { Lang } from "./i18n";
+import { HOME_ASSETS } from "./home-assets";
 
 type Item = { title: string; text: string };
 type Goal = { tag: string; title: string; text: string };
@@ -7,9 +8,9 @@ type Detail = { kicker: string; title: string; text: string; bullets: string[]; 
 type Promise2 = { value: string; title: string; text: string };
 
 const detailImages = {
-  tutor: "/images/feature-tutor.webp",
-  study: "/images/feature-study.webp",
-  schedule: "/images/feature-schedule.webp",
+  tutor: HOME_ASSETS.featureTutor,
+  study: HOME_ASSETS.featureStudy,
+  schedule: HOME_ASSETS.featureSchedule,
 };
 type Home = {
   badge: string; h1a: string; h1b: string; sub: string; heroProof: string;
@@ -30,12 +31,12 @@ type Home = {
 };
 
 const characterFiles = {
-  birdie: "/images/kids-birdie.webp",
-  teddy: "/images/kids-teddy.webp",
-  lulu: "/images/kids-lulu.webp",
-  nini: "/images/kids-nini.webp",
-  momo: "/images/kids-momo.webp",
-  piki: "/images/kids-piki.webp",
+  birdie: HOME_ASSETS.kidsBirdie,
+  teddy: HOME_ASSETS.kidsTeddy,
+  lulu: HOME_ASSETS.kidsLulu,
+  nini: HOME_ASSETS.kidsNini,
+  momo: HOME_ASSETS.kidsMomo,
+  piki: HOME_ASSETS.kidsPiki,
 };
 
 const zh: Home = {

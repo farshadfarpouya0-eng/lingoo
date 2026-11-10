@@ -8,6 +8,7 @@ import LandingHero from "@/components/LandingHero";
 import SnapRail from "@/components/SnapRail";
 import TeacherCard from "@/components/TeacherCard";
 import Icon, { type IconName } from "@/components/Icon";
+import { HOME_ASSETS } from "@/lib/home-assets";
 
 export const dynamic = "force-dynamic";
 
@@ -326,7 +327,7 @@ export default async function Home() {
                 {h.ctaTutorBtn}<Icon name="arrow" width={17} height={17} />
               </Link>
             </div>
-            <img src="/images/teacher-onboarding.webp" alt="An English tutor preparing an online lesson" width={1000} height={800} loading="lazy" decoding="async" />
+            <img src={HOME_ASSETS.teacherOnboarding} alt="An English tutor preparing an online lesson" width={1000} height={800} loading="lazy" decoding="async" />
           </div>
         </div>
       </section>

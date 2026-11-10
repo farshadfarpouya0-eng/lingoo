@@ -37,6 +37,14 @@ export const teacherProfiles = pgTable("teacher_profiles", {
   tzOffset: integer("tz_offset").notNull().default(8), workDays: text("work_days").notNull().default("0,1,2,3,4,5,6"),
   // A private form preference only. Never applied automatically to a booking.
   platformDefault: text("platform_default").notNull().default("lingo"),
+  // Fixed meeting rooms created and managed by an administrator for this tutor.
+  // Used automatically when a lesson runs on Google Meet / Zoom without its own link.
+  meetUrl: text("meet_url").notNull().default(""),
+  zoomUrl: text("zoom_url").notNull().default(""),
+  // Admin confirms this Meet room allows guest/open join so the tutor does not need to sign in to admit students.
+  meetOpenAccess: boolean("meet_open_access").notNull().default(false),
+  // Optional encrypted Zoom host/start URL fallback. Prefer Zoom API refresh when configured.
+  zoomHostUrl: text("zoom_host_url").notNull().default(""),
   payoutMethod: text("payout_method").notNull().default(""), payoutAccount: text("payout_account").notNull().default(""),
 }, t => [index("tp_active_rating_idx").on(t.active, t.rating)]);
 
