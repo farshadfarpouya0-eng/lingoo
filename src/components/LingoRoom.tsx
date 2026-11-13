@@ -37,6 +37,14 @@ function describeJitsiError(event?: JitsiEvent): string {
       : "";
   return [event.type, event.name, event.message, detailText].filter(Boolean).join(" · ").slice(0, 300) || "Unknown Jitsi error";
 }
+
+export function classroomProviderError(event?: JitsiEvent): string {
+  const details = describeJitsiError(event);
+  if (/not allowed|not permitted|forbidden|subscription|billing|license|quota|not authorized|unauthorized|access denied|403/i.test(details)) {
+    return "The video provider denied this meeting. Ask the administrator to check the JaaS application/key pair, registered public key, account access and subscription; meanwhile the tutor can switch this lesson to an assigned Google Meet or Zoom room.";
+  }
+  return `The video connection failed (${details}). Check your connection, then ask the administrator to run Classroom readiness checks or use an assigned Meet/Zoom room.`;
+}
 type JitsiApi = {
   executeCommand: (command: string, ...args: unknown[]) => void;
   addListener: (event: string, callback: (payload?: JitsiEvent) => void) => void;
@@ -97,6 +105,8 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
   const [ticket, setTicket] = useState<VideoTicket | null>(null);
   const [ticketError, setTicketError] = useState("");
   const [apiReady, setApiReady] = useState(false);
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const [joinHint, setJoinHint] = useState("");
   const [connectionError, setConnectionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [muted, setMuted] = useState(false);
@@ -140,7 +150,12 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
     let failed = false;
     let instance: JitsiApi | null = null;
     let joinTimeout = 0;
+    let frameLoadFallback = 0;
+    let providerPageLoaded = false;
+    let hasJoined = false;
     setApiReady(false);
+    setFrameLoaded(false);
+    setJoinHint("");
     setConnectionError("");
     setParticipants([]);
     setHandRaised(false);
@@ -149,11 +164,23 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       if (cancelled || failed) return;
       failed = true;
       window.clearTimeout(joinTimeout);
+      window.clearTimeout(frameLoadFallback);
       setApiReady(false);
+      setFrameLoaded(false);
+      setJoinHint("");
       setConnectionError(message);
       if (apiRef.current === instance) apiRef.current = null;
       try { instance?.dispose(); } catch { /* iframe may already be gone */ }
       instance = null;
+    };
+    const markFrameLoaded = () => {
+      if (cancelled || failed || hasJoined) return;
+      window.clearTimeout(frameLoadFallback);
+      providerPageLoaded = true;
+      setFrameLoaded(true);
+      // The provider may show a pre-join screen even when prejoin is disabled in
+      // the embed options. A visible Join button is not a provider rejection.
+      setJoinHint("If you see ‘Join meeting’ below, click it to enter. Camera and microphone access may be requested by your browser.");
     };
     const blockedByPolicy = (event: SecurityPolicyViolationEvent) => {
       if (event.blockedURI.startsWith(`https://${ticket.domain}/`) && ["script-src", "script-src-elem", "frame-src"].includes(event.effectiveDirective)) {
@@ -163,14 +190,18 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
     document.addEventListener("securitypolicyviolation", blockedByPolicy);
     void loadJitsiApi(ticket.domain, ticket.roomName).then(JitsiMeetExternalAPI => {
       if (cancelled || !videoMountRef.current) return;
+      frameLoadFallback = window.setTimeout(() => {
+        if (!cancelled && !failed) setJoinHint("The provider page is taking longer than expected. If you see ‘Join meeting’, click it; otherwise check your connection or retry.");
+      }, 15000);
       instance = new JitsiMeetExternalAPI(ticket.domain, {
         roomName: ticket.roomName,
         jwt: ticket.jwt,
         parentNode: videoMountRef.current,
         width: "100%", height: "100%",
+        onload: markFrameLoaded,
         userInfo: { displayName: ticket.displayName },
         configOverwrite: {
-          prejoinPageEnabled: false, requireDisplayName: false,
+          prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false,
           disableDeepLinking: true, enableWelcomePage: false, enableClosePage: false,
           disableProfile: true, disableInviteFunctions: true, disableThirdPartyRequests: true,
           startWithAudioMuted: false, startWithVideoMuted: false,
@@ -186,14 +217,25 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       const frame = instance.getIFrame?.();
       if (frame) {
         frame.title = "Lingorain live classroom";
-        frame.referrerPolicy = "no-referrer";
+        // Some providers validate the embedding site's origin. Send only the
+        // public origin, never the private classroom path or token.
+        frame.referrerPolicy = "origin";
         frame.allow = "camera *; microphone *; display-capture *; autoplay *; fullscreen *; clipboard-write *";
+        frame.addEventListener("load", () => {
+          // Ignore the browser's initial empty about:blank frame. JaaS's onload
+          // callback above is the authoritative signal when the provider UI loads.
+          if (frame.src && frame.src !== "about:blank") markFrameLoaded();
+        });
       }
       const listen = (event: string, callback: (payload?: JitsiEvent) => void) => instance?.addListener(event, callback);
       listen("videoConferenceJoined", event => {
         if (cancelled || failed) return;
+        hasJoined = true;
         window.clearTimeout(joinTimeout);
+        window.clearTimeout(frameLoadFallback);
         localParticipantId.current = event?.id || "";
+        setFrameLoaded(true);
+        setJoinHint("");
         setApiReady(true);
         setConnectionError("");
       });
@@ -219,8 +261,8 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       listen("errorOccurred", event => {
         const description = describeJitsiError(event);
         console.warn("[LingoRoom] Jitsi error", { type: event?.type, name: event?.name, message: event?.message, isFatal: event?.isFatal });
-        if (event?.isFatal || event?.type === "CONFIG" || event?.type === "CONNECTION") {
-          fail(`The video connection failed (${description}). Check the JaaS App ID, API key pair and browser connection, then retry.`);
+        if (event?.isFatal || event?.type === "CONFIG" || event?.type === "CONNECTION" || /not allowed|not permitted|forbidden|subscription|billing|license|quota|not authorized|unauthorized|access denied|403/i.test(description)) {
+          fail(classroomProviderError(event));
         } else if (!cancelled) {
           setConnectionError(`Jitsi reported: ${description}`);
         }
@@ -228,13 +270,20 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       listen("peerConnectionFailure", () => {
         if (!cancelled) setConnectionError("The network connection to the video service failed. Check this browser’s connection and microphone/camera permissions, then retry.");
       });
-      // Only the conference-joined event marks the room connected. Never use a guessed timer.
-      joinTimeout = window.setTimeout(() => fail("The video provider did not confirm your join within 60 seconds. Your saved credentials, provider permissions or this browser’s connection may need checking. Retry, or ask support to test this lesson."), 60_000);
+      // Only videoConferenceJoined marks the room connected. If the provider has
+      // already displayed its pre-join screen, never tear it down merely because
+      // the user took a minute to click Join meeting.
+      joinTimeout = window.setTimeout(() => {
+        if (cancelled || failed || hasJoined) return;
+        if (providerPageLoaded) setJoinHint("The provider page is ready. Click ‘Join meeting’ in the video panel. If the provider rejects access, ask the administrator to check the account and use Meet/Zoom for this lesson.");
+        else fail("The video provider page did not load. Check your connection or ask the administrator to test the video integration.");
+      }, 60_000);
     }).catch((error: unknown) => fail(error instanceof Error ? error.message : "Could not connect to the classroom."));
     return () => {
       cancelled = true;
       document.removeEventListener("securitypolicyviolation", blockedByPolicy);
       window.clearTimeout(joinTimeout);
+      window.clearTimeout(frameLoadFallback);
       if (apiRef.current === instance) apiRef.current = null;
       try { instance?.dispose(); } catch { /* safe unmount */ }
     };
@@ -242,6 +291,7 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
 
   const reconnect = useCallback(() => {
     setTicket(null); setTicketError(""); setConnectionError(""); setApiReady(false);
+    setFrameLoaded(false); setJoinHint("");
     setParticipants([]); setSharing(false); setHandRaised(false); setJoined(true); setRetry(value => value + 1);
   }, []);
   const runCommand = useCallback((command: string, success?: string) => {
@@ -331,9 +381,12 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 px-1"><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${apiReady ? "bg-emerald-400" : "bg-amber-300"}`}/><p className="text-xs font-bold text-slate-100">{studioView === "video" ? "Live video room" : "Collaborative whiteboard"}</p></div><div className="flex rounded-xl border border-white/10 bg-white/5 p-1"><button type="button" onClick={() => setStudioView("video")} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${studioView === "video" ? "bg-teal-300 text-[#082b31]" : "text-slate-300 hover:bg-white/10"}`}>Video room</button><button type="button" onClick={() => { setStudioView("board"); setTab("tools"); }} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${studioView === "board" ? "bg-teal-300 text-[#082b31]" : "text-slate-300 hover:bg-white/10"}`}>Whiteboard</button></div></div>
           {/* Keep the iframe mounted while using the board: switching tabs must not hang up. */}
+          {frameLoaded && !apiReady && !connectionError && !ticketError && joinHint && studioView === "video" && (
+            <p role="status" data-testid="video-join-hint" className="rounded-xl border border-teal-300/20 bg-teal-300/10 px-4 py-2.5 text-xs leading-5 text-teal-50">{joinHint}</p>
+          )}
           <div style={{ display: studioView === "video" ? undefined : "none" }} className="relative overflow-hidden rounded-[22px] border border-white/10 bg-black">
             <div ref={videoMountRef} className="h-[56vh] min-h-[320px] w-full bg-[#07131b] sm:h-[64vh] sm:min-h-[400px]"/>
-            {!apiReady && !connectionError && !ticketError && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#07131b]/85"><div className="text-center text-white"><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-teal-300/10 text-teal-200"><Icon name="video" width={24}/></span><p className="mt-3 text-sm font-bold">{ticket ? "Preparing your live classroom" : "Authorizing your classroom seat"}</p><p className="mt-1 text-xs text-white/55">{ticket ? "Waiting for the video provider to confirm your join…" : "Checking your lesson and secure video access…"}</p></div></div>}
+            {!apiReady && !connectionError && !ticketError && !frameLoaded && <div data-testid="video-loading-overlay" className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#07131b]/85"><div className="text-center text-white"><span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-teal-300/10 text-teal-200"><Icon name="video" width={24}/></span><p className="mt-3 text-sm font-bold">{ticket ? "Preparing your live classroom" : "Authorizing your classroom seat"}</p><p className="mt-1 text-xs text-white/55">{ticket ? "Loading the video provider…" : "Checking your lesson and secure video access…"}</p></div></div>}
           </div>
           {studioView === "board" && <div className="overflow-hidden rounded-[22px] border border-white/10 bg-white"><ClassroomTeachingWorkspace key={`board-${lessonId}`} lessonId={lessonId} books={books} isTutor={isTutor} userId={userId} initialTab="board"/></div>}
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-[20px] border border-white/10 bg-[#102832] p-3">
