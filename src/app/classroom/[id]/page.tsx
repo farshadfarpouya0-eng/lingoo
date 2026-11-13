@@ -164,7 +164,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
             </div>
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")}</dd></div>
+              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} <span className="text-slate-400">· {(user.timeZone || "UTC").split("/").pop()?.replace(/_/g, " ")}</span></dd></div>
               <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
               {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
               {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}

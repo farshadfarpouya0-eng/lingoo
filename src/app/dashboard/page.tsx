@@ -174,7 +174,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   if (tab === "packages") {
     content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
   } else if (tab === "lessons") {
-    content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} /></>;
+    content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} viewerTimeZone={user.timeZone || undefined} /></>;
   } else if (tab === "test" && isTutor) {
     content = <TeacherClassTest materials={demoMaterials} />;
   } else if (tab === "schedule" && isTutor) {
@@ -283,7 +283,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
           <div className="space-y-3">
             {upcoming.slice(0, 5).map(row => (
-              <DashboardLessonRow key={row.l.id} row={row} isTutor={isTutor} t={t} c={c} lang={lang} />
+              <DashboardLessonRow key={row.l.id} row={row} isTutor={isTutor} t={t} c={c} lang={lang} viewerTimeZone={user.timeZone || undefined} />
             ))}
           </div>
           {!upcoming.length && (
