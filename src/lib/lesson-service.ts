@@ -247,7 +247,13 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
     if (!isTeacher) throw new Error("forbidden");
 
     if (action === "confirm" && l.status === "pending" && l.startAt.getTime() > now) {
-      await tx.update(lessons).set({ status: "confirmed" }).where(eq(lessons.id, l.id));
+      // In older releases a tutor could preselect a platform on a pending
+      // booking. Do not let that historic choice silently open a new class:
+      // confirmation must be followed by an explicit classroom selection.
+      await tx.update(lessons).set({
+        status: "confirmed", platform: "undecided", meetingUrl: "",
+        ...(l.platform !== "undecided" ? { platformRevision: sql`${lessons.platformRevision} + 1`, platformUpdatedAt: new Date() } : {}),
+      }).where(eq(lessons.id, l.id));
       return true;
     }
 

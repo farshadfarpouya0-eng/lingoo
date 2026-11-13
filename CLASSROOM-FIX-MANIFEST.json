@@ -1,0 +1,72 @@
+{
+  "baseRepository": "https://github.com/farshadfarpouya0-eng/lingoo",
+  "baseBranch": "main",
+  "baseCommit": "1d56dda126c4bf63b5c7b0963a0f0bb8a7fe4496",
+  "schemaChanged": false,
+  "databaseCredentialsIncluded": false,
+  "migrationRequired": false,
+  "packageJsonChanged": false,
+  "lockfileSynced": true,
+  "files": [
+    {
+      "path": "src/lib/classroom-window.ts",
+      "before": null,
+      "after": "a9c35a3671bf4cc715216aa0a0e970d63db92fa091bd677cbe4550d21cecfd4e"
+    },
+    {
+      "path": "src/lib/room-service.ts",
+      "before": "474d07b7f60d396f1fe51772330b9b86f60228966142e79da40930b4d5eea9c2",
+      "after": "b885db95e70a92fed6b6e58ac78f576c4c92cc75e9a2f7eee0c2155699895683"
+    },
+    {
+      "path": "src/lib/classroom-actions.ts",
+      "before": "952c0c787d50425c20f7a33b34cbb9f8961e72c062b59be8352141e5c99ee2c5",
+      "after": "7e2cf9718884a422c74a94c69b79fdc72df81052c7e80c6f52e76e27b72d7fa0"
+    },
+    {
+      "path": "src/lib/lesson-service.ts",
+      "before": "44f7783d32fa1ec1eb5fed3d78998ee96b3bdc230f632470df529424ecfb32ee",
+      "after": "d2a8f1fe5d75014b345d51290fbdd815ebfc18a3ff17bed8a28e20d3cc80e3a7"
+    },
+    {
+      "path": "src/app/classroom/[id]/page.tsx",
+      "before": "c121a24189ad7d56e234b6b839bf19ae3523aad2068b935d55260bd1613946e1",
+      "after": "03fc33bd072317174e3ecc9f6aeeb575e347e5fe41eacd2b6dfba2cc6595b0b7"
+    },
+    {
+      "path": "src/app/api/lessons/[id]/video-token/route.ts",
+      "before": "a7993fb188891b7c6000ec9064f43c226ce2fd753986e72a6423cfa9795aa0a0",
+      "after": "db078ab28f8539df5263474c95278c583efe4eb667a26af85d7ee8ad212f0462"
+    },
+    {
+      "path": "src/components/DashboardLessons.tsx",
+      "before": "e4b7e3609faac6edef16b06440b8a02713568d6fedb3314ac339b2b42c17b2e4",
+      "after": "227a95a0eb9392ce54a1a680308f0141d588e2bd36cce71907202daf335dd5b9"
+    },
+    {
+      "path": "src/components/ClassroomLive.tsx",
+      "before": "039459dd1858fd8fced725571bf2b060e7210f1029f0040dfbc671b98a68d0bb",
+      "after": "7c0e5a8f5c674b69dbacdd5a76ce793caccb8cbb171e5170ad42652b9f150e0b"
+    },
+    {
+      "path": "package-lock.json",
+      "before": "c6a124f6c334847e1b815864764d2b4bdc654fa6596d97d1e1e159a65d39a051",
+      "after": "4450654670d4ffb22e17d356e4be92151564383c350f4dc86f49e84a87a79bc7"
+    },
+    {
+      "path": "scripts/classroom-window-regression.test.ts",
+      "before": null,
+      "after": "01637e258cffde25327c4a2411b2110815bd5a3826050c8a45566ac1b9cf54d1"
+    },
+    {
+      "path": "scripts/classroom-entry-browser.test.ts",
+      "before": null,
+      "after": "7c01a1870e0528ac41002a220a858a0f74c25930bfe5e8a7e5d9b9380ee588e3"
+    },
+    {
+      "path": "docs/CLASSROOM_ENTRY_RULES.fa.md",
+      "before": null,
+      "after": "7ddc832f508fbf33d3bbba46b4910ba8dfe90020aeca0f49c1a2e854113a6bbb"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { roomPollDelay } from "@/lib/room-polling";
 import type { LearningCopy } from "@/lib/learning-i18n";
 import type { Platform, RoomSnapshot } from "@/lib/room-service";
@@ -133,6 +134,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor, assigne
 
   const errorText =
     result?.error === "link" ? D.invalidLink :
+    result?.error === "confirm_first" ? "Confirm the booking before choosing a classroom." :
     result?.error === "closed" ? D.closed : D.forbidden;
 
   return (
@@ -309,6 +311,7 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
 
   const step =
     room.state === "closed" ? 5 :
+    !room.confirmed ? 1 :
     room.platform === "undecided" ? 2 :
     room.state === "open" ? 4 :
     room.state === "early" ? 3 : 1;
@@ -341,7 +344,14 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
         </p>
       )}
 
-      {isTutor && room.state !== "closed" && (
+      {isTutor && !room.confirmed && room.state !== "closed" && (
+        <section role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
+          <h2 className="font-bold">First, confirm this booking</h2>
+          <p className="mt-2 leading-6">The classroom cannot be chosen or opened until you confirm the student’s booking. Confirm it in Lessons, then return here to choose LingoRoom, Meet or Zoom.</p>
+          <Link href="/dashboard?tab=lessons" className="mt-3 inline-flex rounded-lg bg-teal-800 px-4 py-2 text-xs font-bold text-white">Go to lessons →</Link>
+        </section>
+      )}
+      {isTutor && room.confirmed && room.state !== "closed" && (
         <PlatformForm lessonId={room.lessonId} initial={room} preference={preference} onSaved={refresh} isTutor={isTutor} assigned={assignedLinks} />
       )}
 
@@ -412,21 +422,23 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
             <Icon name={room.state === "closed" ? "check" : room.platform === "undecided" ? "swap" : "clock"} width={28} height={28} />
           </div>
           <p className="mt-6 text-xs font-bold uppercase tracking-widest text-slate-400">
-            {room.state === "closed" ? "Lesson finished" : room.platform === "undecided" ? (isTutor ? "Classroom not chosen" : "Awaiting tutor selection") : "Not started yet"}
+             {room.state === "closed" ? "Lesson finished" : !room.confirmed ? "Awaiting tutor confirmation" : room.platform === "undecided" ? (isTutor ? "Classroom not chosen" : "Awaiting tutor selection") : "Not started yet"}
           </p>
           <h2 className="mt-3 text-2xl font-bold text-teal-950">
-            {room.state === "closed" ? D.closed : room.platform === "undecided" ? (isTutor ? D.pendingTitle : D.studentWaitingTitle) : room.state === "pending" ? D.pendingConfirm : opensText}
+             {room.state === "closed" ? D.closed : !room.confirmed ? D.pendingConfirm : room.platform === "undecided" ? (isTutor ? D.pendingTitle : D.studentWaitingTitle) : opensText}
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
             {room.state === "closed"
               ? "Thank you for joining. Leave a review from your dashboard."
-              : room.platform === "undecided"
-                ? (isTutor ? D.pendingText : D.studentWaitingText)
-                : "The room unlocks automatically — no need to refresh."}
+               : !room.confirmed
+                 ? "The tutor must confirm this booking before choosing a classroom. No one can enter yet."
+                 : room.platform === "undecided"
+                   ? (isTutor ? D.pendingText : D.studentWaitingText)
+                   : "The room unlocks automatically — no need to refresh."}
           </p>
 
-          {room.state !== "closed" && (
-            <div className="mt-5 flex justify-center">
+{room.confirmed && room.state !== "closed" && (
+             <div className="mt-5 flex justify-center">
               <Countdown startAtMs={startAtMs} durationMinutes={durationMinutes} earlyMinutes={earlyMinutes} serverNowMs={serverNowMs} />
             </div>
           )}

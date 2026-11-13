@@ -22,8 +22,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     // Recheck membership, suspension, admin sandbox, platform and lesson window on every issuance.
     const snapshot = await classroomSnapshot(user.id, id, user.name);
+    if (snapshot.state !== "open") return Response.json({ error: snapshot.state === "pending" ? "The tutor must confirm the booking before anyone can enter." : "The classroom is not open yet.", code: "entry_closed" }, { status: 403, headers });
     if (snapshot.platform !== "lingo") return Response.json({ error: "LingoRoom is not selected for this lesson." }, { status: 409, headers });
-    if (snapshot.state !== "open") return Response.json({ error: "The classroom is not open yet." }, { status: 403, headers });
     if (snapshot.videoProvider === "unconfigured") return Response.json({ error: VIDEO_SETUP_MESSAGE, code: "video_not_configured" }, { status: 503, headers });
     const [lesson] = await db.select({ teacherId: lessons.teacherId, startAt: lessons.startAt, duration: lessons.duration }).from(lessons).where(eq(lessons.id, id)).limit(1);
     if (!lesson || !(await canAccessLesson(id, user.id))) return Response.json({ error: "You are not a participant in this lesson." }, { status: 403, headers });

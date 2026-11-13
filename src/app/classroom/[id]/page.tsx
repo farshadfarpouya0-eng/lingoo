@@ -37,6 +37,9 @@ export default async function Classroom({ params, searchParams }: { params: Prom
   const [pref] = isTutor ? await db.select({ platform: teacherProfiles.platformDefault, timeZone: teacherProfiles.timeZone }).from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : [];
   const viewerZone = studentTimeZone(isTutor ? pref?.timeZone || user.timeZone : user.timeZone, lang);
   const snapshot = await classroomSnapshot(user.id, id, user.name);
+  // Even a manually typed URL never opens a student's classroom while the
+  // booking awaits tutor confirmation, room selection or its 10-minute window.
+  if (!isTutor && (snapshot.state !== "open" || snapshot.platform === "undecided")) redirect("/dashboard?tab=lessons");
   const autoJoin = !isTutor && (await searchParams).join === "1" && snapshot.state === "open";
   const teacherLinks = await assignedTeacherLinks(l.teacherId);
   // Students learn only whether a room exists; the URL itself is revealed when the room opens.

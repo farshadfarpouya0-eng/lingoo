@@ -16,29 +16,15 @@ import { getIntegrationConfig } from "./integration-config";
 import { canAccessLesson } from "./lesson-access";
 import { isAccountSuspended } from "./account-status";
 import { diagnoseVideoConfig, videoJoinUrl, VIDEO_SETUP_MESSAGE, type VideoConfigIssue, type VideoProvider } from "./video-provider";
+import { classroomPhase } from "./classroom-window";
 
 export type Platform = "undecided" | "lingo" | "daily" | "meet" | "zoom";
 export type RoomSnapshot = {
   lessonId: number; platform: Platform; revision: number; meetingUrl: string; joinUrl: string;
   videoProvider: VideoProvider; videoIssue: VideoConfigIssue; videoMessage: string;
-  state: "pending" | "early" | "open" | "closed"; issueReported: boolean; updatedAt: string | null;
+  state: "pending" | "early" | "open" | "closed"; confirmed: boolean;
+  issueReported: boolean; updatedAt: string | null;
 };
-
-function roomState(l: Pick<typeof lessons.$inferSelect, "status" | "startAt" | "duration">, role: "teacher" | "student") {
-  const now = Date.now();
-  const startsAt = l.startAt.getTime();
-  const endsAt = startsAt + l.duration * 60_000;
-  const graceEndsAt = endsAt + 15 * 60_000;
-
-  // Cancellation is final. A stale/incorrect `completed` flag must not lock
-  // participants out before the scheduled lesson window has actually ended.
-  if (l.status === "cancelled" || now >= graceEndsAt) return "closed" as const;
-  if (l.status !== "confirmed" && !(l.status === "completed" && now < graceEndsAt)) return "pending" as const;
-
-  const earlyMinutes = role === "teacher" ? 30 : 10;
-  if (now < startsAt - earlyMinutes * 60_000) return "early" as const;
-  return "open" as const;
-}
 export function jitsiRoomName(lessonId: number) {
   return "lingorain-" + createHmac("sha256", classroomSecret()).update(`lesson:${lessonId}`).digest("hex").slice(0, 24);
 }
@@ -54,10 +40,10 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
   const [actor] = await db.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, actorId));
   const isAdminSandbox = actor?.role === "admin" && (await db.select({ topic: lessons.topic }).from(lessons).where(eq(lessons.id, lessonId)).limit(1))[0]?.topic.startsWith("[TEST]");
   if (actor?.role === "admin" && !isAdminSandbox) throw new Error("forbidden");
-  const platform: Platform = ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
+  const platform: Platform = l.status === "confirmed" && ["lingo", "daily", "meet", "zoom"].includes(l.platform) ? l.platform as Platform : "undecided";
   const actorRole = actor?.role === "teacher" || isAdminSandbox ? "teacher" : actor?.role === "student" ? "student" : null;
   if (!actor || isAccountSuspended(actor.suspended, actor.suspendedUntil) || !actorRole) throw new Error("forbidden");
-  const state = roomState(l, actorRole);
+  const state = classroomPhase(l, actorRole);
   let joinUrl = "";
   let videoProvider: VideoProvider = "unconfigured";
   let videoIssue: VideoConfigIssue = "not_configured";
@@ -81,9 +67,9 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
     // A lesson-specific link wins; otherwise use the tutor's admin-assigned fixed room.
     joinUrl = validMeetingLink(platform, l.meetingUrl) || (await assignedTeacherLinks(l.teacherId))[platform];
   }
-  return { lessonId, platform, revision: l.platformRevision, state, joinUrl, videoProvider, videoIssue,
+  return { lessonId, platform, revision: l.platformRevision, state, confirmed: l.status === "confirmed", joinUrl, videoProvider, videoIssue,
     videoMessage: platform === "lingo" && videoProvider === "unconfigured" ? VIDEO_SETUP_MESSAGE : "",
-    meetingUrl: actorId === l.teacherId || state === "open" ? l.meetingUrl : "",
+    meetingUrl: actorId === l.teacherId || (state === "open" && platform !== "undecided") ? l.meetingUrl : "",
     issueReported: !!l.platformIssueAt, updatedAt: l.platformUpdatedAt?.toISOString() ?? null };
 }
 export async function chooseClassroom(actorId: number, lessonId: number, platform: string, meetingUrl: string) {
@@ -96,7 +82,8 @@ export async function chooseClassroom(actorId: number, lessonId: number, platfor
     if (!l || l.teacherId !== actorId) throw new Error("forbidden");
     const [actor] = await tx.select({ role: users.role, suspended: users.suspended, suspendedUntil: users.suspendedUntil }).from(users).where(eq(users.id, actorId));
     if (!actor || actor.role !== "teacher" || isAccountSuspended(actor.suspended, actor.suspendedUntil)) throw new Error("forbidden");
-    if (roomState(l, "teacher") === "closed") throw new Error("closed");
+    if (l.status !== "confirmed") throw new Error("confirm_first");
+    if (classroomPhase(l, "teacher") === "closed") throw new Error("closed");
     await tx.update(lessons).set({ platform, meetingUrl: url,
       platformRevision: sql`${lessons.platformRevision} + 1`, platformUpdatedAt: new Date(),
       platformIssueAt: null, platformIssueBy: null,
@@ -107,7 +94,7 @@ export async function chooseClassroom(actorId: number, lessonId: number, platfor
 export async function reportConnectionProblem(actorId: number, lessonId: number) {
   const [l] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
   if (!l || !(await canAccessLesson(lessonId, actorId)) || l.teacherId === actorId) throw new Error("forbidden");
-  if (roomState(l, "student") !== "open") throw new Error("closed");
+  if (classroomPhase(l, "student") !== "open") throw new Error("closed");
   await db.update(lessons).set({ platformIssueAt: new Date(), platformIssueBy: actorId })
     .where(and(eq(lessons.id, lessonId), inArray(lessons.status, ["confirmed"])));
 }

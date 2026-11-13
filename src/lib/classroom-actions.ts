@@ -33,8 +33,9 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   const now = Date.now();
   const graceEndsAt = l.startAt.getTime() + (l.duration + 15) * 60_000;
   if (l.status === "cancelled" || now >= graceEndsAt) return { ok: false, error: "closed" };
-  // Match roomState(): tolerate a stale completed flag until the scheduled
-  // lesson window and its 15-minute grace period have elapsed.
+  if (l.status !== "confirmed") return { ok: false, error: "confirm_first" };
+  // A booked seat is not a confirmed class: only after the tutor confirms
+  // may they select the meeting platform.
 
   // A tutor may override with a lesson-specific link. Otherwise store "" so the
   // classroom always follows the admin-assigned room, including later admin changes.
