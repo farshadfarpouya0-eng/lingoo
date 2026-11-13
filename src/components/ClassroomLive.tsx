@@ -223,14 +223,6 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
       window.location.assign(initial.joinUrl);
     }
   }, [autoJoin, isTutor, initial.state, initial.platform, initial.joinUrl]);
-  const [deviceStart, setDeviceStart] = useState("");
-  useEffect(() => {
-    // Rendered after mount to avoid hydration mismatch; shown only when the device zone differs.
-    const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!deviceZone || deviceZone === profileTimeZone) return;
-    const label = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: deviceZone }).format(new Date(startAtMs));
-    setDeviceStart(`${label} (${deviceZone})`);
-  }, [profileTimeZone, startAtMs]);
   const [clientClockBase] = useState(() => Date.now());
   const [updated, setUpdated] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -443,8 +435,7 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{D.startsAt}</p>
               <p className="mt-1 text-sm font-semibold text-slate-800">{startLabel}</p>
-              <p className="mt-1 text-[10px] text-slate-400">{profileTimeZone} · profile time zone</p>
-              {deviceStart && <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-semibold leading-4 text-amber-800">On this device: {deviceStart}. Update Profile → Time zone if this is your location.</p>}
+              <p className="mt-1 text-[10px] text-slate-400">{profileTimeZone} · your time zone</p>
             </div>
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Length</p>

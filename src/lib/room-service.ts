@@ -61,17 +61,19 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
   let joinUrl = "";
   let videoProvider: VideoProvider = "unconfigured";
   let videoIssue: VideoConfigIssue = "not_configured";
-  // Resolve the configured provider even before the entry window opens. Otherwise
-  // the classroom picker incorrectly reports SETUP for a configured JaaS/Jitsi
-  // integration simply because the lesson is still in its early/pending state.
-  if (platform === "lingo" || platform === "undecided") {
-    const cfg = await getIntegrationConfig();
-    const diagnosis = diagnoseVideoConfig(cfg.video);
+  // Resolve independently of the currently selected platform so the tutor can
+  // switch from Meet/Zoom to an already-configured LingoRoom without a false SETUP label.
+  let videoConfig: Awaited<ReturnType<typeof getIntegrationConfig>>["video"] | null = null;
+  try {
+    videoConfig = (await getIntegrationConfig()).video;
+    const diagnosis = diagnoseVideoConfig(videoConfig);
     videoProvider = diagnosis.provider;
     videoIssue = diagnosis.issue;
-    if (state === "open" && platform === "lingo") {
-      joinUrl = videoJoinUrl(cfg.video, videoProvider, jitsiRoomName(l.id));
-    }
+  } catch {
+    videoIssue = "credentials_unreadable";
+  }
+  if (state === "open" && platform === "lingo" && videoConfig) {
+    joinUrl = videoJoinUrl(videoConfig, videoProvider, jitsiRoomName(l.id));
   } else if (state === "open" && platform === "daily") {
     // Personal Daily tokens are issued by the dedicated authenticated endpoint.
     joinUrl = "";

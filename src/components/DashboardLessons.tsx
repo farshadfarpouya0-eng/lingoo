@@ -3,7 +3,7 @@ import { lessons } from "@/db/schema";
 import { leaveReview, updateLesson } from "@/lib/actions";
 import type { T, Lang } from "@/lib/i18n";
 import type { LearningCopy } from "@/lib/learning-i18n";
-import { fmtAtZone, nowMs } from "@/lib/time";
+import { fmtAtZone, nowMs, isValidTimeZone, DEFAULT_TIME_ZONE } from "@/lib/time";
 import { money } from "@/lib/package-pricing";
 import Icon from "./Icon";
 import CancelLessonButton from "./CancelLessonButton";
@@ -12,7 +12,8 @@ const statusColor: Record<string,string> = {pending:"bg-amber-50 text-amber-700"
 export function DashboardLessonRow({ row: x, isTutor, t, c, lang, viewerTimeZone }: { row: LessonRowData; isTutor: boolean; t: T; c: LearningCopy; lang: Lang; viewerTimeZone?: string }) {
   const now=nowMs(), start=x.l.startAt.getTime(), end=start+x.l.duration*60_000;
   // A student must see their own local time; only a tutor sees the teacher zone.
-  const displayZone = (isTutor ? x.teacherTimeZone : viewerTimeZone) || x.teacherTimeZone || "UTC";
+  const preferredZone = isTutor ? x.teacherTimeZone || viewerTimeZone : viewerTimeZone;
+  const displayZone = isValidTimeZone(preferredZone) ? preferredZone : DEFAULT_TIME_ZONE[lang];
   const shortZone = displayZone.split("/").pop()?.replace(/_/g, " ") || displayZone;
   const active=["pending","confirmed"].includes(x.l.status);
   const roomLabel=x.l.platform==="meet"?c.roomMeet:x.l.platform==="zoom"?c.roomZoom:x.l.platform==="lingo"?c.roomLingo:c.pendingPlatform;

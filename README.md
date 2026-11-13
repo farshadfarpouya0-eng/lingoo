@@ -1,106 +1,45 @@
-# Lingorain
+# Lingorain — scheduling, classroom and wallet update
 
-An exact copy of https://github.com/farshadfarpouya0-eng/lingoo at revision `691d602`.
+Based on `farshadfarpouya0-eng/lingoo`, branch `fix/vercel-build`, revision `ed32867`. This update includes targeted source changes; it is not the earlier images-only fix.
 
-All application source files under `src/`, all public assets, and the configuration files (`next.config.ts`, `tsconfig.json`, `postcss.config.mjs`, `eslint.config.mjs`, `drizzle.config.json`) are byte-identical to the original repository. This includes the complete admin panel (`src/app/admin`, `src/components/admin`, `src/components/AdminShell.tsx`) and every admin setting, action and integration page.
+**راهنمای فارسی نصب و توضیح تغییرات:** [docs/SCHEDULE_WALLET_FIX.fa.md](docs/SCHEDULE_WALLET_FIX.fa.md)
 
-The only addition is `src/assets/home/`, which the original repository imports but does not commit. It contains exact copies of the same images from `public/images/`, so the project builds without changing any source file.
+## What changed
 
-## Stack
+- Public tutor availability and booking dates are rebuilt in the student's time zone, including midnight/date rollover. Only UTC slot instants are sent to student scheduling components, not teacher-local labels or private zone data.
+- The saved account time zone is respected across booking, lesson lists and classroom pages. Signed-out visitors can use their device zone.
+- Tehran and existing valid custom time zones are preserved by the private profile selectors. Saving midnight no longer changes it to 09:00.
+- Crypto top-ups now use a translated, responsive three-stage flow: choose → transfer → confirmation. An uploaded TXID is **not** treated as verified payment. Existing server-side amount/network/ownership, duplicate-transaction, manual-review and one-time-credit checks remain intact.
+- Expiry follows server time. Expired quotes no longer present sending instructions, and already-submitted payments keep their actual review status.
+- The live JaaS client and admin test use the same AppID-scoped SDK endpoint.
+- Runtime CSP and camera/microphone permissions use the admin-saved video hostname, including client-side navigation from the homepage. Existing authorization, lesson roles and entry windows remain in force.
+- Admin → Integrations includes a classroom readiness check for configuration, signing, server reachability and browser reachability, without returning credentials.
 
-Next.js App Router, React, PostgreSQL and Drizzle ORM. The database connection reads `DATABASE_URL` from `.env`.
+## Applying to an existing live project
 
-## Local preview
+Keep the current `.git`, `.env`, Neon connection, credentials, encryption keys and admin account. Back up local source changes, then merge the patch files while preserving paths. The release manifest lists every included path and its checksum.
 
-The original startup code (`src/instrumentation.ts`) creates the schema and seeds the original demonstration data when running against a local PostgreSQL database.
+**No schema migration, new database, new administrator, secret rotation or bulk lesson-time conversion is required by this patch.** It does not repair an already-incorrect stored teacher zone by guessing: the owner/administrator must review that private setting if it was previously saved incorrectly. Existing scheduled UTC instants are not moved.
 
-Demonstration accounts (local database only, as defined by the original seed):
+The complete download uses the same `package.json` versions as the specified branch; its `package-lock.json` is synchronized for a clean `npm ci`. Database schema, database client, deployment configuration and deployment-environment validation are unchanged from that branch.
 
-| Role | Email | Password |
-| --- | --- | --- |
-| Student | student@demo.com | demo1234 |
-| Student | yuki@demo.com | demo1234 |
-| Tutor | teacher@demo.com | demo1234 |
-| Administrator | admin@demo.com | demo1234 |
+These files are not automatically pushed to GitHub or deployed to the user's Vercel project. Existing hosting environment requirements still apply; a successful local build is not proof that credentials reached a particular hosted deployment.
 
-## Vercel deployment
+## Verification
 
-The upstream repository fails on Vercel for two independent reasons. Both were reproduced and confirmed on this project.
+From the project root:
 
-### 1. Missing homepage artwork (first build error)
+- `npx next typegen`
+- `npm exec tsc -- --noEmit --pretty false`
+- `npm run build`
+- `npx tsx --test scripts/schedule-payment-regression.test.ts`
 
-`src/lib/home-assets.ts` imports 14 files from `src/assets/home/`, but that folder is not committed upstream, so `next build` stops with:
+The browser suite (`scripts/scheduling-wallet-browser.test.ts`) deliberately refuses hosted databases and requires a disposable local sandbox. It creates temporary fixtures, tests real booking/order/proof/admin-approval code locally, and restores its temporary settings/data. Do not point it at Neon or run production migrations as part of this test.
 
-```
-Module not found: Can't resolve '@/assets/home/feature-schedule.webp'
-Module not found: Can't resolve '@/assets/home/hero-adults.webp'
-...
-```
+Test coverage includes China/Japan conversion, local-midnight grouping, 25/50-minute choices, DST repeated hours, missing clipboard permission, expired invoices, rejection of another user's transaction proof, no credit before approval, one-time wallet credit, EN/ZH/JA mobile layouts, private-zone preservation and classroom API loading.
 
-The identical images are already present in the repository under `public/images/`, so no download is needed and no source file has to change. Commit them once, from the repository root:
+## External services: what is and is not verified
 
-```bash
-mkdir -p src/assets/home
-cp public/images/*.webp src/assets/home/
-git add -f src/assets/home
-git commit -m "Add the homepage artwork that home-assets.ts imports"
-git push
-```
+No real crypto transfer is made by the automated tests. Video SDK transport is mocked in the browser tests; JWT signing and access roles have separate tests. A live audio/video call using the owner's JaaS/private Jitsi account still needs a real two-participant check. Provider billing/entitlements, registered public keys, network reachability and camera/microphone permissions cannot be certified solely by entering credentials or passing a server signing test.
 
-`git add -f` is used in case an ignore rule covers the folder. The same files are already available in `src/assets/home/` of this project.
-
-### 2. Missing `DATABASE_URL` (second build error)
-
-With the artwork present, the build proceeds and then fails while collecting route configuration:
-
-```
-Error: Failed to collect configuration for /api/brand-logo
-[cause]: Error: DATABASE_URL is required
-```
-
-`src/db/index.ts` throws on import when the variable is absent, so it must exist at **build** time, not only at runtime. Add it in Vercel → Project → Settings → Environment Variables for Production (and Preview):
-
-| Variable | Value |
-| --- | --- |
-| `DATABASE_URL` | Neon **pooled** PostgreSQL connection string (used by the app at runtime and build) |
-| `DATABASE_DIRECT_URL` | Neon **direct** connection string, used only for one-off migration/admin commands |
-| `SESSION_SECRET` | random secret, 32+ characters |
-| `PAYOUT_ENCRYPTION_KEY` | separate random secret, 32+ characters |
-| `APP_URL` | final HTTPS origin, e.g. `https://your-project.vercel.app` |
-| `CRON_SECRET` / `REMINDER_CRON_SECRET` | separate random secrets, 32+ characters each |
-
-Generate each secret independently:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### 3. Database schema and first administrator
-
-Hosted databases never receive the local demo seed, so the demo accounts above do not exist on Vercel. Apply the schema and create a real administrator once, from a local clone using the Neon **direct** connection:
-
-```bash
-npm ci
-export DATABASE_URL="<neon-direct-url>"
-export DATABASE_DIRECT_URL="$DATABASE_URL"
-export ALLOW_PRODUCTION_MIGRATIONS=true
-npm run db:migrate
-
-export ADMIN_EMAIL="you@example.com"
-export ADMIN_PASSWORD="<long-unique-password>"
-npx tsx scripts/create-admin.ts
-```
-
-Sign in at `/login` with that administrator, then complete `Admin → Integrations` (Resend for email verification, Stripe, Supabase Storage, Daily/Jitsi, Pusher) as described in the upstream `DEPLOYMENT.md`.
-
-### 4. Runtime notes
-
-- New sign-ups stay locked until email verification, so Resend and `APP_URL` must be configured before opening public registration.
-- Payments, hosted uploads, video classrooms and crypto gateways require their provider credentials; nothing is simulated.
-- `vercel.json` in the upstream repository keeps only the daily recordings cleanup cron; settlement and reminders need an external scheduler with the documented bearer secrets.
-
-## Pushing to GitHub and Vercel
-
-This folder is already a git repository with one clean commit: `.env` is ignored, the homepage artwork is committed, and the original `drizzle/` migrations, `scripts/`, `vercel.json`, `.gitignore` and `.env.example` are present.
-
-See **[docs/PUSH_TO_GITHUB.md](docs/PUSH_TO_GITHUB.md)** for the exact push commands (new repository, fixing the existing upstream repository, or pushing from this sandbox), the required Vercel environment variables, the one-off Neon migration and administrator creation steps, and a table of common push/deploy errors.
+The existing integration settings remain the source of payment and video credentials. No secrets, `.env`, hosted database data, test accounts or synthetic receiving addresses are included in the release archives. Local demo accounts and simulated wallet credit remain restricted to the original local demo policy.

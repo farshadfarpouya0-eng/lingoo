@@ -33,7 +33,7 @@ export type VideoConfigIssue =
   | "jaas_private_key_missing" | "jaas_private_key_invalid"
   | "jitsi_domain_missing" | "jitsi_domain_invalid" | "jitsi_domain_public"
   | "jitsi_app_id_missing" | "jitsi_secret_missing" | "jitsi_secret_short"
-  | "not_configured";
+  | "not_configured" | "credentials_unreadable";
 
 const VIDEO_MODES = ["auto", "jaas", "self-hosted", "disabled"];
 const privateKeyShapeValid = (key: string) => /^-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]+-----END (?:RSA )?PRIVATE KEY-----$/.test(key.trim().replace(/\\n/g, "\n"));
@@ -104,6 +104,7 @@ export const VIDEO_ISSUE_MESSAGES: Record<VideoConfigIssue, string> = {
   jitsi_secret_missing: "Private Jitsi JWT secret is missing.",
   jitsi_secret_short: "Private Jitsi JWT secret must be at least 32 characters.",
   not_configured: "No production video provider is configured yet.",
+  credentials_unreadable: "The saved integration credentials could not be read. An administrator should check the original encryption key and run classroom diagnostics. Do not replace or reset existing keys.",
 };
 
 export function videoJoinUrl(video: VideoSettings, provider: VideoProvider, room: string) {

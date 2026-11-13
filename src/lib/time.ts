@@ -4,7 +4,7 @@ export const DEFAULT_TIME_ZONE: Record<Lang, string> = { zh: "Asia/Shanghai", ja
 export const COMMON_TIME_ZONES = [
   "UTC", "Europe/Berlin", "Europe/London", "Europe/Paris", "Europe/Istanbul", "Europe/Moscow",
   "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Toronto",
-  "America/Vancouver", "America/Sao_Paulo", "Asia/Dubai", "Asia/Kolkata", "Asia/Shanghai", "Asia/Hong_Kong",
+  "America/Vancouver", "America/Sao_Paulo", "Asia/Tehran", "Asia/Dubai", "Asia/Kolkata", "Asia/Shanghai", "Asia/Hong_Kong",
   "Asia/Tokyo", "Asia/Seoul", "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland",
 ] as const;
 

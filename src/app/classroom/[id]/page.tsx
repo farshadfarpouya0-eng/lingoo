@@ -8,6 +8,7 @@ import { getT } from "@/lib/i18n";
 import { LEARNING } from "@/lib/learning-i18n";
 import { assignedTeacherLinks, classroomSnapshot } from "@/lib/room-service";
 import { fmtAtZone } from "@/lib/time";
+import { studentTimeZone } from "@/lib/student-schedule";
 import ClassroomLive from "@/components/ClassroomLive";
 import ClassroomPresence from "@/components/ClassroomPresence";
 import RecordingConsentPanel from "@/components/RecordingConsentPanel";
@@ -33,7 +34,8 @@ export default async function Classroom({ params, searchParams }: { params: Prom
   const groupStudentIds = l.classType === "semi_private" ? await activeLessonStudentIds(l.id, l.studentId, l.classType) : [l.studentId];
   const groupStudents = groupStudentIds.length ? await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(inArray(users.id, groupStudentIds)) : [];
   const reportTargets = (isTutor ? groupStudents : [{ id: other?.id || l.teacherId, name: other?.name || "Teacher", avatar: other?.avatar || "" }, ...groupStudents]).filter((person, index, all) => person.id !== user.id && all.findIndex(p => p.id === person.id) === index).map(p => ({ id: p.id, name: p.name }));
-  const [pref] = isTutor ? await db.select({ platform: teacherProfiles.platformDefault }).from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : [];
+  const [pref] = isTutor ? await db.select({ platform: teacherProfiles.platformDefault, timeZone: teacherProfiles.timeZone }).from(teacherProfiles).where(eq(teacherProfiles.userId, user.id)) : [];
+  const viewerZone = studentTimeZone(isTutor ? pref?.timeZone || user.timeZone : user.timeZone, lang);
   const snapshot = await classroomSnapshot(user.id, id, user.name);
   const autoJoin = !isTutor && (await searchParams).join === "1" && snapshot.state === "open";
   const teacherLinks = await assignedTeacherLinks(l.teacherId);
@@ -117,7 +119,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
             <div className="flex items-center gap-2 px-1 text-sm font-bold text-teal-950">
               <Icon name="video" /> Live classroom
             </div>
-            <ClassroomLive initial={snapshot} isTutor={isTutor} displayName={user.name} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} isAdmin={user.role === "admin"} profileTimeZone={user.timeZone || "UTC"} assignedLinks={assignedLinks} autoJoin={autoJoin} />
+            <ClassroomLive initial={snapshot} isTutor={isTutor} displayName={user.name} preference={pref?.platform || "lingo"} c={c} startLabel={fmtAtZone(l.startAt, lang, viewerZone)} startAtMs={l.startAt.getTime()} serverNowMs={Date.now()} durationMinutes={l.duration} books={teachingMaterials} userId={user.id} isAdmin={user.role === "admin"} profileTimeZone={viewerZone} assignedLinks={assignedLinks} autoJoin={autoJoin} />
           </div>
           {snapshot.platform === "daily" && <RecordingConsentPanel lessonId={id} platform={snapshot.platform} />}
           <details className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
@@ -164,7 +166,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
             </div>
             <ClassroomPresence lessonId={id} otherName={other?.name || (isTutor ? t.student : t.teacher)} />
             <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, user.timeZone || "UTC")} <span className="text-slate-400">· {(user.timeZone || "UTC").split("/").pop()?.replace(/_/g, " ")}</span></dd></div>
+              <div className="flex justify-between gap-2"><dt>{t.startsAt}</dt><dd className="font-medium text-slate-700">{fmtAtZone(l.startAt, lang, viewerZone)} <span className="text-slate-400">· {(viewerZone).split("/").pop()?.replace(/_/g, " ")}</span></dd></div>
               <div className="flex justify-between"><dt>{c.duration}</dt><dd className="font-medium text-slate-700">{l.duration} {c.minutes}</dd></div>
               {l.packageId && <div className="flex justify-between"><dt>{c.packageCredit}</dt><dd>#{l.packageId}</dd></div>}
               {l.topic && <div><dt className="text-slate-400">{t.topic}</dt><dd className="mt-1 leading-5 text-slate-700">{l.topic}</dd></div>}
@@ -182,7 +184,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
                 {history.map(h => (
                   <div key={h.id} className="border-b border-slate-50 pb-2 text-xs">
                     <p className="font-medium text-teal-800">{labels[h.fromPlatform]} → {labels[h.toPlatform]}</p>
-                    <p className="mt-1 text-[10px] text-slate-400">{fmtAtZone(h.createdAt, lang, user.timeZone || "UTC")}</p>
+                    <p className="mt-1 text-[10px] text-slate-400">{fmtAtZone(h.createdAt, lang, viewerZone)}</p>
                   </div>
                 ))}
               </div>

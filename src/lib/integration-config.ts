@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { siteSettings } from "@/db/schema";
 import { resolveVideoProvider, diagnoseVideoConfig, VIDEO_ISSUE_MESSAGES, isJaasAppId, isVideoHostname, isPublicJitsiHost } from "./video-provider";
 import { validateJaasPrivateKey } from "./video-keys";
+import { videoApiUrl } from "./video-api-url";
 
 /**
  * Integration credentials entered in the admin console are encrypted at rest.
@@ -102,8 +103,8 @@ export async function getIntegrationConfig() {
     video: {
       mode: publicValue("videoProvider", "VIDEO_PROVIDER", "auto"),
       jitsiDomain: publicValue("jitsiDomain", "JITSI_DOMAIN").toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, ""),
-      jaasAppId: publicValue("jaasAppId", "JAAS_APP_ID"),
-      jaasApiKeyId: secretValue("jaasApiKeyId", "JAAS_API_KEY_ID"),
+      jaasAppId: publicValue("jaasAppId", "JAAS_APP_ID").trim(),
+      jaasApiKeyId: secretValue("jaasApiKeyId", "JAAS_API_KEY_ID").trim(),
       jaasPrivateKey: secretValue("jaasPrivateKey", "JAAS_PRIVATE_KEY"),
       jitsiAppId: publicValue("jitsiAppId", "JITSI_APP_ID", "lingorain"),
       jitsiAppSecret: secretValue("jitsiAppSecret", "JITSI_APP_SECRET"),
@@ -360,9 +361,7 @@ export async function testIntegrationProvider(provider: Provider) {
           throw new Error("The saved JaaS private key could not produce a verifiable signature. Generate a fresh API key pair and save its App ID, key ID and private key together.");
         }
       }
-      const domain = provider === "jaas" ? "8x8.vc" : c.video.jitsiDomain;
-      const tenant = provider === "jaas" ? `${c.video.jaasAppId}/` : "";
-      url = `https://${domain}/${tenant}external_api.js`;
+      url = videoApiUrl(ticket.domain, ticket.roomName);
       break;
     }
     case "realtime":

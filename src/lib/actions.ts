@@ -253,8 +253,13 @@ export async function updateProfile(fd: FormData) {
     timeZone: isValidTimeZone(str(fd, "timeZone", 64)) ? str(fd, "timeZone", 64) : (u.timeZone || "UTC"),
   }).where(eq(users.id, u.id));
   if (u.role === "teacher") {
-    const start = Math.min(23, Math.max(0, Math.round(Number(fd.get("startHour")) || 9)));
-    const end = Math.min(24, Math.max(start + 1, Math.round(Number(fd.get("endHour")) || 21)));
+    const [existingProfile] = await db.select({ timeZone: teacherProfiles.timeZone, startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour, tzOffset: teacherProfiles.tzOffset }).from(teacherProfiles).where(eq(teacherProfiles.userId, u.id)).limit(1);
+    const hour = (key: string, fallback: number) => {
+      const raw = String(fd.get(key) ?? "").trim();
+      return raw && Number.isFinite(Number(raw)) ? Math.round(Number(raw)) : fallback;
+    };
+    const start = Math.min(23, Math.max(0, hour("startHour", existingProfile?.startHour ?? 9)));
+    const end = Math.min(24, Math.max(start + 1, hour("endHour", existingProfile?.endHour ?? 18)));
     const days = fd.getAll("workDays").map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6);
     await db.update(teacherProfiles).set({
       headline: str(fd, "headline", 140), bio: str(fd, "bio", 2000),
@@ -262,8 +267,8 @@ export async function updateProfile(fd: FormData) {
       accent: str(fd, "accent", 40), speaks: str(fd, "speaks", 80) || "English", tags: str(fd, "tags", 120),
       price: Math.min(50000, Math.max(500, Math.round(Number(fd.get("price") || 25) * 100))),
       startHour: start, endHour: end,
-      tzOffset: Math.min(14, Math.max(-12, Math.round(Number(fd.get("tzOffset")) || 0))),
-      timeZone: isValidTimeZone(str(fd, "teacherTimeZone", 64)) ? str(fd, "teacherTimeZone", 64) : (u.timeZone || "UTC"),
+      tzOffset: existingProfile?.tzOffset ?? 0,
+      timeZone: isValidTimeZone(str(fd, "teacherTimeZone", 64)) ? str(fd, "teacherTimeZone", 64) : (existingProfile?.timeZone || u.timeZone || "UTC"),
       workDays: days.length ? days.join(",") : "1,2,3,4,5",
       platformDefault: ["lingo", "meet", "zoom"].includes(str(fd, "platformDefault", 10)) ? str(fd, "platformDefault", 10) : "lingo",
     }).where(eq(teacherProfiles.userId, u.id));

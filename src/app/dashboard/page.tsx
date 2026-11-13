@@ -139,7 +139,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const reviewedLessonIds = !isTutor && needsRows
     ? new Set((await db.select({ lessonId: reviews.lessonId }).from(reviews).where(eq(reviews.studentId, user.id))).map(r => r.lessonId).filter((v): v is number => v !== null))
     : new Set<number>();
-  const displayRows = rows.map(row => ({ ...row, reviewedByMe: reviewedLessonIds.has(row.l.id) }));
+  const displayRows = rows.map(row => ({ ...row, teacherTimeZone: isTutor ? row.teacherTimeZone : null, reviewedByMe: reviewedLessonIds.has(row.l.id) }));
   const upcoming = displayRows.filter(x => ["pending", "confirmed"].includes(x.l.status));
   const escrow = summary.escrow;
 

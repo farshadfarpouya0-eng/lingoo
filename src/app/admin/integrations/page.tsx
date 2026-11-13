@@ -1,4 +1,5 @@
 import Link from "next/link";
+import VideoReadinessCheck from "@/components/admin/VideoReadinessCheck";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getUser } from "@/lib/auth";
@@ -70,12 +71,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
             <div><label htmlFor="jitsiDomain" className="mb-1.5 block text-sm font-semibold text-slate-700">Private Jitsi hostname</label><input id="jitsiDomain" name="jitsiDomain" defaultValue={cfg.video.jitsiDomain === "8x8.vc" ? "" : cfg.video.jitsiDomain} placeholder="meet.your-school.com" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"/><label className="mt-2 flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" name="clear_jitsiDomain"/>Remove hostname</label></div>
             <div><label htmlFor="jitsiAppId" className="mb-1.5 block text-sm font-semibold text-slate-700">JWT application ID</label><input id="jitsiAppId" name="jitsiAppId" defaultValue={cfg.video.jitsiAppId} placeholder="lingorain" className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"/></div>
             <div className="md:col-span-2"><SecretInput name="jitsiAppSecret" label="JWT application secret (32+ characters)" configured={status.video.jitsiAppSecretSaved}/></div>
-            <p className="md:col-span-2 text-xs leading-6 text-slate-500">Enable Prosody token_verification with allow_empty_token=false. Set JWT_APP_ID / JWT_APP_SECRET to these values, enable token_affiliation, and disable muc_allowners / automatic first-join owner behavior. Set JITSI_DOMAIN in the hosting environment too, so CSP and camera permissions allow your server. Do not use a public anonymous host.</p>
+            <p className="md:col-span-2 text-xs leading-6 text-slate-500">Enable Prosody token_verification with allow_empty_token=false. Set JWT_APP_ID / JWT_APP_SECRET to these values, enable token_affiliation, and disable muc_allowners / automatic first-join owner behavior. The saved hostname is applied to classroom CSP and camera permissions at runtime. Reload open classroom pages after saving. Do not use a public anonymous host.</p>
           </div></details>
           {!status.video.configured && <p className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"><strong>Detected problem:</strong> {VIDEO_ISSUE_MESSAGES[status.video.issue]} The classroom will stay in SETUP until this is fixed and saved.</p>}
           <p className="md:col-span-2 text-xs leading-5 text-slate-500">Save, then test the signing configuration and external API. Finally, join one test lesson as teacher and student in separate browsers to verify provider entitlements, video and audio. Google Meet and Zoom remain available as alternatives.</p>
         </div>
       </ProviderCard>
+      <VideoReadinessCheck />
       <ProviderCard title="Zoom managed host launch · optional" description="Lets the site refresh a Zoom host/start link for the tutor so the tutor does not need to sign in to Zoom manually. Create a Server-to-Server OAuth app in the Zoom Marketplace with meeting read scopes. The Zoom room link saved for each tutor must belong to this Zoom account and contain a numeric meeting ID." configured={status.zoom.configured} provider="zoom" notice={noticeFor("zoom")}>
         <div className="grid gap-4 md:grid-cols-2">
           <div><label htmlFor="zoomAccountId" className="mb-1.5 block text-sm font-semibold text-slate-700">Zoom Account ID</label><input id="zoomAccountId" name="zoomAccountId" defaultValue={cfg.zoom.accountId} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"/><label className="mt-2 flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" name="clear_zoomAccountId"/>Remove Account ID</label></div>

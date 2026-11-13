@@ -5,6 +5,7 @@ import Link from "next/link";
 import Icon, { type IconName } from "./Icon";
 import type { ClassroomMaterial } from "@/lib/classroom-material";
 import type { VideoProvider, VideoTicket } from "@/lib/video-provider";
+import { videoApiUrl } from "@/lib/video-api-url";
 import ClassroomChat from "@/components/ClassroomChat";
 import ClassroomTeachingWorkspace from "@/components/ClassroomTeachingWorkspace";
 
@@ -46,8 +47,9 @@ type JitsiConstructor = new (domain: string, options: Record<string, unknown>) =
 declare global { interface Window { JitsiMeetExternalAPI?: JitsiConstructor } }
 
 const jitsiApis = new Map<string, Promise<JitsiConstructor>>();
-function loadJitsiApi(domain: string): Promise<JitsiConstructor> {
-  const cached = jitsiApis.get(domain);
+function loadJitsiApi(domain: string, roomName: string): Promise<JitsiConstructor> {
+  const source = videoApiUrl(domain, roomName);
+  const cached = jitsiApis.get(source);
   if (cached) return cached;
   const pending = new Promise<JitsiConstructor>((resolve, reject) => {
     const script = document.createElement("script");
@@ -62,12 +64,12 @@ function loadJitsiApi(domain: string): Promise<JitsiConstructor> {
       window.clearTimeout(timer); script.remove();
       reject(new Error("The video service could not be reached. Check its hostname, HTTPS certificate and CSP settings."));
     }, { once: true });
-    script.src = `https://${domain}/external_api.js`;
+    script.src = source;
     script.async = true;
     script.dataset.lingorainJitsi = domain;
     document.head.appendChild(script);
-  }).catch((error: unknown) => { jitsiApis.delete(domain); throw error; });
-  jitsiApis.set(domain, pending);
+  }).catch((error: unknown) => { jitsiApis.delete(source); throw error; });
+  jitsiApis.set(source, pending);
   return pending;
 }
 
@@ -153,7 +155,13 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       try { instance?.dispose(); } catch { /* iframe may already be gone */ }
       instance = null;
     };
-    void loadJitsiApi(ticket.domain).then(JitsiMeetExternalAPI => {
+    const blockedByPolicy = (event: SecurityPolicyViolationEvent) => {
+      if (event.blockedURI.startsWith(`https://${ticket.domain}/`) && ["script-src", "script-src-elem", "frame-src"].includes(event.effectiveDirective)) {
+        fail("The browser blocked the classroom domain. Reload this page after the administrator saves the video hostname; contact support if it remains blocked.");
+      }
+    };
+    document.addEventListener("securitypolicyviolation", blockedByPolicy);
+    void loadJitsiApi(ticket.domain, ticket.roomName).then(JitsiMeetExternalAPI => {
       if (cancelled || !videoMountRef.current) return;
       instance = new JitsiMeetExternalAPI(ticket.domain, {
         roomName: ticket.roomName,
@@ -218,13 +226,14 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
         }
       });
       listen("peerConnectionFailure", () => {
-        if (!cancelled) setConnectionError("The network connection to the video service failed. Check this browser's connection to 8x8.vc (try another network or VPN), then retry.");
+        if (!cancelled) setConnectionError("The network connection to the video service failed. Check this browser’s connection and microphone/camera permissions, then retry.");
       });
       // Only the conference-joined event marks the room connected. Never use a guessed timer.
-      joinTimeout = window.setTimeout(() => fail("The provider did not confirm your join within 60 seconds. This usually means the JaaS App ID/API key pair does not match or is not registered, or this browser cannot reach 8x8.vc. Test the JaaS sample demo in this browser, then retry."), 60_000);
+      joinTimeout = window.setTimeout(() => fail("The video provider did not confirm your join within 60 seconds. Your saved credentials, provider permissions or this browser’s connection may need checking. Retry, or ask support to test this lesson."), 60_000);
     }).catch((error: unknown) => fail(error instanceof Error ? error.message : "Could not connect to the classroom."));
     return () => {
       cancelled = true;
+      document.removeEventListener("securitypolicyviolation", blockedByPolicy);
       window.clearTimeout(joinTimeout);
       if (apiRef.current === instance) apiRef.current = null;
       try { instance?.dispose(); } catch { /* safe unmount */ }
