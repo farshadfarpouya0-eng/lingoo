@@ -1,6 +1,10 @@
 export function validateHostedEnvironment(provider) {
   const problems = [];
   const warnings = [];
+  // A Vercel Preview build of a branch does not inherit Production-only variables.
+  // Report those clearly, but only block the build for a Production deployment so a
+  // branch preview can still compile and be reviewed.
+  const strict = (process.env.VERCEL_ENV ?? "production") === "production";
   const scopeHint = provider === "Netlify" ? "Set it in Netlify with Builds and Functions scopes." : "Set it in Vercel for the intended deployment environment, then redeploy.";
   const required = name => {
     const value = process.env[name];
@@ -52,9 +56,12 @@ export function validateHostedEnvironment(provider) {
   if (!process.env.JITSI_DOMAIN) warnings.push(`Lingo Room uses public Jitsi. ${provider} does not host the video service.`);
   for (const warning of warnings) console.warn(`[deployment warning] ${warning}`);
   if (problems.length) {
-    for (const problem of problems) console.error(`[deployment error] ${problem}`);
-    process.exitCode = 1;
-    return false;
+    for (const problem of problems) (strict ? console.error : console.warn)(`[deployment ${strict ? "error" : "warning"}] ${problem}`);
+    if (strict) {
+      process.exitCode = 1;
+      return false;
+    }
+    console.warn("[deployment warning] Preview build continues. Add these variables to the Preview environment before using preview URLs with real data.");
   }
   console.log(`${provider} deployment environment passed validation (no secret values printed). Apply the hosted DB schema separately before launch.`);
   return true;
