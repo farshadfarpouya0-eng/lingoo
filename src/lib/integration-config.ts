@@ -1,8 +1,8 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createPublicKey, randomBytes, verify as verifySignature } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { siteSettings } from "@/db/schema";
-import { resolveVideoProvider, isJaasAppId, isVideoHostname, isPublicJitsiHost, VIDEO_SETUP_MESSAGE } from "./video-provider";
+import { resolveVideoProvider, diagnoseVideoConfig, VIDEO_ISSUE_MESSAGES, isJaasAppId, isVideoHostname, isPublicJitsiHost } from "./video-provider";
 import { validateJaasPrivateKey } from "./video-keys";
 
 /**
@@ -154,6 +154,7 @@ export async function getIntegrationStatus() {
     video: {
       configured: resolveVideoProvider(c.video) !== "unconfigured",
       provider: resolveVideoProvider(c.video),
+      issue: diagnoseVideoConfig(c.video).issue,
       mode: c.video.mode,
       domain: resolveVideoProvider(c.video) === "jaas" ? "8x8.vc" : c.video.jitsiDomain,
       jaasAppId: c.video.jaasAppId,
@@ -236,7 +237,7 @@ export async function saveIntegrationProvider(provider: Provider, fd: FormData) 
       const domain = val("jitsiDomain", 253).toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
       if (domain && !isVideoHostname(domain)) throw new Error("Enter a hostname only, such as meet.your-school.com, without a path or port.");
       if (domain && mode !== "jaas" && domain !== "8x8.vc" && isPublicJitsiHost(domain)) throw new Error("Public meet.jit.si has a five-minute embedding limit. Use 8x8 JaaS or your own JWT-protected Jitsi server.");
-      if (mode === "jaas" && domain && domain !== "8x8.vc") throw new Error("JaaS meetings use 8x8.vc. Leave the hostname blank or enter 8x8.vc.");
+      // In JaaS mode the self-hosted hostname field is irrelevant; JaaS always uses 8x8.vc.
       const appId = val("jaasAppId", 80);
       if (appId && !isJaasAppId(appId)) throw new Error("Copy the complete JaaS App ID beginning with vpaas-magic-cookie-.");
       const keyId = val("jaasApiKeyId", 200);
@@ -347,10 +348,18 @@ export async function testIntegrationProvider(provider: Provider) {
     }
     case "video": {
       const provider = resolveVideoProvider(c.video);
-      if (provider === "unconfigured") throw new Error(VIDEO_SETUP_MESSAGE);
+      if (provider === "unconfigured") throw new Error(VIDEO_ISSUE_MESSAGES[diagnoseVideoConfig(c.video).issue]);
       const { createJitsiTicket } = await import("./jitsi-video");
-      // Validates the signing key and key ID without exposing either to the browser.
-      createJitsiTicket({ video: c.video, room: "lingorain-connection-check", userId: 1, displayName: "Configuration check", isTeacher: true, lessonEndsAt: new Date(Date.now() + 60 * 60_000) });
+      // Validates that the saved private key can sign and that the signature verifies
+      // against its derived public key. JaaS still has to accept that public key live.
+      const ticket = createJitsiTicket({ video: c.video, room: "lingorain-connection-check", userId: 1, displayName: "Configuration check", isTeacher: true, lessonEndsAt: new Date(Date.now() + 60 * 60_000) });
+      if (provider === "jaas") {
+        const [headerPart, payloadPart, signaturePart] = ticket.jwt.split(".");
+        const publicKey = createPublicKey((await import("./video-keys")).validateJaasPrivateKey(c.video.jaasPrivateKey));
+        if (!headerPart || !payloadPart || !signaturePart || !verifySignature("RSA-SHA256", Buffer.from(`${headerPart}.${payloadPart}`), publicKey, Buffer.from(signaturePart, "base64url"))) {
+          throw new Error("The saved JaaS private key could not produce a verifiable signature. Generate a fresh API key pair and save its App ID, key ID and private key together.");
+        }
+      }
       const domain = provider === "jaas" ? "8x8.vc" : c.video.jitsiDomain;
       const tenant = provider === "jaas" ? `${c.video.jaasAppId}/` : "";
       url = `https://${domain}/${tenant}external_api.js`;

@@ -4,6 +4,7 @@ import { useActionState, useCallback, useEffect, useRef, useState } from "react"
 import { roomPollDelay } from "@/lib/room-polling";
 import type { LearningCopy } from "@/lib/learning-i18n";
 import type { Platform, RoomSnapshot } from "@/lib/room-service";
+import { VIDEO_ISSUE_MESSAGES } from "@/lib/video-provider";
 import { saveClassroom } from "@/lib/classroom-actions";
 import Icon from "./Icon";
 import LingoRoom from "./LingoRoom";
@@ -175,7 +176,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor, assigne
         })}
       </div>
 
-      {platform === "lingo" && initial.videoProvider === "unconfigured" && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-900">{D.lingoOff}</p>}
+      {platform === "lingo" && initial.videoProvider === "unconfigured" && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-900">{D.lingoOff}<span className="mt-1 block font-semibold">Detected problem: {VIDEO_ISSUE_MESSAGES[initial.videoIssue]}</span></p>}
 
       {(platform === "meet" || platform === "zoom") && hasAssigned(platform) && (
         <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
@@ -270,7 +271,7 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
       if (!r.ok) throw new Error("sync");
       const data = await r.json() as RoomSnapshot;
       if (data.revision !== revision.current) { revision.current = data.revision; setUpdated(true); }
-      setRoom(prev => prev.revision === data.revision && prev.state === data.state && prev.issueReported === data.issueReported && prev.joinUrl === data.joinUrl ? prev : data);
+      setRoom(prev => prev.revision === data.revision && prev.state === data.state && prev.platform === data.platform && prev.videoProvider === data.videoProvider && prev.videoIssue === data.videoIssue && prev.issueReported === data.issueReported && prev.joinUrl === data.joinUrl ? prev : data);
       setFailures(0);
       setOffline(false);
     } catch {
@@ -357,7 +358,7 @@ export default function ClassroomLive({ initial, isTutor, displayName, isAdmin =
           roomName={`lingorain-${room.lessonId}`}
           displayName={displayName}
           videoProvider={room.videoProvider}
-          videoMessage={room.videoMessage}
+          videoMessage={room.videoProvider === "unconfigured" && room.videoIssue !== "ready" ? `${room.videoMessage} Detected problem: ${VIDEO_ISSUE_MESSAGES[room.videoIssue]}` : room.videoMessage}
           startLabel={startLabel}
           minutesLeft={minutesLeft}
           isTutor={isTutor}

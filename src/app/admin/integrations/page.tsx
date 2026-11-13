@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { getUser } from "@/lib/auth";
 import { getIntegrationConfig, getIntegrationStatus } from "@/lib/integration-config";
 import { saveProviderIntegration, testProviderIntegration } from "@/lib/integration-actions";
+import { VIDEO_ISSUE_MESSAGES } from "@/lib/video-provider";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Integrations · Lingorain Admin" };
@@ -24,7 +25,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   if (!user || user.role !== "admin") redirect("/login");
   const [cfg, status] = await Promise.all([getIntegrationConfig(), getIntegrationStatus()]);
   const sp = await searchParams;
-  const resultText = sp.result === "saved" ? `Saved ${sp.provider || "provider"} settings.` : sp.result === "test_ok" ? `${sp.provider || "Provider"} connection test passed.` : sp.result === "webhook_ok" ? "Daily recording webhook registered." : sp.result === "test_error" || sp.result === "error" || sp.result === "webhook_error" ? (sp.message || "The operation failed.") : sp.result === "invalid" ? "Invalid provider." : "";
+  const resultText = sp.result === "saved" ? `Saved ${sp.provider || "provider"} settings.` : sp.result === "test_ok" && sp.provider === "video" ? "Video signing check passed. This does not prove JaaS accepts the key or that a live join works; test a lesson as the teacher." : sp.result === "test_ok" ? `${sp.provider || "Provider"} connection test passed.` : sp.result === "webhook_ok" ? "Daily recording webhook registered." : sp.result === "test_error" || sp.result === "error" || sp.result === "webhook_error" ? (sp.message || "The operation failed.") : sp.result === "invalid" ? "Invalid provider." : "";
   const resultOk = sp.result === "saved" || sp.result === "test_ok" || sp.result === "webhook_ok";
   const noticeFor = (p: string) => (resultText && sp.provider === p ? { text: resultText, ok: resultOk } : null);
   return <>
@@ -71,6 +72,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
             <div className="md:col-span-2"><SecretInput name="jitsiAppSecret" label="JWT application secret (32+ characters)" configured={status.video.jitsiAppSecretSaved}/></div>
             <p className="md:col-span-2 text-xs leading-6 text-slate-500">Enable Prosody token_verification with allow_empty_token=false. Set JWT_APP_ID / JWT_APP_SECRET to these values, enable token_affiliation, and disable muc_allowners / automatic first-join owner behavior. Set JITSI_DOMAIN in the hosting environment too, so CSP and camera permissions allow your server. Do not use a public anonymous host.</p>
           </div></details>
+          {!status.video.configured && <p className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"><strong>Detected problem:</strong> {VIDEO_ISSUE_MESSAGES[status.video.issue]} The classroom will stay in SETUP until this is fixed and saved.</p>}
           <p className="md:col-span-2 text-xs leading-5 text-slate-500">Save, then test the signing configuration and external API. Finally, join one test lesson as teacher and student in separate browsers to verify provider entitlements, video and audio. Google Meet and Zoom remain available as alternatives.</p>
         </div>
       </ProviderCard>

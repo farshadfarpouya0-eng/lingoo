@@ -15,12 +15,12 @@ import { classroomSecret } from "./runtime-policy";
 import { getIntegrationConfig } from "./integration-config";
 import { canAccessLesson } from "./lesson-access";
 import { isAccountSuspended } from "./account-status";
-import { resolveVideoProvider, videoJoinUrl, VIDEO_SETUP_MESSAGE, type VideoProvider } from "./video-provider";
+import { diagnoseVideoConfig, videoJoinUrl, VIDEO_SETUP_MESSAGE, type VideoConfigIssue, type VideoProvider } from "./video-provider";
 
 export type Platform = "undecided" | "lingo" | "daily" | "meet" | "zoom";
 export type RoomSnapshot = {
   lessonId: number; platform: Platform; revision: number; meetingUrl: string; joinUrl: string;
-  videoProvider: VideoProvider; videoMessage: string;
+  videoProvider: VideoProvider; videoIssue: VideoConfigIssue; videoMessage: string;
   state: "pending" | "early" | "open" | "closed"; issueReported: boolean; updatedAt: string | null;
 };
 
@@ -60,10 +60,18 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
   const state = roomState(l, actorRole);
   let joinUrl = "";
   let videoProvider: VideoProvider = "unconfigured";
-  if (state === "open" && platform === "lingo") {
+  let videoIssue: VideoConfigIssue = "not_configured";
+  // Resolve the configured provider even before the entry window opens. Otherwise
+  // the classroom picker incorrectly reports SETUP for a configured JaaS/Jitsi
+  // integration simply because the lesson is still in its early/pending state.
+  if (platform === "lingo" || platform === "undecided") {
     const cfg = await getIntegrationConfig();
-    videoProvider = resolveVideoProvider(cfg.video);
-    joinUrl = videoJoinUrl(cfg.video, videoProvider, jitsiRoomName(l.id));
+    const diagnosis = diagnoseVideoConfig(cfg.video);
+    videoProvider = diagnosis.provider;
+    videoIssue = diagnosis.issue;
+    if (state === "open" && platform === "lingo") {
+      joinUrl = videoJoinUrl(cfg.video, videoProvider, jitsiRoomName(l.id));
+    }
   } else if (state === "open" && platform === "daily") {
     // Personal Daily tokens are issued by the dedicated authenticated endpoint.
     joinUrl = "";
@@ -71,7 +79,7 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
     // A lesson-specific link wins; otherwise use the tutor's admin-assigned fixed room.
     joinUrl = validMeetingLink(platform, l.meetingUrl) || (await assignedTeacherLinks(l.teacherId))[platform];
   }
-  return { lessonId, platform, revision: l.platformRevision, state, joinUrl, videoProvider,
+  return { lessonId, platform, revision: l.platformRevision, state, joinUrl, videoProvider, videoIssue,
     videoMessage: platform === "lingo" && videoProvider === "unconfigured" ? VIDEO_SETUP_MESSAGE : "",
     meetingUrl: actorId === l.teacherId || state === "open" ? l.meetingUrl : "",
     issueReported: !!l.platformIssueAt, updatedAt: l.platformUpdatedAt?.toISOString() ?? null };

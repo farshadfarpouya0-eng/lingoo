@@ -1,6 +1,8 @@
 import { db } from "@/db";
 import { ensurePreviewDatabase } from "@/db/preview-bootstrap";
 import { sql } from "drizzle-orm";
+import { isCryptoPaymentsSchemaReady } from "@/lib/crypto-schema";
+import { isCryptoSettingsReady } from "@/lib/crypto-settings";
 import { lessonPackages, lessonPlatformEvents, lessons, messages, payouts, reviews, sessions, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +30,15 @@ export async function GET() {
   try {
     await ensurePreviewDatabase();
     await db.execute(sql.join(probes, sql` union all `));
-    return Response.json({ ok: true }, { headers });
+    const columns = await db.execute(sql`select table_name, column_name from information_schema.columns where table_schema = 'public' and table_name in ('teacher_profiles','lessons','users','crypto_payment_orders','crypto_network_settings','classroom_workspace_states','learning_materials','lesson_participants')`);
+    const present = new Set(columns.rows.map(row => `${String(row.table_name)}.${String(row.column_name)}`));
+    const optionalFeatures = {
+      meetingLinks: ["teacher_profiles.meet_url", "teacher_profiles.zoom_url"].every(column => present.has(column)),
+      teacherGuestLaunch: ["teacher_profiles.meet_open_access", "teacher_profiles.zoom_host_url"].every(column => present.has(column)),
+      crypto: await isCryptoPaymentsSchemaReady() && await isCryptoSettingsReady(),
+      workspace: present.has("classroom_workspace_states.lesson_id"),
+    };
+    return Response.json({ ok: true, optionalFeatures }, { headers });
   } catch {
     // Do not expose connection strings, driver errors or user records.
     return Response.json({ ok: false }, { status: 503, headers });

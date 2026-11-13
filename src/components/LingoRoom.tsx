@@ -24,8 +24,18 @@ type Props = {
 };
 type JitsiEvent = {
   muted?: boolean; on?: boolean; id?: string; displayName?: string; handRaised?: number;
-  supported?: boolean; isFatal?: boolean; type?: string; name?: string; message?: string;
+  supported?: boolean; isFatal?: boolean; type?: string; name?: string; message?: string; details?: unknown;
 };
+
+function describeJitsiError(event?: JitsiEvent): string {
+  if (!event) return "Unknown Jitsi error";
+  const detailText = typeof event.details === "string"
+    ? event.details
+    : event.details && typeof event.details === "object"
+      ? Object.values(event.details as Record<string, unknown>).filter(value => typeof value === "string").join(" · ")
+      : "";
+  return [event.type, event.name, event.message, detailText].filter(Boolean).join(" · ").slice(0, 300) || "Unknown Jitsi error";
+}
 type JitsiApi = {
   executeCommand: (command: string, ...args: unknown[]) => void;
   addListener: (event: string, callback: (payload?: JitsiEvent) => void) => void;
@@ -199,10 +209,19 @@ export default function LingoRoom({ roomName, displayName, videoProvider, videoM
       listen("browserSupport", event => { if (event?.supported === false) fail("This browser does not support the video room. Try a current version of Chrome, Edge, Firefox or Safari."); });
       listen("passwordRequired", () => fail("The video server requested another password. Ask the administrator to check JWT authentication; do not sign in to a separate Jitsi account."));
       listen("errorOccurred", event => {
-        if (event?.isFatal || event?.type === "CONFIG" || event?.type === "CONNECTION") fail("The video connection failed. Check the provider configuration and retry. Your classroom workspace is still available.");
+        const description = describeJitsiError(event);
+        console.warn("[LingoRoom] Jitsi error", { type: event?.type, name: event?.name, message: event?.message, isFatal: event?.isFatal });
+        if (event?.isFatal || event?.type === "CONFIG" || event?.type === "CONNECTION") {
+          fail(`The video connection failed (${description}). Check the JaaS App ID, API key pair and browser connection, then retry.`);
+        } else if (!cancelled) {
+          setConnectionError(`Jitsi reported: ${description}`);
+        }
+      });
+      listen("peerConnectionFailure", () => {
+        if (!cancelled) setConnectionError("The network connection to the video service failed. Check this browser's connection to 8x8.vc (try another network or VPN), then retry.");
       });
       // Only the conference-joined event marks the room connected. Never use a guessed timer.
-      joinTimeout = window.setTimeout(() => fail("The provider did not confirm your join. Check its account, API key and room permissions, then retry."), 30_000);
+      joinTimeout = window.setTimeout(() => fail("The provider did not confirm your join within 60 seconds. This usually means the JaaS App ID/API key pair does not match or is not registered, or this browser cannot reach 8x8.vc. Test the JaaS sample demo in this browser, then retry."), 60_000);
     }).catch((error: unknown) => fail(error instanceof Error ? error.message : "Could not connect to the classroom."));
     return () => {
       cancelled = true;

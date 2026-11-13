@@ -13,9 +13,13 @@ export async function register() {
 
 /** Log only routing/digest identifiers, never query params or driver credentials. */
 export function onRequestError(error: unknown, request: { path: string }, context: { routerKind: string; routeType: string }) {
-  const details = error as { digest?: string; code?: string; cause?: { code?: string } } | null;
+  const details = error as { digest?: string; message?: string; code?: string; cause?: { code?: string; message?: string } } | null;
+  const message = details?.cause?.message || details?.message || "";
   console.error("[Lingorain request]", {
     path: request.path.split("?")[0], router: context.routerKind, type: context.routeType,
     reference: details?.digest || "unavailable", code: details?.cause?.code || details?.code || "APP_ERROR",
+    // Keep the actionable database/provider reason, but never log the query string,
+    // request headers, user records, SQL parameters or connection credentials.
+    reason: message.replaceAll(/(?:postgres(?:ql)?:\/\/)[^\s"'`]+/gi, "[redacted-database-url]").slice(0, 320),
   });
 }

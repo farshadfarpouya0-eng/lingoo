@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, generateKeyPairSync, verify as verifySignature } from "node:crypto";
 import { createJitsiTicket } from "../src/lib/jitsi-video";
-import { resolveVideoProvider, videoJoinUrl, isVideoHostname, type VideoSettings } from "../src/lib/video-provider";
+import { resolveVideoProvider, diagnoseVideoConfig, videoJoinUrl, isVideoHostname, type VideoSettings } from "../src/lib/video-provider";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 const appId = `vpaas-magic-cookie-${"a1b2c3d4".repeat(4)}`;
@@ -21,6 +21,20 @@ test("missing, disabled or public-demo configuration fails closed", () => {
   assert.equal(resolveVideoProvider({ ...jaas, jaasPrivateKey: "" }), "unconfigured");
   assert.equal(videoJoinUrl(empty, "unconfigured", room), "");
   assert.throws(() => issue(empty, true), /production video provider/);
+});
+test("video diagnostics report the exact incomplete JaaS field", () => {
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasAppId: "" }).issue, "jaas_app_id_missing");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasAppId: "vpaas-magic-cookie-short" }).issue, "jaas_app_id_invalid");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasApiKeyId: "" }).issue, "jaas_key_id_missing");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasApiKeyId: "bad key!" }).issue, "jaas_key_id_invalid");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasApiKeyId: `vpaas-magic-cookie-${"b".repeat(32)}/abc123` }).issue, "jaas_key_id_app_mismatch");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasPrivateKey: "" }).issue, "jaas_private_key_missing");
+  assert.equal(diagnoseVideoConfig({ ...jaas, jaasPrivateKey: "not-a-pem" }).issue, "jaas_private_key_invalid");
+  assert.equal(diagnoseVideoConfig({ ...jaas, mode: "disabled" }).issue, "mode_disabled");
+});
+test("a leftover public Jitsi hostname does not block valid JaaS credentials", () => {
+  assert.equal(resolveVideoProvider({ ...jaas, mode: "auto", jitsiDomain: "meet.jit.si" }), "jaas");
+  assert.equal(resolveVideoProvider({ ...jaas, mode: "jaas", jitsiDomain: "meet.example.com" }), "jaas");
 });
 test("JaaS teacher JWT has a valid RS256 signature and exact documented claims", () => {
   const ticket = issue(jaas, true);

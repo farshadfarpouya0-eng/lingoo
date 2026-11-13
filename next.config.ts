@@ -1,5 +1,21 @@
 import type { NextConfig } from "next";
 import { embeddedSandboxPreview } from "./src/lib/preview-frame-policy";
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+/** Keep stable /images paths available even when Git only stores source, not generated art. */
+function emitHomepagePublicImages() {
+  const mediaDir = join(process.cwd(), ".next", "static", "media");
+  if (!existsSync(mediaDir)) return;
+  const destination = join(process.cwd(), "public", "images");
+  mkdirSync(destination, { recursive: true });
+  for (const file of readdirSync(mediaDir)) {
+    const stem = file.split(".")[0];
+    if (!file.endsWith(".webp") || !/^(?:hero-|feature-|kids-|teacher-onboarding\.)/.test(stem)) continue;
+    copyFileSync(join(mediaDir, file), join(destination, `${stem}.webp`));
+  }
+}
+process.once("exit", emitHomepagePublicImages);
 
 const isProd = process.env.NODE_ENV === "production";
 const sandboxPreview = embeddedSandboxPreview({
