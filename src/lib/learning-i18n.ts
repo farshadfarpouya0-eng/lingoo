@@ -2,7 +2,10 @@ import type { Lang } from "./i18n";
 
 const en = {
   packages: "Lesson packages", packageEyebrow: "KEEP YOUR MOMENTUM", packageTitle: "More lessons. More progress.",
-  packageSubtitle: "A little commitment goes a long way. Save up to 15% with your favourite tutor, then book each lesson when it suits you.",
+  packageSubtitle: "After your level test, confirm a tutor from your matches. Then book a single lesson or save up to 15% with a package.",
+  assignedTutor: "Your confirmed tutor", assignedPlanHint: "Your tutor is already set. Choose the lesson length and number of sessions below.",
+  confirmMatchFirst: "Watch your matched tutors’ introductions and confirm one on your results page before booking or buying a package.",
+  placementChanged: "Your placement or tutor selection has changed. Check your assessment results before continuing.",
   browse: "Explore packages", owned: "My packages", chooseTutor: "Your tutor", duration: "Lesson length", minutes: "mins",
   lesson: "lesson", lessons: "lessons", perLesson: "per lesson", single: "One lesson", singleHint: "Keep it flexible", starter: "Build a habit", popular: "Most popular", value: "Best value",
   off: "off", save: "You save", total: "Package total", purchase: "Get this package", bookSingle: "Book a lesson", selected: "Selected",
@@ -34,7 +37,10 @@ const en = {
 export type LearningCopy = typeof en;
 const zh: LearningCopy = {
   packages: "优惠课包", packageEyebrow: "保持学习动力", packageTitle: "更多课程，更多进步。",
-  packageSubtitle: "选择喜欢的老师，购买课包享最高15%优惠，再按自己的时间逐节预约。",
+  packageSubtitle: "水平测试后，从推荐名单中确认一位老师。之后可单节预约，或购买课包享最高15%优惠。",
+  assignedTutor: "已确认的老师", assignedPlanHint: "老师已经确定。请在下方选择每节课的时长和课时数量。",
+  confirmMatchFirst: "先到测评结果页观看推荐老师的介绍并确认一位老师，然后即可预约或购买课包。",
+  placementChanged: "测评结果或所选老师已变更，请先查看测评结果。",
   browse: "选购课包", owned: "我的课包", chooseTutor: "你的老师", duration: "课程时长", minutes: "分钟",
   lesson: "节课", lessons: "节课", perLesson: "每节课", single: "单节课", singleHint: "灵活预约", starter: "培养习惯", popular: "最受欢迎", value: "超值选择",
   off: "优惠", save: "节省", total: "课包总价", purchase: "购买课包", bookSingle: "预约单节课", selected: "已选",
@@ -65,7 +71,10 @@ const zh: LearningCopy = {
 };
 const ja: LearningCopy = {
   packages: "レッスンパッケージ", packageEyebrow: "学習のリズムを続けよう", packageTitle: "もっとレッスン、もっと上達。",
-  packageSubtitle: "お気に入りの講師と学ぶパッケージで最大15%オフ。各レッスンは都合のよい時間に予約できます。",
+  packageSubtitle: "レベルテスト後、おすすめの中から担当講師を確定してください。単発で予約するか、最大15%割引のパッケージを購入できます。",
+  assignedTutor: "確定した担当講師", assignedPlanHint: "担当講師は確定済みです。以下でレッスン時間と回数を選んでください。",
+  confirmMatchFirst: "診断結果ページでおすすめ講師の紹介を見て担当講師を確定すると、予約・購入ができます。",
+  placementChanged: "診断結果または担当講師が変更されました。診断結果を確認してください。",
   browse: "パッケージを探す", owned: "購入済み", chooseTutor: "担当講師", duration: "レッスン時間", minutes: "分",
   lesson: "レッスン", lessons: "レッスン", perLesson: "1回あたり", single: "1レッスン", singleHint: "気軽に1回から", starter: "習慣をつくる", popular: "人気プラン", value: "最もお得",
   off: "オフ", save: "割引額", total: "パッケージ総額", purchase: "パッケージ購入", bookSingle: "1回を予約", selected: "選択済み",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { GOALS, PLACEMENT_QUESTIONS } from "@/lib/placement-questions";
 import { submitWrittenAssessment } from "@/lib/assessment-actions";
 import type { AssessmentCopy } from "@/lib/assessment-i18n";
@@ -28,9 +29,11 @@ export default function PlacementTest({ a, initialGoal, initialAudience }: {
     setError("");
     startTransition(async () => {
       try {
-        await submitWrittenAssessment({ answers, goal, audience });
-      } catch {
-        setError(a.errGeneric); // redirect() resolves silently; anything else is a failure
+        const result = await submitWrittenAssessment({ answers, goal, audience });
+        if (result?.error) setError(a.completeAnswers);
+      } catch (cause) {
+        unstable_rethrow(cause);
+        setError(a.errGeneric);
       }
     });
   }

@@ -4,6 +4,7 @@ import { accountingEntries, assessments, lessonPackages, lessonParticipants, les
 import { FREE_CANCEL_HOURS, ledger, payGroupSeat, payTeacher, refundGroupSeat, refundStudent } from "./money";
 import { slotIsBookable } from "./time";
 import { getPricingConfig } from "./pricing-config";
+import { requirePlacementTutor } from "./placement";
 import { qualifyStudentReferral } from "./referral-service";
 import { isAccountSuspended } from "./account-status";
 
@@ -24,6 +25,20 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
   return db.transaction(async tx => {
     const [student] = await tx.select().from(users).where(eq(users.id, studentId)).for("update");
     if (!student || student.role !== "student" || isAccountSuspended(student.suspended, student.suspendedUntil)) throw new Error("forbidden");
+
+    // Spending an existing credit is a narrow entitlement to that exact paid
+    // package. It never unlocks wallet, trial, group or new-package purchases.
+    let ownedCredit: typeof lessonPackages.$inferSelect | undefined;
+    if (input.packageId !== undefined) {
+      if (!Number.isSafeInteger(input.packageId) || input.packageId < 1 || input.trial || classType !== "private") throw new Error("credit");
+      [ownedCredit] = await tx.select().from(lessonPackages).where(and(
+        eq(lessonPackages.id, input.packageId), eq(lessonPackages.studentId, studentId),
+        eq(lessonPackages.teacherId, input.teacherId), eq(lessonPackages.duration, input.duration),
+      )).for("update");
+      if (!ownedCredit || ownedCredit.remainingLessons < 1) throw new Error("credit");
+    } else {
+      await requirePlacementTutor(tx, studentId, input.teacherId);
+    }
 
     const [tutor] = await tx.select({ p: teacherProfiles }).from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId))
       .where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, input.teacherId), eq(teacherProfiles.active, true), or(eq(users.suspended, false), and(eq(users.suspended, true), lte(users.suspendedUntil, new Date())))));
@@ -122,13 +137,10 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
     let rewardCreditId: number | undefined;
     let usedReferralCredit = false;
 
-    if (input.packageId) {
-      const [pack] = await tx.select().from(lessonPackages)
-        .where(and(eq(lessonPackages.id, input.packageId), eq(lessonPackages.studentId, studentId))).for("update");
-      if (!pack || pack.teacherId !== input.teacherId || pack.duration !== duration || pack.remainingLessons < 1) throw new Error("credit");
-      await tx.update(lessonPackages).set({ remainingLessons: pack.remainingLessons - 1 }).where(eq(lessonPackages.id, pack.id));
-      packageId = pack.id;
-      price = pack.unitPrice;
+    if (ownedCredit) {
+      await tx.update(lessonPackages).set({ remainingLessons: ownedCredit.remainingLessons - 1 }).where(eq(lessonPackages.id, ownedCredit.id));
+      packageId = ownedCredit.id;
+      price = ownedCredit.unitPrice;
     } else {
       const [credit] = await tx.select().from(referralLessonCredits)
         .where(and(eq(referralLessonCredits.userId, studentId), eq(referralLessonCredits.duration, duration), sql`${referralLessonCredits.remainingLessons} > 0`))

@@ -15,21 +15,24 @@ type Props = {
   teacherId: number; studentTimeZone?: string | null; serverNowMs: number; lang: Lang;
   slots50: string[]; slots25: string[]; groupSlots: GroupSlot[]; price: number; price25?: number | null;
   trialEligible: boolean; balance: number; t: Record<string, string>; c: LearningCopy;
-  credits: BookingCredit[]; initialPackageId?: number; initialDuration?: LessonDuration;
+  credits: BookingCredit[]; redemption?: BookingCredit; initialPackageId?: number; initialDuration?: LessonDuration;
 };
 
-export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, lang, slots50, slots25, groupSlots, price, price25, trialEligible, balance, t, c, credits, initialPackageId, initialDuration }: Props) {
+export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, lang, slots50, slots25, groupSlots, price, price25, trialEligible, balance, t, c, credits, redemption, initialPackageId, initialDuration }: Props) {
   const initialPack = credits.find(pack => pack.id === initialPackageId);
-  const [duration, setDuration] = useState<LessonDuration>(initialPack?.duration === 25 ? 25 : initialPack?.duration === 50 ? 50 : initialDuration || 50);
+  const [chosenDuration, setDuration] = useState<LessonDuration>(initialPack?.duration === 25 ? 25 : initialPack?.duration === 50 ? 50 : initialDuration || 50);
   const [packageId, setPackageId] = useState(initialPack?.id || 0);
-  const [classType, setClassType] = useState<"private" | "semi_private">("private");
-  const [trial, setTrial] = useState(false);
+  const [chosenClassType, setClassType] = useState<"private" | "semi_private">("private");
+  const [chosenTrial, setTrial] = useState(false);
   const [dayKey, setDayKey] = useState("");
   const [selected, setSelected] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const { zone, now } = useStudentTime(studentTimeZone, lang, serverNowMs);
   const copy = SCHEDULE_COPY[lang];
+  const duration = redemption ? (redemption.duration === 25 ? 25 : 50) : chosenDuration;
+  const classType = redemption ? "private" : chosenClassType;
+  const trial = !redemption && chosenTrial;
   const actualDuration = trial ? 25 : duration;
   const instants = useMemo(() => [
     ...(actualDuration === 25 ? slots25 : slots50),
@@ -39,7 +42,7 @@ export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, 
   const selectedDay = days.find(day => day.slots.some(slot => slot.iso === selected));
   const day = selectedDay || days.find(day => day.key === dayKey) || days[0];
   const slot = selectedDay ? selected : "";
-  const pack = classType === "private" && !trial ? credits.find(p => p.id === packageId && p.duration === duration && p.remainingLessons > 0) : undefined;
+  const pack = redemption ?? (classType === "private" && !trial ? credits.find(p => p.id === packageId && p.duration === duration && p.remainingLessons > 0) : undefined);
   const groupSlot = classType === "semi_private" ? groupSlots.find(s => s.iso === slot && s.duration === actualDuration) : undefined;
   const amount = trial ? Math.round(unitLessonPrice(price, 25, price25) / 2) : classType === "semi_private" ? Math.round(unitLessonPrice(price, duration, price25) * .75) : pack?.unitPrice ?? unitLessonPrice(price, duration, price25);
   const insufficient = !pack && balance < amount;
@@ -54,6 +57,7 @@ export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, 
     <input type="hidden" name="duration" value={actualDuration} /><input type="hidden" name="trial" value={trial ? "1" : "0"} />
     <input type="hidden" name="classType" value={classType} /><input type="hidden" name="groupLessonId" value={groupSlot?.id || 0} />
     <input type="hidden" name="packageId" value={pack?.id || 0} />
+    {redemption ? <p data-testid="owned-credit-only" className="rounded-xl bg-teal-50 p-4 text-sm text-teal-900"><b>{c.useCredit} #{redemption.id}</b><br/>{actualDuration} {c.minutes} · {c.bound}</p> : <>
     <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 p-1.5">
       {(["private", "semi_private"] as const).map(type => <button type="button" key={type} aria-pressed={classType === type} onClick={() => { setClassType(type); setTrial(false); setPackageId(0); resetSelection(); }} className={`rounded-xl px-2 py-3 text-xs font-bold transition ${classType === type ? "bg-white text-teal-900 shadow-sm ring-1 ring-slate-100" : "text-slate-500 hover:text-teal-800"}`}>
         {type === "private" ? copy.private : copy.group}<span className="mt-1 block text-[10px] font-normal text-slate-500">{type === "private" ? copy.privateHint : copy.groupHint}</span>
@@ -63,6 +67,7 @@ export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, 
     {trialEligible && classType === "private" && <button type="button" aria-pressed={trial} onClick={() => { setTrial(!trial); setPackageId(0); resetSelection(); }} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left text-[11px] font-semibold ${trial ? "border-amber-400 bg-amber-50 text-amber-900" : "border-slate-200 text-slate-600"}`}><span>{copy.trial}</span><b>{money(Math.round(unitLessonPrice(price, 25, price25) / 2))}</b></button>}
     {classType === "private" && !trial && credits.some(p => p.duration === duration && p.remainingLessons > 0) && <label className="block text-xs font-semibold text-slate-600">{c.useExisting}<select value={packageId} onChange={e => setPackageId(Number(e.target.value))} className={`${input} mt-2`}><option value={0}>{c.payWallet}</option>{credits.filter(p => p.duration === duration && p.remainingLessons > 0).map(p => <option key={p.id} value={p.id}>#{p.id} · {p.remainingLessons} {c.available}</option>)}</select></label>}
 
+    </>}
     <section className="min-w-0 space-y-3" aria-label={copy.select}>
       <h3 className="text-sm font-bold text-teal-950">{copy.select}</h3>
       <div className="flex items-start gap-2 rounded-xl bg-[#f0f6f2] p-3"><Icon name="clock" width={16} height={16} className="mt-0.5 shrink-0 text-teal-700" /><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold text-teal-900">{copy.zone} · <span data-testid="booking-zone">{zone.replaceAll("_", " ")}</span></p><p className="mt-1 text-[10px] leading-4 text-slate-500">{copy.note}</p></div><Link href="/dashboard?tab=profile" className="text-[10px] font-semibold text-teal-700 underline underline-offset-2">{copy.change}</Link></div>

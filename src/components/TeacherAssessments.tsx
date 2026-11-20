@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { assessments, users } from "@/db/schema";
+import { assessments, lessons, users } from "@/db/schema";
 import { ASSESS } from "@/lib/assessment-i18n";
 import type { Lang } from "@/lib/i18n";
 import { CEFR_LEVELS } from "@/lib/placement-questions";
@@ -12,9 +12,10 @@ export default async function TeacherAssessments({ teacherId, lang, timeZone, do
 }) {
   const a = ASSESS[lang];
   const rows = await db
-    .select({ row: assessments, studentName: users.name, studentAvatar: users.avatar })
+    .select({ row: assessments, lessonStatus: lessons.status, studentName: users.name, studentAvatar: users.avatar })
     .from(assessments)
     .innerJoin(users, eq(users.id, assessments.studentId))
+    .leftJoin(lessons, eq(lessons.id, assessments.lessonId))
     .where(and(eq(assessments.assignedTeacherId, teacherId), eq(assessments.status, "scheduled")))
     .orderBy(asc(assessments.scheduledAt));
 
@@ -34,7 +35,7 @@ export default async function TeacherAssessments({ teacherId, lang, timeZone, do
       {failed && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{a.errGeneric}</p>}
 
       <div className="mt-4 space-y-4">
-        {rows.map(({ row, studentName, studentAvatar }) => {
+        {rows.map(({ row, lessonStatus, studentName, studentAvatar }) => {
           const when = row.scheduledAt
             ? new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : "en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: timeZone || "UTC" }).format(row.scheduledAt)
             : "";
@@ -51,7 +52,7 @@ export default async function TeacherAssessments({ teacherId, lang, timeZone, do
                   </p>
                 </div>
               </div>
-              <form action={submitLiveEvaluation} className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr_auto] sm:items-end">
+              {lessonStatus !== "completed" ? <p className="mt-3 text-xs text-slate-500">{a.finishLiveFirst}</p> : <form action={submitLiveEvaluation} className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr_auto] sm:items-end">
                 <input type="hidden" name="assessmentId" value={row.id} />
                 <label className="block">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{a.evalSetLevel}</span>
@@ -66,7 +67,7 @@ export default async function TeacherAssessments({ teacherId, lang, timeZone, do
                 <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-teal-900">
                   {a.evalSubmit}<Icon name="arrow" width={14} height={14} />
                 </button>
-              </form>
+              </form>}
             </article>
           );
         })}

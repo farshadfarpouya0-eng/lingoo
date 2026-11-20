@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { ASSESS, type AssessmentCopy } from "@/lib/assessment-i18n";
-import { getLatestCompletedAssessment, getTeachersByIds, rankTeachers, type MatchReason } from "@/lib/placement";
+import { getLatestCompletedAssessment, getTeachersByIds, rankTeachers, shortlistIds, type MatchReason } from "@/lib/placement";
 import { CEFR_LEVELS, type CefrLevel } from "@/lib/placement-questions";
 import { teacherVideoSrc } from "@/lib/teacher-video-url";
 import { chooseTeacher } from "@/lib/assessment-actions";
@@ -48,11 +48,11 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
   if (!assessment || !assessment.level) redirect("/assessment");
   const studentLevel: CefrLevel = (CEFR_LEVELS as readonly string[]).includes(assessment.level)
     ? (assessment.level as CefrLevel) : "A1";
-  const ids = Array.isArray(assessment.recommendedIds) ? (assessment.recommendedIds as number[]) : [];
+  const ids = shortlistIds(assessment);
   const teachers = await getTeachersByIds(ids);
   const pricing = await getPricingConfig();
   const ranked = rankTeachers(
-    teachers.map(tr => ({ id: tr.id, rating: tr.rating, reviewsCount: tr.reviewsCount, levels: tr.levels, tags: tr.tags, speaks: tr.speaks })),
+    teachers,
     { level: studentLevel, goal: assessment.goal, audience: assessment.audience, nativeLang: user.nativeLang },
   );
   const reasonsById = new Map(ranked.map(r => [r.id, r.reasons]));
@@ -92,7 +92,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
           </div>
           <div className="flex flex-wrap gap-3">
             <Link href={`/teachers/${chosen.id}`} className="inline-flex items-center gap-2 rounded-full bg-teal-800 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-900">{a.bookFirst}<Icon name="arrow" width={15} height={15} /></Link>
-            <Link href={`/dashboard?tab=packages&teacher=${chosen.id}`} className="inline-flex items-center gap-2 rounded-full border border-teal-300 bg-white px-5 py-2.5 text-sm font-bold text-teal-800 transition hover:bg-teal-50">{a.buyPackage}</Link>
+            <Link href="/dashboard?tab=packages" className="inline-flex items-center gap-2 rounded-full border border-teal-300 bg-white px-5 py-2.5 text-sm font-bold text-teal-800 transition hover:bg-teal-50">{a.buyPackage}</Link>
           </div>
         </section>
       )}
@@ -100,6 +100,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
       <h2 className="mt-10 text-2xl font-bold tracking-tight text-teal-950">{a.matchesTitle}</h2>
       <p className="mt-1.5 text-sm text-slate-500">{a.matchesSub}</p>
 
+      {!teachers.length && <p role="status" className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">{a.noCurrentMatches}</p>}
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {teachers.map((tr, idx) => {
           const isChosen = assessment.selectedTeacherId === tr.id;
@@ -160,6 +161,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
                   </Link>
                 ) : (
                   <form action={chooseTeacher}>
+                    <input type="hidden" name="assessmentId" value={assessment.id} />
                     <input type="hidden" name="teacherId" value={tr.id} />
                     <button type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-teal-800 py-3 text-sm font-bold text-white transition hover:bg-teal-900">
                       {a.choose} {tr.name.split(" ")[0]}<Icon name="arrow" width={15} height={15} />

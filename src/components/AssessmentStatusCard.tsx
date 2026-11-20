@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ASSESS } from "@/lib/assessment-i18n";
 import type { Lang } from "@/lib/i18n";
-import { getLatestAssessment, getTeachersByIds } from "@/lib/placement";
+import { getLatestAssessment, getTeachersByIds, selectedPlacementTutor } from "@/lib/placement";
 import Icon from "./Icon";
 
 export default async function AssessmentStatusCard({ userId, lang, timeZone }: {
@@ -47,8 +47,9 @@ export default async function AssessmentStatusCard({ userId, lang, timeZone }: {
     );
   }
 
-  if (latest.status === "completed" && latest.selectedTeacherId) {
-    const [teacher] = await getTeachersByIds([latest.selectedTeacherId]);
+  const selected = selectedPlacementTutor(latest);
+  if (selected) {
+    const [teacher] = await getTeachersByIds([selected]);
     if (teacher) {
       return (
         <section className={shell}>

@@ -7,7 +7,10 @@ import { buyPackage } from "@/lib/learning-actions";
 import { money, PACKAGE_PLANS, quotePackage, type LessonDuration } from "@/lib/package-pricing";
 import type { LearningCopy } from "@/lib/learning-i18n";
 
-export type ShopTutor = { id: number; name: string; avatar: string | null; headline: string; price: number; price25: number | null; rating: number; speaks: string; tags: string; certified: boolean };
+type ShopTutor = { id: number; name: string; avatar: string | null; headline: string; price: number; price25: number };
+export type ShopAccess =
+  | { kind: "assigned"; tutor: ShopTutor }
+  | { kind: "assessment" | "waiting" | "results"; title: string; description: string; href: string; label: string };
 export type OwnedPackage = { id: number; teacherId: number; teacherName: string; avatar: string | null; duration: number; totalLessons: number; remainingLessons: number; unitPrice: number; discountPercent: number };
 type Checkout = { tutor: ShopTutor; duration: LessonDuration; count: number; purchaseKey: string };
 
@@ -24,21 +27,19 @@ function PurchaseDialog({ selection, balance, c, onClose }: { selection: Checkou
       {state?.packageId ? <div className="mt-6 space-y-4"><div className="grid h-14 w-14 place-items-center rounded-full bg-teal-50 text-teal-700"><Icon name="check" width={28} height={28} /></div><Link href={`/teachers/${selection.tutor.id}?package=${state.packageId}&duration=${selection.duration}`} className="flex items-center justify-center gap-2 rounded-xl bg-teal-800 px-5 py-3 font-bold text-white">{c.useCredit}<Icon name="arrow" /></Link><button onClick={onClose} className="w-full py-2 text-sm text-slate-500">{c.close}</button></div> : <>
         <div className="mt-5 flex items-center gap-3 rounded-2xl bg-slate-50 p-4"><img src={selection.tutor.avatar || ""} alt="" width={48} height={48} className="h-12 w-12 rounded-xl object-cover"/><div><b className="text-teal-950">{selection.tutor.name}</b><p className="text-sm text-slate-500">{q.count} {c.lessons} · {q.duration} {c.minutes}</p></div></div>
         <dl className="mt-6 space-y-3 text-sm"><div className="flex justify-between text-slate-500"><dt>{c.perLesson}</dt><dd>{money(q.unitPrice)}</dd></div><div className="flex justify-between text-teal-700"><dt>{c.save} ({q.discount}%)</dt><dd>−{money(q.savings)}</dd></div><div className="flex justify-between border-t border-slate-100 pt-3 text-lg font-bold text-teal-950"><dt>{c.total}</dt><dd>{money(q.totalPrice)}</dd></div><div className="flex justify-between text-slate-500"><dt>{c.wallet}</dt><dd>{money(balance)}</dd></div><div className="flex justify-between text-slate-500"><dt>{c.after}</dt><dd className={balance < q.totalPrice ? "text-red-600" : ""}>{money(balance - q.totalPrice)}</dd></div></dl>
-        {state?.error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{state.error === "balance" ? c.balanceError : state.error === "plan" ? c.planError : c.purchaseFail}</p>}
+        {state?.error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{state.error === "placement_required" ? c.placementChanged : state.error === "balance" ? c.balanceError : state.error === "plan" ? c.planError : c.purchaseFail}</p>}
         {balance < q.totalPrice ? <div className="mt-5"><p className="text-sm text-amber-800">{c.balanceError}</p><Link href="/dashboard?tab=wallet" className="mt-3 block rounded-xl bg-teal-800 py-3 text-center font-bold text-white">{c.topup}</Link></div> : <form action={action as unknown as (fd: FormData) => Promise<void>} className="mt-5"><input type="hidden" name="teacherId" value={selection.tutor.id}/><input type="hidden" name="duration" value={q.duration}/><input type="hidden" name="count" value={q.count}/><input type="hidden" name="expectedTotal" value={q.totalPrice}/><input type="hidden" name="purchaseKey" value={selection.purchaseKey}/><button disabled={pending} className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-800 py-3 font-bold text-white hover:bg-teal-900 disabled:opacity-50">{pending ? "…" : c.confirm}<Icon name="shield" width={17} height={17}/></button></form>}
         <p className="mt-4 text-xs leading-5 text-slate-400">{c.bound}</p>
       </>}
     </div>
   </dialog>;
 }
-export default function PackageShop({ tutors, owned, balance, c, initialTutorId, matchedOnly }: { tutors: ShopTutor[]; owned: OwnedPackage[]; balance: number; c: LearningCopy; initialTutorId?: number; matchedOnly?: boolean }) {
+export default function PackageShop({ access, owned, balance, c }: { access: ShopAccess; owned: OwnedPackage[]; balance: number; c: LearningCopy }) {
   const [view, setView] = useState<"browse" | "owned">("browse");
-  const [teacherId, setTeacherId] = useState(initialTutorId || tutors[0]?.id || 0);
   const [duration, setDuration] = useState<LessonDuration>(50);
   const [index, setIndex] = useState(2);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
-  const [profileTutor, setProfileTutor] = useState<ShopTutor | null>(null);
-  const tutor = tutors.find(t => t.id === teacherId) || tutors[0];
+  const tutor = access.kind === "assigned" ? access.tutor : null;
   const plan = PACKAGE_PLANS[duration][index];
   const q = tutor ? quotePackage(tutor.price, duration, plan.count, tutor.price25) : null;
   return <div className="space-y-7">
@@ -56,41 +57,22 @@ export default function PackageShop({ tutors, owned, balance, c, initialTutorId,
       <div className="mt-5 grid gap-4 sm:grid-cols-2">{owned.map(p => <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center gap-3"><img src={p.avatar || ""} alt="" width={44} height={44} className="h-11 w-11 rounded-xl object-cover"/><div className="min-w-0 flex-1"><h4 className="truncate font-bold text-teal-950">{p.teacherName}</h4><p className="mt-0.5 text-xs text-slate-400">{p.duration} {c.minutes} · {money(p.unitPrice)} {c.perLesson}</p></div><span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">{p.discountPercent}% {c.off}</span></div><div className="mt-6 flex items-baseline gap-1.5"><span className="text-3xl font-bold text-teal-900">{p.remainingLessons}</span><span className="text-xs text-slate-500">{c.of} {p.totalLessons} {c.lessons} {c.remaining}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{width:`${p.remainingLessons / p.totalLessons * 100}%`}}/></div><p className="mt-3 text-[11px] text-slate-400">{p.totalLessons - p.remainingLessons} {c.bookedUsed} · {c.lockedPrice}</p>{p.remainingLessons > 0 ? <Link href={`/teachers/${p.teacherId}?package=${p.id}&duration=${p.duration}`} className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-teal-700 py-2.5 text-sm font-bold text-teal-800 hover:bg-teal-50">{c.useCredit}<Icon name="arrow" width={16} height={16}/></Link> : <p className="mt-5 rounded-xl bg-slate-50 py-2.5 text-center text-sm text-slate-400">{c.exhausted}</p>}</article>)}</div>
       {!owned.length && <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="box" width={25} height={25}/></div><h4 className="mt-5 text-lg font-bold text-teal-950">{c.emptyTitle}</h4><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">{c.emptyText}</p><button onClick={() => setView("browse")} className="mt-6 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white">{c.browse}</button></div>}
       <p className="mt-5 text-xs leading-5 text-slate-500">{c.cancelPolicy}</p>
-    </section> : !tutor || !q ? (
-      matchedOnly ? (
-        <section className="rounded-3xl border border-dashed border-teal-200 bg-teal-50/40 p-10 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-teal-700"><Icon name="book" width={25} height={25}/></div>
-          <h4 className="mt-5 text-lg font-bold text-teal-950">Your matched teachers will appear here</h4>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-            Take the free level test first. We recommend a few teachers for your level and goal, and then you can
-            pick packages from the ones you like.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/assessment" className="rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white hover:bg-teal-900">Start free level test</Link>
-            <Link href="/assessment/results" className="rounded-xl border border-teal-300 bg-white px-6 py-3 text-sm font-bold text-teal-800 hover:bg-teal-50">View my matches</Link>
-          </div>
-        </section>
-      ) : <p className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-500">{c.noTutors}</p>
-    ) : <>
+    </section> : access.kind !== "assigned" ? (
+      <section data-testid="package-placement-gate" data-step={access.kind} className="rounded-3xl border border-teal-100 bg-white p-7 text-center sm:p-10">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name={access.kind === "waiting" ? "clock" : access.kind === "results" ? "video" : "book"}/></span>
+        <h3 className="mt-4 text-lg font-bold text-teal-950">{access.title}</h3>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">{access.description}</p>
+        <Link href={access.href} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-teal-800 px-5 text-sm font-bold text-white">{access.label}<Icon name="arrow" width={16} height={16}/></Link>
+      </section>
+    ) : tutor && q && <>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_290px]">
         <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">{c.chooseTutor}</p><h3 className="mt-1 text-lg font-bold text-teal-950">{matchedOnly ? "Your matched teachers" : "Choose your teacher"}</h3></div>
-              <span className="text-xs text-slate-400">{tutors.length} available</span>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {tutors.map(t => <article key={t.id} className={`rounded-2xl border p-4 transition ${t.id === tutor.id ? "border-teal-600 bg-teal-50/60 ring-1 ring-teal-600" : "border-slate-200 bg-white hover:border-teal-300"}`}>
-                <button type="button" onClick={() => { setTeacherId(t.id); setIndex(2); }} aria-pressed={t.id === tutor.id} className="flex w-full items-center gap-3 text-left">
-                  <img src={t.avatar || ""} alt={t.name} width={52} height={52} className="h-13 w-13 shrink-0 rounded-xl object-cover bg-slate-100"/>
-                  <span className="min-w-0 flex-1"><span className="block truncate font-bold text-teal-950">{t.name}</span><span className="mt-1 block text-xs text-amber-600">★ {t.rating.toFixed(1)}</span><span className="mt-1 block truncate text-xs text-slate-500">{t.speaks}</span></span>
-                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${t.id === tutor.id ? "border-teal-700 bg-teal-700 text-white" : "border-slate-300"}`}>{t.id === tutor.id ? "✓" : ""}</span>
-                </button>
-                <p className="mt-3 line-clamp-2 min-h-9 text-xs leading-5 text-slate-500">{t.headline}</p>
-                <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3"><span className="text-sm font-bold text-teal-900">{money(t.price)} <span className="text-[10px] font-normal text-slate-400">{c.perLesson}</span></span><button type="button" onClick={() => setProfileTutor(t)} className="rounded-lg px-3 py-2 text-xs font-bold text-teal-800 hover:bg-teal-100">View profile</button></div>
-              </article>)}
-            </div>
-          </div>
+          <header data-testid="package-confirmed-tutor" data-tutor-id={tutor.id} className="flex items-center gap-4 border-b border-slate-100 p-5 sm:p-6">
+            {tutor.avatar ? <img src={tutor.avatar} alt="" width={52} height={52} className="h-[52px] w-[52px] shrink-0 rounded-2xl object-cover"/>
+              : <span aria-hidden="true" className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-2xl bg-teal-50 text-lg font-bold text-teal-800">{tutor.name[0]}</span>}
+            <div className="min-w-0"><p className="text-xs font-semibold text-teal-700">{c.assignedTutor}</p><h3 className="mt-1 text-lg font-bold text-teal-950">{tutor.name}</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{c.assignedPlanHint}</p></div>
+          </header>
           <div className="px-5 pb-5 sm:px-6 sm:pb-6"><div className="my-5 flex items-center justify-between"><span className="text-xs font-semibold text-slate-500">{c.duration}</span><div className="inline-flex rounded-xl bg-slate-100 p-1">{([25,50] as const).map(d => <button key={d} onClick={() => {setDuration(d);setIndex(2);}} aria-pressed={duration === d} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${duration === d ? "bg-white text-teal-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>{d} {c.minutes}</button>)}</div></div>
             <div className="space-y-3">{PACKAGE_PLANS[duration].map((p,i) => { const row = quotePackage(tutor.price,duration,p.count,tutor.price25); return <button type="button" key={p.count} onClick={() => setIndex(i)} aria-pressed={index === i} className={`relative flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left transition ${index === i ? "border-teal-600 bg-teal-50/50 shadow-[0_0_0_1px_#0d9488]" : "border-slate-200 hover:border-teal-300"}`}><div className="flex items-start gap-3"><span className={`mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${index === i ? "border-teal-700 bg-teal-700" : "border-slate-300"}`}>{index === i && <span className="h-1.5 w-1.5 rounded-full bg-white"/>}</span><div><p className="text-xl font-semibold tracking-tight text-slate-800">{money(row.unitPrice)}{p.discount > 0 && <span className="ml-2 text-xs font-normal text-slate-400 line-through">{money(row.originalUnitPrice)}</span>}</p><p className="mt-1 text-xs text-slate-500">{p.count} {p.count === 1 ? c.lesson : c.lessons} · {duration} {c.minutes}</p></div></div><div className="flex items-center gap-2"><div className="text-right">{p.discount > 0 && <span className="inline-block rounded-md border border-teal-200 bg-white px-2 py-0.5 text-[11px] font-bold text-teal-700">{p.discount}% {c.off}</span>}<p className="mt-1 text-[10px] text-slate-400">{i===2 ? c.popular : i===3 ? c.value : i===1 ? c.starter : c.singleHint}</p></div><Icon name="chevron" width={16} height={16} className="text-slate-400"/></div></button>;})}</div>
             <p className="mt-4 text-[11px] leading-5 text-slate-400">{c.compareHint}</p>
@@ -100,14 +82,6 @@ export default function PackageShop({ tutors, owned, balance, c, initialTutorId,
       </div>
       <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-xs leading-6 text-slate-500"><Icon name="shield" className="mt-1 shrink-0 text-teal-700"/><div><p>{c.bound}</p><p>{c.cancelPolicy}</p></div></div>
     </>}
-    {profileTutor && <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/50 p-0 sm:items-center sm:p-5" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setProfileTutor(null); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="package-teacher-profile-title" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-t-[28px] bg-white p-6 shadow-2xl sm:rounded-[28px] sm:p-8">
-        <div className="flex items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-4"><img src={profileTutor.avatar || ""} alt={profileTutor.name} width={76} height={76} className="h-19 w-19 shrink-0 rounded-2xl bg-slate-100 object-cover"/><div className="min-w-0"><h2 id="package-teacher-profile-title" className="text-xl font-bold text-teal-950">{profileTutor.name}</h2><p className="mt-1 text-sm text-amber-600">★ {profileTutor.rating.toFixed(1)}</p><p className="mt-1 text-xs text-slate-500">{profileTutor.speaks}</p></div></div><button type="button" aria-label={c.close} onClick={() => setProfileTutor(null)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100"><Icon name="close"/></button></div>
-        <p className="mt-6 text-sm leading-6 text-slate-600">{profileTutor.headline}</p>
-        <div className="mt-5"><h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">Teaching specialties</h3><div className="mt-2 flex flex-wrap gap-2">{profileTutor.tags.split(",").map(x => x.trim()).filter(Boolean).map(x => <span key={x} className="rounded-full bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800">{x}</span>)}</div></div>
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><p className="text-lg font-bold text-teal-950">{money(profileTutor.price)} <span className="text-xs font-normal text-slate-500">{c.perLesson}</span></p><div className="flex gap-2"><a href={`/teachers/${profileTutor.id}`} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">Full profile</a><button type="button" onClick={() => { setTeacherId(profileTutor.id); setIndex(2); setProfileTutor(null); }} className="rounded-xl bg-teal-800 px-5 py-3 text-sm font-bold text-white hover:bg-teal-900">Select teacher</button></div></div>
-      </section>
-    </div>}
     {checkout && <PurchaseDialog key={checkout.purchaseKey} selection={checkout} balance={balance} c={c} onClose={() => setCheckout(null)}/>}
   </div>;
 }

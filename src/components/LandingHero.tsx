@@ -4,6 +4,7 @@ import type { LandingCopy } from "@/lib/landing-i18n";
 import { getLang } from "@/lib/i18n";
 import { getBranding } from "@/lib/branding";
 import HeroOrbit from "./HeroOrbit";
+import MobileHeroCarousel from "./MobileHeroCarousel";
 
 const CARDS = [
   { key: "daily", src: "/hero/daily-english.jpg", alt: "A learner in an online daily English lesson with her tutor", href: "/assessment?audience=adults&goal=Conversation", main: true },
@@ -24,6 +25,11 @@ export default async function LandingHero({ c }: { c: LandingCopy }) {
   const labels: Record<(typeof CARDS)[number]["key"], string> = {
     daily: c.cardDaily, kids: c.cardKids, business: c.cardBusiness, ielts: c.cardExam, travel: c.cardTravel,
   };
+  const descriptions: Record<(typeof CARDS)[number]["key"], string> = {
+    daily: c.courseDailyText, kids: c.courseKidsText, business: c.courseBusinessText,
+    ielts: c.courseExamText, travel: c.courseTravelText,
+  };
+  const cards = CARDS.map(card => ({ ...card, label: labels[card.key], description: descriptions[card.key] }));
 
   const benefits = [
     { icon: "messages", label: c.realTalk },
@@ -44,12 +50,14 @@ export default async function LandingHero({ c }: { c: LandingCopy }) {
 
       <div className="home-container hero-grid">
         <div className="hero-copy">
-          <p className="hero-badge"><span className="hero-badge-icon">★</span>{c.badge}</p>
-          <h1 id="hero-title">
-            {title.split("\n").map((line, i) => <span key={i}>{line}</span>)}
-            <span className="hero-accent">{accent}</span>
-          </h1>
-          <p className="hero-intro-text">{intro}</p>
+          <div className="hero-copy-main">
+            <p className="hero-badge"><span className="hero-badge-icon">★</span>{c.badge}</p>
+            <h1 id="hero-title">
+              {title.split("\n").map((line, i) => <span key={i}>{line}</span>)}
+              <span className="hero-accent">{accent}</span>
+            </h1>
+            <p className="hero-intro-text">{intro}</p>
+          </div>
 
           <ul className="hero-benefits" aria-label="Why Lingorain">
             {benefits.map(b => (
@@ -70,11 +78,8 @@ export default async function LandingHero({ c }: { c: LandingCopy }) {
           </div>
         </div>
 
-        <HeroOrbit
-          cards={CARDS.map(card => ({
-            key: card.key, src: card.src, alt: card.alt, href: card.href, main: card.main, label: labels[card.key],
-          }))}
-        />
+        <HeroOrbit cards={cards} />
+        <MobileHeroCarousel cards={cards} heading={c.coursesEyebrow} hint={c.swipe} previous={c.previous} next={c.next} />
       </div>
     </section>
   );

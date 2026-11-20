@@ -13,7 +13,7 @@ export async function buyPackage(_: PurchaseResult | null, fd: FormData): Promis
     const pack = await purchaseLessonPackage(u.id, { teacherId: Number(fd.get("teacherId")), duration: Number(fd.get("duration")), count: Number(fd.get("count")), purchaseKey: String(fd.get("purchaseKey") || ""), expectedTotal: Number(fd.get("expectedTotal")) });
     revalidatePath("/dashboard");
     return { packageId: pack.id };
-  } catch (e) { return { error: e instanceof Error && ["balance", "plan", "forbidden"].includes(e.message) ? e.message : "generic" }; }
+  } catch (e) { return { error: e instanceof Error && ["balance", "plan", "forbidden", "placement_required"].includes(e.message) ? e.message : "generic" }; }
 }
 export type RoomResult = { error?: string; ok?: boolean };
 export async function saveClassroom(_: RoomResult | null, fd: FormData): Promise<RoomResult> {
