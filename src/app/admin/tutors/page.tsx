@@ -39,7 +39,7 @@ export default async function AdminTutors({ searchParams }: { searchParams: Sear
     const [r] = await db.select({
       id: users.id, name: users.name, email: users.email, avatar: users.avatar, nativeLang: users.nativeLang, suspended: users.suspended, balance: users.balance,
       active: teacherProfiles.active, certified: teacherProfiles.certified, rating: teacherProfiles.rating, reviewsCount: teacherProfiles.reviewsCount,
-      lessonsCount: teacherProfiles.lessonsCount, price: teacherProfiles.price, startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour,
+      lessonsCount: teacherProfiles.lessonsCount, price: teacherProfiles.price, fee25: teacherProfiles.fee25, fee50: teacherProfiles.fee50, startHour: teacherProfiles.startHour, endHour: teacherProfiles.endHour,
       tzOffset: teacherProfiles.tzOffset, timeZone: teacherProfiles.timeZone, workDays: teacherProfiles.workDays, headline: teacherProfiles.headline, bio: teacherProfiles.bio,
       country: teacherProfiles.country, accent: teacherProfiles.accent, speaks: teacherProfiles.speaks, tags: teacherProfiles.tags,
       payoutMethod: teacherProfiles.payoutMethod, idStatus: idStatusSql,

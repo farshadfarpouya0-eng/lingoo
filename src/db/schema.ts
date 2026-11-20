@@ -28,9 +28,21 @@ export const teacherProfiles = pgTable("teacher_profiles", {
   userId: integer("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   headline: text("headline").notNull().default(""), bio: text("bio").notNull().default(""),
   country: text("country").notNull().default("US"), accent: text("accent").notNull().default("American"),
-  price: integer("price").notNull().default(2500), rating: real("rating").notNull().default(5),
+  price: integer("price").notNull().default(2500),
+  // Independent 25-minute lesson price (cents). Null = auto-price at 55% of the 50-minute price.
+  price25: integer("price_25"),
+  // Contracted pay per completed lesson (cents), set by the platform admin only.
+  // Null = platform default fee from the pricing settings. Tutors never set prices.
+  fee25: integer("fee_25"),
+  fee50: integer("fee_50"),
+  rating: real("rating").notNull().default(5),
   reviewsCount: integer("reviews_count").notNull().default(0), lessonsCount: integer("lessons_count").notNull().default(0),
   speaks: text("speaks").notNull().default("English"), tags: text("tags").notNull().default(""),
+  // CEFR levels this tutor teaches (comma separated, e.g. "A2,B1,B2") — used by the matching engine.
+  levels: text("levels").notNull().default(""),
+  // Short self-introduction video and a sample-teaching clip shown to matched students.
+  introVideoUrl: text("intro_video_url").notNull().default(""),
+  sampleVideoUrl: text("sample_video_url").notNull().default(""),
   certified: boolean("certified").notNull().default(false), credentialVerified: boolean("credential_verified").notNull().default(false), active: boolean("active").notNull().default(true),
   timeZone: text("time_zone").notNull().default("UTC"),
   startHour: integer("start_hour").notNull().default(9), endHour: integer("end_hour").notNull().default(21),
@@ -336,3 +348,29 @@ export const scheduledJobRuns = pgTable("scheduled_job_runs", {
   startedAt: timestamp("started_at").defaultNow().notNull(), finishedAt: timestamp("finished_at"), durationMs: integer("duration_ms"),
   summary: jsonb("summary").notNull().default(sql`'{}'::jsonb`), error: text("error").notNull().default(""),
 }, t => [index("scheduled_job_name_started_idx").on(t.job, t.startedAt), index("scheduled_job_status_started_idx").on(t.status, t.startedAt)]);
+
+// Placement assessment: students no longer browse all tutors. They take a written test
+// (instant) or a free live speaking assessment with a randomly assigned tutor, then the
+// platform recommends a short list of matched teachers to choose from.
+export const assessments = pgTable("assessments", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  method: text("method").notNull().default("written"), // written | live
+  status: text("status").notNull().default("pending"), // pending | scheduled | completed
+  goal: text("goal").notNull().default(""),
+  audience: text("audience").notNull().default("adults"), // adults | kids
+  score: integer("score"),
+  level: text("level"), // A1 | A2 | B1 | B2 | C1
+  answers: jsonb("answers"),
+  assignedTeacherId: integer("assigned_teacher_id").references(() => users.id),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: "date" }),
+  lessonId: integer("lesson_id").references(() => lessons.id),
+  recommendedIds: jsonb("recommended_ids"), // number[] — matched teacher user ids, best first
+  selectedTeacherId: integer("selected_teacher_id").references(() => users.id),
+  teacherNotes: text("teacher_notes").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, t => [
+  index("assessments_student_idx").on(t.studentId, t.createdAt),
+  index("assessments_teacher_idx").on(t.assignedTeacherId, t.status),
+]);

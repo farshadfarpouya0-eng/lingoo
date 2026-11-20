@@ -13,12 +13,12 @@ type GroupSlot = { id: number; iso: string; duration: number; participantCount: 
 export type BookingCredit = { id: number; duration: number; remainingLessons: number; unitPrice: number };
 type Props = {
   teacherId: number; studentTimeZone?: string | null; serverNowMs: number; lang: Lang;
-  slots50: string[]; slots25: string[]; groupSlots: GroupSlot[]; price: number;
+  slots50: string[]; slots25: string[]; groupSlots: GroupSlot[]; price: number; price25?: number | null;
   trialEligible: boolean; balance: number; t: Record<string, string>; c: LearningCopy;
   credits: BookingCredit[]; initialPackageId?: number; initialDuration?: LessonDuration;
 };
 
-export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, lang, slots50, slots25, groupSlots, price, trialEligible, balance, t, c, credits, initialPackageId, initialDuration }: Props) {
+export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, lang, slots50, slots25, groupSlots, price, price25, trialEligible, balance, t, c, credits, initialPackageId, initialDuration }: Props) {
   const initialPack = credits.find(pack => pack.id === initialPackageId);
   const [duration, setDuration] = useState<LessonDuration>(initialPack?.duration === 25 ? 25 : initialPack?.duration === 50 ? 50 : initialDuration || 50);
   const [packageId, setPackageId] = useState(initialPack?.id || 0);
@@ -41,7 +41,7 @@ export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, 
   const slot = selectedDay ? selected : "";
   const pack = classType === "private" && !trial ? credits.find(p => p.id === packageId && p.duration === duration && p.remainingLessons > 0) : undefined;
   const groupSlot = classType === "semi_private" ? groupSlots.find(s => s.iso === slot && s.duration === actualDuration) : undefined;
-  const amount = trial ? Math.round(unitLessonPrice(price, 25) / 2) : classType === "semi_private" ? Math.round(unitLessonPrice(price, duration) * .75) : pack?.unitPrice ?? unitLessonPrice(price, duration);
+  const amount = trial ? Math.round(unitLessonPrice(price, 25, price25) / 2) : classType === "semi_private" ? Math.round(unitLessonPrice(price, duration, price25) * .75) : pack?.unitPrice ?? unitLessonPrice(price, duration, price25);
   const insufficient = !pack && balance < amount;
   const resetSelection = () => { setSelected(""); setDayKey(""); setError(""); };
   const input = "w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-50";
@@ -60,7 +60,7 @@ export default function BookingPanel({ teacherId, studentTimeZone, serverNowMs, 
       </button>)}
     </div>
     <fieldset><legend className="mb-2 text-xs font-semibold text-slate-600">{copy.duration}</legend><div className="grid grid-cols-2 gap-2">{([25, 50] as const).map(value => <button type="button" key={value} aria-pressed={!trial && duration === value} onClick={() => { setDuration(value); setTrial(false); setPackageId(0); resetSelection(); }} className={`rounded-xl border py-2.5 text-sm font-bold ${!trial && duration === value ? "border-teal-700 bg-teal-50 text-teal-900" : "border-slate-200 text-slate-500"}`}>{value} {copy.minutes}</button>)}</div></fieldset>
-    {trialEligible && classType === "private" && <button type="button" aria-pressed={trial} onClick={() => { setTrial(!trial); setPackageId(0); resetSelection(); }} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left text-[11px] font-semibold ${trial ? "border-amber-400 bg-amber-50 text-amber-900" : "border-slate-200 text-slate-600"}`}><span>{copy.trial}</span><b>{money(Math.round(unitLessonPrice(price, 25) / 2))}</b></button>}
+    {trialEligible && classType === "private" && <button type="button" aria-pressed={trial} onClick={() => { setTrial(!trial); setPackageId(0); resetSelection(); }} className={`flex w-full items-center justify-between gap-2 rounded-xl border p-3 text-left text-[11px] font-semibold ${trial ? "border-amber-400 bg-amber-50 text-amber-900" : "border-slate-200 text-slate-600"}`}><span>{copy.trial}</span><b>{money(Math.round(unitLessonPrice(price, 25, price25) / 2))}</b></button>}
     {classType === "private" && !trial && credits.some(p => p.duration === duration && p.remainingLessons > 0) && <label className="block text-xs font-semibold text-slate-600">{c.useExisting}<select value={packageId} onChange={e => setPackageId(Number(e.target.value))} className={`${input} mt-2`}><option value={0}>{c.payWallet}</option>{credits.filter(p => p.duration === duration && p.remainingLessons > 0).map(p => <option key={p.id} value={p.id}>#{p.id} · {p.remainingLessons} {c.available}</option>)}</select></label>}
 
     <section className="min-w-0 space-y-3" aria-label={copy.select}>

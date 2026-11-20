@@ -16,6 +16,9 @@ import ReportParticipantForm from "@/components/ReportParticipantForm";
 import { reportLessonIssue } from "@/lib/feature-actions";
 import { canAccessLesson, activeLessonStudentIds } from "@/lib/lesson-access";
 import Icon from "@/components/Icon";
+import CompleteLessonButton from "@/components/CompleteLessonButton";
+import { getTeacherFee } from "@/lib/pricing-config";
+import { money } from "@/lib/package-pricing";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Classroom", robots: { index: false, follow: false } };
@@ -31,6 +34,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
   const c = LEARNING[lang];
   const isTutor = user.role === "admin" ? l.topic.startsWith("[TEST]") : user.id === l.teacherId;
   const [other] = await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, isTutor ? l.studentId : l.teacherId));
+  const endFee = isTutor ? await getTeacherFee(l.teacherId, l.duration) : 0;
   const groupStudentIds = l.classType === "semi_private" ? await activeLessonStudentIds(l.id, l.studentId, l.classType) : [l.studentId];
   const groupStudents = groupStudentIds.length ? await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(inArray(users.id, groupStudentIds)) : [];
   const reportTargets = (isTutor ? groupStudents : [{ id: other?.id || l.teacherId, name: other?.name || "Teacher", avatar: other?.avatar || "" }, ...groupStudents]).filter((person, index, all) => person.id !== user.id && all.findIndex(p => p.id === person.id) === index).map(p => ({ id: p.id, name: p.name }));
@@ -113,7 +117,21 @@ export default async function Classroom({ params, searchParams }: { params: Prom
             <p className="mt-1 text-xs font-semibold text-teal-700">Session {sessionNumber}{sessionTotal ? ` of ${sessionTotal}` : ""}</p>
           </div>
         </div>
-        <Link href="/dashboard?tab=lessons" className="text-sm font-semibold text-teal-700">← {t.dashboard}</Link>
+        <div className="flex flex-wrap items-center gap-3">
+          {isTutor && l.status === "completed" && (
+            <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">
+              ✓ Lesson ended{l.classType === "private" ? ` · ${money(endFee)} paid to your wallet` : ""}
+            </span>
+          )}
+          {isTutor && l.status === "confirmed" && Date.now() >= l.startAt.getTime() && (
+            <CompleteLessonButton
+              id={l.id}
+              label={`End lesson${l.classType === "private" ? ` · get ${money(endFee)}` : ""}`}
+              earnLabel={l.classType === "private" ? money(endFee) : undefined}
+            />
+          )}
+          <Link href="/dashboard?tab=lessons" className="text-sm font-semibold text-teal-700">← {t.dashboard}</Link>
+        </div>
       </div>
 
       <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">

@@ -3,6 +3,7 @@ import { accountingEntries, lessonPackages, lessonParticipants, lessons, referra
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { qualifyStudentReferral } from "./referral-service";
 import { parseTeacherBonusPolicy, TEACHER_BONUS_SETTING } from "./teacher-bonus-policy";
+import { parsePricingConfig, PRICING_KEY } from "./pricing-config";
 
 export const COMMISSION = 0.15;
 export const MIN_PAYOUT = 2000;
@@ -48,37 +49,45 @@ export async function ledgerOnce(tx: Tx, userId: number, type: string, amount: n
   return true;
 }
 
-async function teacherPayoutBreakdown(tx: Tx, teacherId: number, gross: number) {
-  const base = teacherShare(gross);
+/** Contracted pay for one completed lesson: the tutor's own admin-set fee wins over the platform default. */
+export async function teacherFeeFor(tx: Tx, teacherId: number, duration: number): Promise<number> {
+  const [cfgRow] = await tx.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, PRICING_KEY)).limit(1);
+  const cfg = parsePricingConfig(cfgRow?.value);
+  const [profile] = await tx.select({ fee25: teacherProfiles.fee25, fee50: teacherProfiles.fee50 })
+    .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);
+  const fee = duration === 25 ? (profile?.fee25 ?? cfg.fee25) : (profile?.fee50 ?? cfg.fee50);
+  return Math.max(0, Math.round(fee));
+}
+
+async function teacherBonusFor(tx: Tx, teacherId: number, gross: number, base: number) {
   const [policyRow] = await tx.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, TEACHER_BONUS_SETTING)).limit(1);
   const policy = parseTeacherBonusPolicy(policyRow?.value);
-  if (!policy.enabled || policy.percent <= 0) return { base, bonus: 0, percent: 0 };
+  if (!policy.enabled || policy.percent <= 0) return { bonus: 0, percent: 0 };
   const [profile] = await tx.select({ rating: teacherProfiles.rating, reviewsCount: teacherProfiles.reviewsCount })
     .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);
-  if (!profile || Number(profile.rating) < policy.minRating || profile.reviewsCount < policy.minReviews) return { base, bonus: 0, percent: 0 };
+  if (!profile || Number(profile.rating) < policy.minRating || profile.reviewsCount < policy.minReviews) return { bonus: 0, percent: 0 };
   const maxBonus = Math.max(0, gross - base - Math.ceil(gross * 0.05));
   const bonus = Math.min(maxBonus, Math.round(gross * policy.percent / 100));
-  return { base, bonus, percent: policy.percent };
+  return { bonus, percent: policy.percent };
 }
 
 /**
- * Earning journal (balanced):
- *   wallet:tutor        credit  base
- *   platform_clearing   debit   base
- *   platform_revenue    credit  commission   (gross - base, the full 15%)
- *   platform_clearing   debit   commission
- * Clearing is released by exactly the gross that was escrowed at booking.
+ * Earning journal (balanced). The tutor's pay is a fixed contract fee, not a
+ * percentage: wallet is credited the fee, platform_revenue keeps the rest of
+ * what the student paid, and if the fee ever exceeds the collected amount the
+ * platform tops it up from marketing so the contract is always honoured.
  */
 function earningEntries(transactionId: number, teacherId: number, gross: number, base: number): Entry[] {
   // The database intentionally allows one row per (transaction, account). The
   // clearing account therefore receives one aggregated debit for the full gross,
   // not separate base/commission rows that violate its unique constraint.
+  if (gross < 0 || base < 0) throw new Error("Invalid teacher earning breakdown.");
   const commission = gross - base;
-  if (gross <= 0 || base < 0 || commission < 0) throw new Error("Invalid teacher earning breakdown.");
   const out: Entry[] = [];
   if (base > 0) out.push({ transactionId, userId: teacherId, accountCode: `wallet:${teacherId}`, side: "credit", amount: base });
   if (commission > 0) out.push({ transactionId, userId: teacherId, accountCode: "platform_revenue", side: "credit", amount: commission });
   if (gross > 0) out.push({ transactionId, userId: teacherId, accountCode: "platform_clearing", side: "debit", amount: gross });
+  if (commission < 0) out.push({ transactionId, userId: teacherId, accountCode: "platform_marketing", side: "debit", amount: -commission });
   return out;
 }
 
@@ -95,48 +104,49 @@ function bonusEntries(transactionId: number, teacherId: number, bonus: number): 
   ];
 }
 
-async function bookEarning(tx: Tx, opts: { teacherId: number; gross: number; lessonId: number; ref: string; bonusRef: string; note: string }) {
-  const { teacherId, gross, lessonId, ref, bonusRef, note } = opts;
-  const breakdown = await teacherPayoutBreakdown(tx, teacherId, gross);
+async function bookEarning(tx: Tx, opts: { teacherId: number; gross: number; base: number; lessonId: number; ref: string; bonusRef: string; note: string }) {
+  const { teacherId, gross, base, lessonId, ref, bonusRef, note } = opts;
+  const bonusInfo = await teacherBonusFor(tx, teacherId, gross, base);
   const [row] = await tx.insert(transactions)
-    .values({ userId: teacherId, type: "earning", amount: breakdown.base, note, lessonId, ref })
+    .values({ userId: teacherId, type: "earning", amount: base, note, lessonId, ref })
     .onConflictDoNothing({ target: transactions.ref })
     .returning({ id: transactions.id });
   // Claim the unique reference before changing balances. Concurrent completion
   // workers now become a harmless no-op instead of racing on the wallet update.
   if (!row) return false;
 
-  const total = breakdown.base;
-  if (total > 0) await tx.update(users).set({ balance: sql`${users.balance} + ${total}` }).where(eq(users.id, teacherId));
-  const entries = earningEntries(row.id, teacherId, gross, breakdown.base);
+  if (base > 0) await tx.update(users).set({ balance: sql`${users.balance} + ${base}` }).where(eq(users.id, teacherId));
+  const entries = earningEntries(row.id, teacherId, gross, base);
   if (entries.length) await tx.insert(accountingEntries).values(entries);
 
-  if (breakdown.bonus > 0) {
+  if (bonusInfo.bonus > 0) {
     const [bonusRow] = await tx.insert(transactions).values({
-      userId: teacherId, type: "performance_bonus", amount: breakdown.bonus,
-      note: `Performance bonus (${breakdown.percent}% · rating/review threshold met) · ${note}`,
+      userId: teacherId, type: "performance_bonus", amount: bonusInfo.bonus,
+      note: `Performance bonus (${bonusInfo.percent}% · rating/review threshold met) · ${note}`,
       lessonId, ref: bonusRef,
     }).onConflictDoNothing({ target: transactions.ref }).returning({ id: transactions.id });
     if (bonusRow) {
-      await tx.update(users).set({ balance: sql`${users.balance} + ${breakdown.bonus}` }).where(eq(users.id, teacherId));
-      await tx.insert(accountingEntries).values(bonusEntries(bonusRow.id, teacherId, breakdown.bonus));
+      await tx.update(users).set({ balance: sql`${users.balance} + ${bonusInfo.bonus}` }).where(eq(users.id, teacherId));
+      await tx.insert(accountingEntries).values(bonusEntries(bonusRow.id, teacherId, bonusInfo.bonus));
     }
   }
   return true;
 }
 
-export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, price: number, note: string) {
+export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, price: number, note: string, duration = 50) {
   const ref = `earning:${lessonId}`;
-  const booked = await bookEarning(tx, { teacherId, gross: price, lessonId, ref, bonusRef: `bonus:${lessonId}`, note });
+  const fee = await teacherFeeFor(tx, teacherId, duration);
+  const booked = await bookEarning(tx, { teacherId, gross: price, base: fee, lessonId, ref, bonusRef: `bonus:${lessonId}`, note });
   if (!booked) return false;
   await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` }).where(eq(teacherProfiles.userId, teacherId));
   return true;
 }
 
-/** Pay one semi-private seat exactly once; separate refs allow multiple students per lesson. */
-export async function payGroupSeat(tx: Tx, lessonId: number, teacherId: number, studentId: number, paidAmount: number, note: string) {
+/** Pay one semi-private seat exactly once (half the contract fee per attended seat). */
+export async function payGroupSeat(tx: Tx, lessonId: number, teacherId: number, studentId: number, paidAmount: number, note: string, duration = 50) {
   const ref = `group-earning:${lessonId}:${studentId}`;
-  return bookEarning(tx, { teacherId, gross: paidAmount, lessonId, ref, bonusRef: `group-bonus:${lessonId}:${studentId}`, note });
+  const fee = Math.round((await teacherFeeFor(tx, teacherId, duration)) / 2);
+  return bookEarning(tx, { teacherId, gross: paidAmount, base: fee, lessonId, ref, bonusRef: `group-bonus:${lessonId}:${studentId}`, note });
 }
 
 export async function refundGroupSeat(tx: Tx, lessonId: number, studentId: number, amount: number, note: string) {
@@ -243,14 +253,14 @@ export async function settleLessons(arg?: number | { force?: boolean }) {
             .where(and(eq(lessonParticipants.lessonId, l.id), inArray(lessonParticipants.status, ["booked", "attended"])))
             .for("update");
           for (const seat of seats) {
-            await payGroupSeat(tx, l.id, l.teacherId, seat.studentId, seat.paidAmount, `Semi-private lesson #${l.id} seat settled automatically`);
+            await payGroupSeat(tx, l.id, l.teacherId, seat.studentId, seat.paidAmount, `Semi-private lesson #${l.id} seat settled automatically`, l.duration);
             await tx.update(lessonParticipants).set({ status: "attended" }).where(eq(lessonParticipants.id, seat.id));
             if (seat.paidAmount > 0) await qualifyStudentReferral(tx, seat.studentId);
           }
           await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
             .where(eq(teacherProfiles.userId, l.teacherId));
         } else {
-          await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed (24h safety net)");
+          await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed (24h safety net)", l.duration);
           if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
         }
       });

@@ -22,12 +22,12 @@ export type Branding = {
 export const DEFAULT_BRANDING: Branding = {
   brandName: "Lingorain",
   logoUrl: "",
-  heroTitle: { en: "Find an English tutor", zh: "找到你的英语老师", ja: "あなたに合う英語講師を" },
-  heroAccent: { en: "for every chapter.", zh: "每个阶段，都能进步。", ja: "どの学びのステージにも。" },
+  heroTitle: { en: "Your Language.\nYour World.", zh: "你的语言。\n你的世界。", ja: "あなたの言葉。\nあなたの世界。" },
+  heroAccent: { en: "Your Way.", zh: "你的方式。", ja: "あなたのやり方で。" },
   intro: {
-    en: "A new opportunity for you. A world of possibilities for your child. Personal lessons, at your pace.",
-    zh: "为你开启新机会，为孩子打开新世界。专属课程，按自己的节奏学习。",
-    ja: "あなたの新しいチャンス、お子さまの未来の可能性。それぞれのペースで学べます。",
+    en: "Learn a language for the life you want to live.",
+    zh: "为你想要的生活，学一门语言。",
+    ja: "望む人生のために、言葉を学ぼう。",
   },
   footerNote: {
     en: "One-to-one learning, for you and your family.",

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { accountingEntries, lessonPackages, lessonParticipants, lessons, referralLessonCredits, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "@/db/schema";
 import { FREE_CANCEL_HOURS, ledger, payGroupSeat, payTeacher, refundGroupSeat, refundStudent } from "./money";
 import { slotIsBookable } from "./time";
-import { unitLessonPrice } from "./package-pricing";
+import { getPricingConfig } from "./pricing-config";
 import { qualifyStudentReferral } from "./referral-service";
 import { isAccountSuspended } from "./account-status";
 
@@ -76,7 +76,9 @@ export async function reserveLesson(studentId: number, input: BookingInput) {
       if (previous || input.packageId) throw new Error("trial");
     }
 
-    let price = Math.round(unitLessonPrice(tutor.p.price, duration as 25 | 50) * (classType === "semi_private" ? 0.75 : 1));
+    // Student prices are set by the platform admin (never by tutors).
+    const pricing = await getPricingConfig();
+    let price = Math.round((duration === 25 ? pricing.student25 : pricing.student50) * (classType === "semi_private" ? 0.75 : 1));
     if (input.trial) price = Math.round(price / 2);
 
     /* ── semi-private seat ───────────────────────────────── */
@@ -225,7 +227,7 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
         if (!seat) throw new Error("forbidden");
         const free = l.status === "pending" || l.startAt.getTime() - now >= FREE_CANCEL_HOURS * 3600_000;
         if (free) await refundGroupSeat(tx, l.id, actorId, seat.paidAmount, "Semi-private seat cancelled");
-        else await payGroupSeat(tx, l.id, l.teacherId, actorId, seat.paidAmount, "Late semi-private seat cancellation");
+        else await payGroupSeat(tx, l.id, l.teacherId, actorId, seat.paidAmount, "Late semi-private seat cancellation", l.duration);
 
         await tx.update(lessonParticipants)
           .set({ status: free ? "refunded" : "cancelled", cancelledAt: new Date() })
@@ -239,7 +241,7 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
       await tx.update(lessons).set({ status: "cancelled" }).where(eq(lessons.id, l.id));
       const free = isTeacher || l.status === "pending" || l.startAt.getTime() - now >= FREE_CANCEL_HOURS * 3600_000;
       if (free) await refundStudent(tx, l.id, l.studentId, l.price, "Lesson cancelled", l.packageId ?? undefined, l.rewardCreditId ?? undefined);
-      else await payTeacher(tx, l.id, l.teacherId, l.price, "Late student cancellation");
+      else await payTeacher(tx, l.id, l.teacherId, l.price, "Late student cancellation", l.duration);
       return true;
     }
 
@@ -257,7 +259,9 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
       return true;
     }
 
-    if (action === "complete" && l.status === "confirmed" && l.startAt.getTime() + l.duration * 60_000 <= now) {
+    // The tutor ends the lesson from the classroom: once it has started they may
+    // finish it at any point, and payTeacher credits their wallet in the same transaction.
+    if (action === "complete" && l.status === "confirmed" && l.startAt.getTime() <= now) {
       await tx.update(lessons)
         .set({ status: "completed", teacherNotes: notes.trim().slice(0, 1000) })
         .where(eq(lessons.id, l.id));
@@ -267,7 +271,7 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
           eq(lessonParticipants.lessonId, l.id), inArray(lessonParticipants.status, [...activeSeatStatuses]),
         )).for("update");
         for (const s of seats) {
-          await payGroupSeat(tx, l.id, l.teacherId, s.studentId, s.paidAmount, `Semi-private lesson #${l.id} completed`);
+          await payGroupSeat(tx, l.id, l.teacherId, s.studentId, s.paidAmount, `Semi-private lesson #${l.id} completed`, l.duration);
           await tx.update(lessonParticipants).set({ status: "attended" }).where(eq(lessonParticipants.id, s.id));
           if (s.paidAmount > 0) await qualifyStudentReferral(tx, s.studentId);
         }
@@ -275,7 +279,7 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
           .set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
           .where(eq(teacherProfiles.userId, l.teacherId));
       } else {
-        await payTeacher(tx, l.id, l.teacherId, l.price, `Lesson #${l.id} completed`);
+        await payTeacher(tx, l.id, l.teacherId, l.price, `Lesson #${l.id} completed`, l.duration);
         if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
       }
       return true;

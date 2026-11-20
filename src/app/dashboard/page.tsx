@@ -24,6 +24,11 @@ import PresencePrivacySetting from "@/components/PresencePrivacySetting";
 import TeacherProfileProgress from "@/components/TeacherProfileProgress";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
 import TeacherClassTest from "@/components/TeacherClassTest";
+import AssessmentStatusCard from "@/components/AssessmentStatusCard";
+import TeacherAssessments from "@/components/TeacherAssessments";
+import { getPricingConfig } from "@/lib/pricing-config";
+import TeacherVideoUpload from "@/components/TeacherVideoUpload";
+import { teacherVideoSrc } from "@/lib/teacher-video-url";
 import { referralProgress } from "@/lib/referral-service";
 
 async function ReferralDashboardBlock({ userId, code }: { userId: number; code: string | null }) {
@@ -159,6 +164,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     return packages.map(x => ({ ...x, completed: Number(countByPackage.get(x.pack.id)?.completed || 0), booked: Number(countByPackage.get(x.pack.id)?.booked || 0) }));
   })() : [];
 
+  const pricingCfg = isTutor && tab === "profile" ? await getPricingConfig() : null;
+
   const nav: { key: string; label: string; icon: IconName; href?: string }[] = [
     { key: "overview", label: t.overview, icon: "chart" },
     ...(!isTutor ? [{ key: "packages", label: c.packages, icon: "box" as IconName }] : []),
@@ -191,7 +198,30 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         {isTutor && (
           <>
             <div id="profile-photo" className="scroll-mt-28"><ProfileAvatarUploadForm avatar={user.avatar} /></div>
-            <div id="profile-form" className="scroll-mt-28"><ProfileForm user={user} tutor={safeTutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} /></div>
+            <div id="profile-form" className="scroll-mt-28"><ProfileForm user={user} tutor={safeTutor} t={t} c={c} lang={lang} saved={sp.ok === "saved"} contractFees={pricingCfg && tutor ? { fee25: tutor.fee25 ?? pricingCfg.fee25, fee50: tutor.fee50 ?? pricingCfg.fee50 } : undefined} /></div>
+            <section id="videos" className="scroll-mt-28 rounded-[24px] border border-slate-200 bg-white p-5 sm:p-6">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-teal-950">Intro &amp; sample videos</h2>
+                <p className="mt-1 max-w-2xl text-xs leading-6 text-slate-500">
+                  After a student takes the placement test, we recommend a short list of tutors. Each recommended student
+                  watches your introduction and sample lesson before choosing you. Keep both short, clear and well lit.
+                </p>
+              </div>
+              <div className="grid gap-5 lg:grid-cols-2">
+                <TeacherVideoUpload
+                  kind="intro"
+                  title="Introduction video"
+                  hint="Say hello, your background, teaching style and who you help best. About 1–2 minutes is ideal."
+                  previewSrc={teacherVideoSrc(user.id, "intro", tutor?.introVideoUrl)}
+                />
+                <TeacherVideoUpload
+                  kind="sample"
+                  title="Sample lesson video"
+                  hint="A short clip of you teaching: a warm-up, one explanation and a speaking task. 2–5 minutes."
+                  previewSrc={teacherVideoSrc(user.id, "sample", tutor?.sampleVideoUrl)}
+                />
+              </div>
+            </section>
             <TeacherProfileProgress items={teacherProfileItems} credentialVerified={Boolean(tutor?.credentialVerified)} />
             <section id="documents" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5">
               <div className="mb-3"><h2 className="text-lg font-bold text-teal-950">Identity and optional credentials</h2><p className="mt-1 text-sm text-slate-500">Identity verification is required. University certificates and teaching credentials are optional and can add a public trust badge after review.</p></div>
@@ -229,6 +259,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </div>
           ))}
         </div>
+
+        {isTutor
+          ? <TeacherAssessments teacherId={user.id} lang={lang} timeZone={user.timeZone} done={sp.ok === "evaluated"} failed={sp.err === "evaluation"} />
+          : <AssessmentStatusCard userId={user.id} lang={lang} timeZone={user.timeZone} />}
 
         {!isTutor && (
           <Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6">

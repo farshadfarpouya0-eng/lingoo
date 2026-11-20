@@ -101,7 +101,7 @@ export async function bookLesson(fd: FormData) {
   const u = await getUser();
   if (!u) redirect("/login");
   const teacherId = Number(fd.get("teacherId"));
-  if (u.role !== "student" || !Number.isInteger(teacherId)) redirect("/teachers");
+  if (u.role !== "student" || !Number.isInteger(teacherId)) redirect("/assessment");
   if (!await hit(`book:${u.id}`, 30, 3600_000)) redirect(`/teachers/${teacherId}?err=rate`);
   let error = "";
   try {
@@ -261,16 +261,17 @@ export async function updateProfile(fd: FormData) {
     const start = Math.min(23, Math.max(0, hour("startHour", existingProfile?.startHour ?? 9)));
     const end = Math.min(24, Math.max(start + 1, hour("endHour", existingProfile?.endHour ?? 18)));
     const days = fd.getAll("workDays").map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6);
+    const teachLevels = fd.getAll("levels").map(String).filter(l => ["A1", "A2", "B1", "B2", "C1"].includes(l));
     await db.update(teacherProfiles).set({
       headline: str(fd, "headline", 140), bio: str(fd, "bio", 2000),
       country: ["US", "GB", "CA", "AU", "IE", "NZ", "ZA", "CN", "JP"].includes(str(fd, "country", 2)) ? str(fd, "country", 2) : "US",
       accent: str(fd, "accent", 40), speaks: str(fd, "speaks", 80) || "English", tags: str(fd, "tags", 120),
-      price: Math.min(50000, Math.max(500, Math.round(Number(fd.get("price") || 25) * 100))),
       startHour: start, endHour: end,
       tzOffset: existingProfile?.tzOffset ?? 0,
       timeZone: isValidTimeZone(str(fd, "teacherTimeZone", 64)) ? str(fd, "teacherTimeZone", 64) : (existingProfile?.timeZone || u.timeZone || "UTC"),
       workDays: days.length ? days.join(",") : "1,2,3,4,5",
       platformDefault: ["lingo", "meet", "zoom"].includes(str(fd, "platformDefault", 10)) ? str(fd, "platformDefault", 10) : "lingo",
+      levels: teachLevels.join(","),
     }).where(eq(teacherProfiles.userId, u.id));
     updateTag(PUBLIC_TUTORS_TAG);
   }

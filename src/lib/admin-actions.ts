@@ -11,6 +11,8 @@ import { PUBLIC_TUTORS_TAG } from "./public-tutors";
 import { validMeetingLink, validZoomHostUrl } from "./meeting-links";
 import { encryptIntegrationSecret } from "./integration-config";
 import { refundStudent, refundGroupSeat, ledger } from "./money";
+import { siteSettings } from "@/db/schema";
+import { PRICING_KEY } from "./pricing-config";
 import {
   saveContentAndSettings, resetContent as resetContentFn,
   type HomeContent, type Settings, type Lang,
@@ -141,7 +143,10 @@ export async function updateTeacher(_p: unknown, fd: FormData): Promise<{ ok: bo
         accent: str(fd, "accent", 40),
         speaks: str(fd, "speaks", 120) || "English",
         tags: str(fd, "tags", 200),
-        price: Math.max(0, Math.min(50000, Math.round(Number(fd.get("price") || 25) * 100))),
+        // Student prices are platform-wide (Admin → Settings). Here the admin only
+        // sets this tutor's contracted pay per completed lesson; empty = platform default.
+        fee25: (() => { const v = str(fd, "fee25", 10); if (!v) return null; const c = Math.round(Number(v) * 100); return Number.isFinite(c) && c >= 0 && c <= 50000 ? c : null; })(),
+        fee50: (() => { const v = str(fd, "fee50", 10); if (!v) return null; const c = Math.round(Number(v) * 100); return Number.isFinite(c) && c >= 0 && c <= 50000 ? c : null; })(),
         rating: Number.isFinite(rating) ? Math.min(5, Math.max(0, rating)) : 5,
         reviewsCount: intIn(fd.get("reviewsCount"), 0, 1_000_000, 0),
         lessonsCount: intIn(fd.get("lessonsCount"), 0, 1_000_000, 0),
@@ -413,5 +418,25 @@ export async function resolveLessonReport(fd: FormData) {
     .where(eq(lessonReports.id, id)).returning({ id: lessonReports.id });
   if (!row) return { ok: false, error: "not_found" };
   revalidatePath("/admin/reports");
+  return { ok: true };
+}
+
+/** Platform-wide student prices + default tutor contract fees (Admin → Settings). */
+export async function savePricingConfig(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  const dollars = (k: string) => {
+    const c = Math.round(Number(fd.get(k) || 0) * 100);
+    return Number.isFinite(c) && c >= 0 && c <= 100_000 ? c : 0;
+  };
+  const cfg = {
+    student25: dollars("student25"), student50: dollars("student50"),
+    fee25: dollars("fee25"), fee50: dollars("fee50"),
+  };
+  if (cfg.student25 < 100 || cfg.student50 < 100) return { ok: false, error: "price" };
+  await db.insert(siteSettings).values({ key: PRICING_KEY, value: cfg })
+    .onConflictDoUpdate({ target: siteSettings.key, set: { value: cfg, updatedAt: new Date() } });
+  revalidatePath("/admin/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/");
   return { ok: true };
 }

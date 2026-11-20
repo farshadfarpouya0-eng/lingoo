@@ -23,9 +23,9 @@ export async function markLessonComplete(prev: R, formData: FormData): Promise<R
   if (l.teacherId !== me.id && me.role !== "admin") return { ok: false, error: "forbidden" };
   if (["completed", "cancelled"].includes(l.status)) return { ok: false, error: "already" };
 
-  /* must be over — the scheduled end has passed (admins can force-end) */
-  const endsAt = l.startAt.getTime() + l.duration * 60_000;
-  if (Date.now() < endsAt && me.role !== "admin") return { ok: false, error: "too_early" };
+  /* The lesson must have started; the tutor may then end it at any point and
+     payTeacher credits their wallet inside the same transaction (admins can force-end). */
+  if (Date.now() < l.startAt.getTime() && me.role !== "admin") return { ok: false, error: "too_early" };
 
   await db.transaction(async tx => {
     const r = await tx.update(lessons).set({ status: "completed" })
@@ -40,7 +40,7 @@ export async function markLessonComplete(prev: R, formData: FormData): Promise<R
 
       for (const seat of seats) {
         await payGroupSeat(tx, l.id, l.teacherId, seat.studentId, seat.paidAmount,
-          `Semi-private lesson #${l.id} completed by tutor`);
+          `Semi-private lesson #${l.id} completed by tutor`, l.duration);
         await tx.update(lessonParticipants)
           .set({ status: "attended" })
           .where(eq(lessonParticipants.id, seat.id));
@@ -51,7 +51,7 @@ export async function markLessonComplete(prev: R, formData: FormData): Promise<R
         .set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
         .where(eq(teacherProfiles.userId, l.teacherId));
     } else {
-      await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson completed by tutor");
+      await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson completed by tutor", l.duration);
       if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
     }
   });

@@ -3,7 +3,7 @@ import { users, teacherProfiles, teacherWeeklySlots, reviews, lessons, payouts, 
 import { hashPassword } from "./auth";
 import { demoDataEnabled } from "./runtime-policy";
 import { ensurePreviewDatabase } from "../db/preview-bootstrap";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { ledger } from "./money";
 
 // name, country, accent, price(¢), headline, speaks, tags, rating, lessons, certified, photo, tzOffset, startHour, endHour
@@ -25,13 +25,44 @@ const REV = [
   ["Great materials and clear feedback.", 4],
 ] as const;
 
+// Matching data for the placement flow: CEFR levels each demo tutor teaches plus
+// placeholder intro / sample-lesson clips (replace with real teacher videos in production).
+const V = "https://storage.googleapis.com/gtv-videos-bucket/sample";
+const MATCH_DATA: Record<string, { levels: string; intro: string; sample: string }> = {
+  "teacher@demo.com": { levels: "A2,B1,B2,C1", intro: `${V}/ForBiggerFun.mp4`, sample: `${V}/Sintel.mp4` },
+  "james@demo.com": { levels: "B1,B2,C1", intro: `${V}/ForBiggerJoyrides.mp4`, sample: `${V}/TearsOfSteel.mp4` },
+  "sophie@demo.com": { levels: "A1,A2,B1", intro: `${V}/ForBiggerBlazes.mp4`, sample: `${V}/BigBuckBunny.mp4` },
+  "daniel@demo.com": { levels: "A1,A2,B1", intro: `${V}/ForBiggerEscapes.mp4`, sample: `${V}/ElephantsDream.mp4` },
+  "olivia@demo.com": { levels: "B1,B2,C1", intro: `${V}/ForBiggerMeltdowns.mp4`, sample: `${V}/Sintel.mp4` },
+  "ryan@demo.com": { levels: "A2,B1,B2", intro: `${V}/SubaruOutbackOnStreetAndDirt.mp4`, sample: `${V}/TearsOfSteel.mp4` },
+  "hannah@demo.com": { levels: "A2,B1,B2", intro: `${V}/ForBiggerFun.mp4`, sample: `${V}/ElephantsDream.mp4` },
+  "michael@demo.com": { levels: "B2,C1", intro: `${V}/ForBiggerJoyrides.mp4`, sample: `${V}/Sintel.mp4` },
+};
+
+let enriched = false;
+/** Fills levels + videos for demo tutors that predate the matching feature. Idempotent. */
+async function enrichTeacherProfiles() {
+  if (enriched) return;
+  enriched = true;
+  await db.execute(sql`update teacher_profiles set fee_25 = 600, fee_50 = 1000 where fee_25 is null and fee_50 is null`);
+  const rows = await db.select({ id: users.id, email: users.email }).from(users).where(eq(users.role, "teacher"));
+  for (const r of rows) {
+    const d = MATCH_DATA[r.email];
+    if (!d) continue;
+    await db.update(teacherProfiles)
+      .set({ levels: d.levels, introVideoUrl: d.intro, sampleVideoUrl: d.sample })
+      .where(and(eq(teacherProfiles.userId, r.id), eq(teacherProfiles.levels, "")));
+  }
+}
+
 let seeded = false;
 let seeding: Promise<void> | undefined;
 export async function ensureSeed() {
   await ensurePreviewDatabase();
-  if (seeded || !demoDataEnabled()) return;
-  if (seeding) return seeding;
-  seeding = db.transaction(async (tx) => {
+  if (!demoDataEnabled()) return;
+  if (!seeded) {
+    if (!seeding) {
+      seeding = db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(918273)`);
     const [{ c }] = await tx.select({ c: sql<number>`count(*)::int` }).from(users);
     if (c > 0) return;
@@ -54,6 +85,8 @@ export async function ensureSeed() {
       const workDays = i % 3 === 2 ? "1,2,3,4,5" : "0,1,2,3,4,5,6";
       await tx.insert(teacherProfiles).values({
         userId: u.id, country, accent, price, headline, speaks, tags, rating, lessonsCount, certified, tzOffset, startHour, endHour,
+        levels: MATCH_DATA[email]?.levels ?? "", introVideoUrl: MATCH_DATA[email]?.intro ?? "", sampleVideoUrl: MATCH_DATA[email]?.sample ?? "",
+        fee25: 600, fee50: email === "olivia@demo.com" ? 1200 : 1000,
         reviewsCount: Math.round(lessonsCount / 6),
         workDays,
         bio: `Hi! I'm ${name.split(" ")[0]}, a ${accent} English teacher. ${headline}.\n\nMy lessons are tailored to Chinese and Japanese learners: I know the common pronunciation and grammar challenges you face, and I'll help you overcome them with practical, fun conversation. Let's reach your goals together!`,
@@ -94,6 +127,9 @@ export async function ensureSeed() {
       { fromId: stu.id, toId: emily, body: "Hi Emily! Can we focus on IELTS speaking next lesson?" },
       { fromId: emily, toId: stu.id, body: "Of course! 你好 Li Wei — I'll prepare Part 2 topics for you. 😊" },
     ]);
-  }).then(() => { seeded = true; }).finally(() => { seeding = undefined; });
-  await seeding;
+      }).then(() => { seeded = true; }).finally(() => { seeding = undefined; });
+    }
+    await seeding;
+  }
+  await enrichTeacherProfiles();
 }

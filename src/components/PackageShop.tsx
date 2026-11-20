@@ -7,7 +7,7 @@ import { buyPackage } from "@/lib/learning-actions";
 import { money, PACKAGE_PLANS, quotePackage, type LessonDuration } from "@/lib/package-pricing";
 import type { LearningCopy } from "@/lib/learning-i18n";
 
-export type ShopTutor = { id: number; name: string; avatar: string | null; headline: string; price: number; rating: number; speaks: string; tags: string; certified: boolean };
+export type ShopTutor = { id: number; name: string; avatar: string | null; headline: string; price: number; price25: number | null; rating: number; speaks: string; tags: string; certified: boolean };
 export type OwnedPackage = { id: number; teacherId: number; teacherName: string; avatar: string | null; duration: number; totalLessons: number; remainingLessons: number; unitPrice: number; discountPercent: number };
 type Checkout = { tutor: ShopTutor; duration: LessonDuration; count: number; purchaseKey: string };
 
@@ -15,7 +15,7 @@ function PurchaseDialog({ selection, balance, c, onClose }: { selection: Checkou
   const dialog = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const [state, action, pending] = useActionState(buyPackage, null);
-  const q = quotePackage(selection.tutor.price, selection.duration, selection.count);
+  const q = quotePackage(selection.tutor.price, selection.duration, selection.count, selection.tutor.price25);
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => { if (state?.packageId) router.refresh(); }, [state?.packageId, router]);
   return <dialog ref={dialog} onClose={onClose} onClick={e => { if (e.target === e.currentTarget) onClose(); }} className="fixed m-auto w-[calc(100%_-_2rem)] max-w-md rounded-[28px] border border-slate-200 bg-white p-0 text-slate-800 shadow-2xl backdrop:bg-slate-950/45">
@@ -40,7 +40,7 @@ export default function PackageShop({ tutors, owned, balance, c, initialTutorId 
   const [profileTutor, setProfileTutor] = useState<ShopTutor | null>(null);
   const tutor = tutors.find(t => t.id === teacherId) || tutors[0];
   const plan = PACKAGE_PLANS[duration][index];
-  const q = tutor ? quotePackage(tutor.price, duration, plan.count) : null;
+  const q = tutor ? quotePackage(tutor.price, duration, plan.count, tutor.price25) : null;
   return <div className="space-y-7">
     <section className="relative overflow-hidden rounded-[26px] bg-[#123e39] px-7 py-8 text-white sm:px-9 sm:py-9">
       <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-80 w-80 rounded-full border-[40px] border-white/[0.035]"/><div aria-hidden="true" className="pointer-events-none absolute bottom-0 right-12 h-44 w-44 rounded-full border border-white/10"/>
@@ -77,7 +77,7 @@ export default function PackageShop({ tutors, owned, balance, c, initialTutorId 
             </div>
           </div>
           <div className="px-5 pb-5 sm:px-6 sm:pb-6"><div className="my-5 flex items-center justify-between"><span className="text-xs font-semibold text-slate-500">{c.duration}</span><div className="inline-flex rounded-xl bg-slate-100 p-1">{([25,50] as const).map(d => <button key={d} onClick={() => {setDuration(d);setIndex(2);}} aria-pressed={duration === d} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${duration === d ? "bg-white text-teal-800 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}>{d} {c.minutes}</button>)}</div></div>
-            <div className="space-y-3">{PACKAGE_PLANS[duration].map((p,i) => { const row = quotePackage(tutor.price,duration,p.count); return <button type="button" key={p.count} onClick={() => setIndex(i)} aria-pressed={index === i} className={`relative flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left transition ${index === i ? "border-teal-600 bg-teal-50/50 shadow-[0_0_0_1px_#0d9488]" : "border-slate-200 hover:border-teal-300"}`}><div className="flex items-start gap-3"><span className={`mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${index === i ? "border-teal-700 bg-teal-700" : "border-slate-300"}`}>{index === i && <span className="h-1.5 w-1.5 rounded-full bg-white"/>}</span><div><p className="text-xl font-semibold tracking-tight text-slate-800">{money(row.unitPrice)}{p.discount > 0 && <span className="ml-2 text-xs font-normal text-slate-400 line-through">{money(row.originalUnitPrice)}</span>}</p><p className="mt-1 text-xs text-slate-500">{p.count} {p.count === 1 ? c.lesson : c.lessons} · {duration} {c.minutes}</p></div></div><div className="flex items-center gap-2"><div className="text-right">{p.discount > 0 && <span className="inline-block rounded-md border border-teal-200 bg-white px-2 py-0.5 text-[11px] font-bold text-teal-700">{p.discount}% {c.off}</span>}<p className="mt-1 text-[10px] text-slate-400">{i===2 ? c.popular : i===3 ? c.value : i===1 ? c.starter : c.singleHint}</p></div><Icon name="chevron" width={16} height={16} className="text-slate-400"/></div></button>;})}</div>
+            <div className="space-y-3">{PACKAGE_PLANS[duration].map((p,i) => { const row = quotePackage(tutor.price,duration,p.count,tutor.price25); return <button type="button" key={p.count} onClick={() => setIndex(i)} aria-pressed={index === i} className={`relative flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left transition ${index === i ? "border-teal-600 bg-teal-50/50 shadow-[0_0_0_1px_#0d9488]" : "border-slate-200 hover:border-teal-300"}`}><div className="flex items-start gap-3"><span className={`mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full border ${index === i ? "border-teal-700 bg-teal-700" : "border-slate-300"}`}>{index === i && <span className="h-1.5 w-1.5 rounded-full bg-white"/>}</span><div><p className="text-xl font-semibold tracking-tight text-slate-800">{money(row.unitPrice)}{p.discount > 0 && <span className="ml-2 text-xs font-normal text-slate-400 line-through">{money(row.originalUnitPrice)}</span>}</p><p className="mt-1 text-xs text-slate-500">{p.count} {p.count === 1 ? c.lesson : c.lessons} · {duration} {c.minutes}</p></div></div><div className="flex items-center gap-2"><div className="text-right">{p.discount > 0 && <span className="inline-block rounded-md border border-teal-200 bg-white px-2 py-0.5 text-[11px] font-bold text-teal-700">{p.discount}% {c.off}</span>}<p className="mt-1 text-[10px] text-slate-400">{i===2 ? c.popular : i===3 ? c.value : i===1 ? c.starter : c.singleHint}</p></div><Icon name="chevron" width={16} height={16} className="text-slate-400"/></div></button>;})}</div>
             <p className="mt-4 text-[11px] leading-5 text-slate-400">{c.compareHint}</p>
           </div>
         </section>

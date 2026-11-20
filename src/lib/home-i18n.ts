@@ -75,11 +75,11 @@ const zh: Home = {
     { name: "Piki", activity: "拼词挑战", text: "动手拼出英语单词，在挑战中巩固词汇。", image: characterFiles.piki, alt: "Piki 正在用字母拼块练习英语单词" },
   ],
   tutorsTitle: "备受欢迎的英语老师", tutorsSub: "查看老师的真实资料、课程主题与学生评价。",
-  howTitle: "三步开始英语学习", howSub: "从挑选老师到进入教室，每一步都简单清晰。",
+  howTitle: "三步开始英语学习", howSub: "从水平测试到进入教室，每一步都简单清晰。",
   steps: [
-    { title: "选择老师", text: "按目标、价格、口音和语言浏览老师资料与评价。" },
-    { title: "预约时间", text: "选择合适的课程时段，时间自动换算成你的时区。" },
-    { title: "在线上课", text: "直接通过浏览器进入一对一视频教室。" },
+    { title: "做免费水平测试", text: "5分钟书面测试，或与老师进行一次免费口语测评。" },
+    { title: "查看推荐老师", text: "我们按你的水平和目标精选老师，看介绍视频和试听课后选择一位。" },
+    { title: "预约并在线上课", text: "按你的时区选择时间，直接通过浏览器进入一对一视频教室。" },
   ],
   promiseTitle: "安心学习，每一步都有保障", promiseSub: "我们希望你把精力放在学习上，其余的交给清晰的规则。",
   promises: [
@@ -152,11 +152,11 @@ const ja: Home = {
     { name: "Piki", activity: "単語パズル", text: "文字ブロックで英単語を作って、語彙を定着させます。", image: characterFiles.piki, alt: "文字ブロックで単語を作るPiki" },
   ],
   tutorsTitle: "人気の英語講師", tutorsSub: "プロフィール、レッスン内容、受講者レビューを確認できます。",
-  howTitle: "3ステップで英語レッスンを開始", howSub: "講師選びからオンライン教室まで、簡単に予約できます。",
+  howTitle: "3ステップで英語レッスンを開始", howSub: "レベルテストからオンライン教室まで、簡単に予約できます。",
   steps: [
-    { title: "講師を選ぶ", text: "目標・料金・アクセント・対応言語で講師を検索。" },
-    { title: "時間を予約", text: "空き時間から選択。表示はあなたのタイムゾーンに合わせます。" },
-    { title: "オンラインで受講", text: "ブラウザからマンツーマンのビデオ教室に参加。" },
+    { title: "無料レベルテスト", text: "5分の筆記テスト、または講師との無料スピーキングチェック。" },
+    { title: "おすすめ講師と出会う", text: "レベルと目標に合わせて厳選。紹介動画とサンプルレッスンを見て選択。" },
+    { title: "予約してオンライン受講", text: "あなたのタイムゾーンで時間を選び、ブラウザからマンツーマン教室に参加。" },
   ],
   promiseTitle: "安心して学べる仕組み", promiseSub: "学習に集中できるよう、わかりやすいルールを用意しています。",
   promises: [
@@ -229,11 +229,11 @@ const en: Home = {
     { name: "Piki", activity: "Word puzzle", text: "Build English words one letter at a time with hands-on play.", image: characterFiles.piki, alt: "Piki solving a vocabulary puzzle with letter tiles" },
   ],
   tutorsTitle: "Tutors learners love", tutorsSub: "Explore tutor profiles, lesson topics, schedules and student feedback.",
-  howTitle: "Your next lesson is three steps away", howSub: "A clear, simple path from finding a tutor to joining class.",
+  howTitle: "Your next lesson is three steps away", howSub: "A clear, simple path from level test to joining class.",
   steps: [
-    { title: "Choose a tutor", text: "Browse tutors by goal, price, accent and languages spoken." },
-    { title: "Pick a time", text: "Choose an available slot shown in your local timezone." },
-    { title: "Learn online", text: "Join your one-to-one video classroom right in your browser." },
+    { title: "Take the free level test", text: "A 5-minute written test — or a free live speaking check with a real teacher." },
+    { title: "Meet your matched teachers", text: "We hand-pick a few teachers for your level and goal. Watch their intro and sample lessons, then choose." },
+    { title: "Book & learn online", text: "Pick a time in your timezone and join your one-to-one video classroom." },
   ],
   promiseTitle: "Learn with peace of mind", promiseSub: "We keep the rules clear so you can focus on learning.",
   promises: [

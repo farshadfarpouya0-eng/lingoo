@@ -2,6 +2,7 @@ import { and, eq, lte, or } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonPackages, teacherProfiles, users } from "@/db/schema";
 import { quotePackage } from "./package-pricing";
+import { getPricingConfig } from "./pricing-config";
 import { isAccountSuspended } from "./account-status";
 import { ledger } from "./money";
 
@@ -17,11 +18,12 @@ export async function purchaseLessonPackage(studentId: number, input: PackagePur
       if (previous.studentId !== studentId) throw new Error("forbidden");
       return previous;
     }
-    const [tutor] = await tx.select({ price: teacherProfiles.price }).from(teacherProfiles)
+    const [tutor] = await tx.select({ id: teacherProfiles.userId }).from(teacherProfiles)
       .innerJoin(users, eq(users.id, teacherProfiles.userId))
       .where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, input.teacherId), eq(teacherProfiles.active, true), or(eq(users.suspended, false), and(eq(users.suspended, true), lte(users.suspendedUntil, new Date())))));
     if (!tutor) throw new Error("plan");
-    const q = quotePackage(tutor.price, input.duration, input.count);
+    const pricing = await getPricingConfig();
+    const q = quotePackage(pricing.student50, input.duration, input.count, pricing.student25);
     if (q.count === 1 || (input.expectedTotal !== undefined && input.expectedTotal !== q.totalPrice)) throw new Error("plan");
     if (student.balance < q.totalPrice) throw new Error("balance");
     await tx.update(users).set({ balance: student.balance - q.totalPrice }).where(eq(users.id, studentId));

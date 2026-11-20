@@ -2,11 +2,11 @@ import Link from "next/link";
 import { getT } from "@/lib/i18n";
 import { HOME } from "@/lib/home-i18n";
 import { LANDING } from "@/lib/landing-i18n";
-import { CATALOG_NOTICES } from "@/lib/catalog-recovery";
-import { getHomeCatalog } from "@/lib/home-catalog";
+import { ASSESS } from "@/lib/assessment-i18n";
 import LandingHero from "@/components/LandingHero";
+import ScrollReveal from "@/components/ScrollReveal";
+import KidsCarousel from "@/components/KidsCarousel";
 import SnapRail from "@/components/SnapRail";
-import TeacherCard from "@/components/TeacherCard";
 import Icon, { type IconName } from "@/components/Icon";
 import { HOME_ASSETS } from "@/lib/home-assets";
 
@@ -17,12 +17,11 @@ const kidColors = ["#c9867e", "#b85e47", "#8b74a9", "#629074", "#c48297", "#b888
 
 export default async function Home() {
   const { t, lang } = await getT();
-  const h = HOME[lang], c = LANDING[lang];
-  const catalog = await getHomeCatalog();
-  const featured = catalog.items;
+  const h = HOME[lang], c = LANDING[lang], a = ASSESS[lang];
 
   return (
     <div className="lingorain-home">
+      <ScrollReveal />
       <style>{`
         .home-trust-strip{background:#f5f7f2;padding:4px 0 26px;}
         .home-trust-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;padding:16px 0 0;list-style:none;border-top:1px solid #e4ebe6;}
@@ -30,8 +29,6 @@ export default async function Home() {
         .home-trust-stats b{display:block;font-size:28px;letter-spacing:-1.2px;font-weight:750;color:#143e37;line-height:1;}
         .home-trust-stats span{display:block;margin-top:8px;font-size:12px;line-height:1.45;color:#7d8d82;}
         .home-trust-line{margin:12px 0 0;text-align:center;font-size:12px;letter-spacing:.2px;color:#8a9a8e;}
-        .home-detail-rows .home-detail-row:nth-child(2) .home-detail-image img{filter:brightness(1.28) saturate(.7) contrast(.9);}
-        .home-detail-rows .home-detail-row:nth-child(2) .home-detail-image::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,247,238,.22),rgba(20,62,55,.16));}
         @media(max-width:640px){
           .home-trust-stats{grid-template-columns:1fr 1fr;}
           .home-trust-stats b{font-size:22px;}
@@ -55,36 +52,80 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="home-search-section" aria-labelledby="lesson-search-title">
-        <div className="home-container">
-          <div className="home-search-box">
-            <div className="home-search-heading">
-              <Icon name="settings" width={21} height={21} />
-              <div>
-                <h2 id="lesson-search-title">{c.searchTitle}</h2>
-                <p>{c.searchSub}</p>
-              </div>
+      <div className="home-marquee" aria-hidden="true">
+        <div className="home-marquee-track">
+          {[0, 1].map(dup => (
+            <div key={dup} className="home-marquee-group">
+              {["IELTS", "TOEFL", "TOEIC", "Business English", "Kids English", "Conversation", "Pronunciation", "Job Interview", "Travel", "Grammar", "Writing"].map(w => <span key={w}>{w}</span>)}
             </div>
-            <form action="/teachers" className="home-search-form">
-              <label>
-                <span>{c.audience}</span>
-                <select name="audience" defaultValue="">
-                  <option value="">{c.allAges}</option>
-                  <option value="adults">{c.adultsOption}</option>
-                  <option value="kids">{c.kidsOption}</option>
-                </select>
-              </label>
-              <label>
-                <span>{c.goal}</span>
-                <select name="tag" defaultValue="">
-                  <option value="">{h.searchGoal}</option>
-                  {h.goals.map(g => <option key={g.tag} value={g.tag}>{g.title}</option>)}
-                </select>
-              </label>
-              <button type="submit">
-                {c.search}<Icon name="arrow" width={18} height={18} />
-              </button>
-            </form>
+          ))}
+        </div>
+      </div>
+
+      <section className="home-match-section" aria-labelledby="lesson-search-title">
+        <div className="home-container">
+          <div className="home-match-shell">
+            <div className="match-intro">
+              <p className="home-eyebrow"><span className="eyebrow-dot" />{a.nav}</p>
+              <h2 id="lesson-search-title">{a.heroTitle}</h2>
+              <p className="match-sub">{a.heroText}</p>
+              <ol className="match-steps">
+                <li><b>01</b><span>{a.step1}</span></li>
+                <li><b>02</b><span>{a.step2}</span></li>
+                <li><b>03</b><span>{a.step3}</span></li>
+              </ol>
+            </div>
+            <div className="match-modes">
+              <Link href="/assessment/test" className="match-mode-card match-mode-written">
+                <div className="match-mode-top">
+                  <span className="match-mode-icon"><Icon name="book" width={22} height={22} /></span>
+                  <span className="match-mode-badge">{a.writtenMeta}</span>
+                </div>
+                <h3>{a.writtenTitle}</h3>
+                <p>{a.writtenText}</p>
+                <span className="match-mode-cta">{a.startWritten}<Icon name="arrow" width={16} height={16} /></span>
+              </Link>
+              <Link href="/assessment/live" className="match-mode-card match-mode-live">
+                <div className="match-mode-top">
+                  <span className="match-mode-icon"><Icon name="video" width={22} height={22} /></span>
+                  <span className="match-mode-badge">{a.liveMeta}</span>
+                </div>
+                <h3>{a.liveTitle}</h3>
+                <p>{a.liveText}</p>
+                <span className="match-mode-cta">{a.bookLive}<Icon name="arrow" width={16} height={16} /></span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="home-courses-section home-section" aria-labelledby="courses-title">
+        <div className="home-container">
+          <div className="home-section-heading">
+            <div>
+              <p className="home-eyebrow">{c.coursesEyebrow}</p>
+              <h2 id="courses-title">{c.coursesTitle}</h2>
+            </div>
+            <p className="section-heading-description">{c.coursesSub}</p>
+          </div>
+          <div className="home-course-grid">
+            {[
+              { key: "daily", img: "/hero/daily-english.jpg", label: c.cardDaily, text: c.courseDailyText, href: "/assessment?audience=adults&goal=Conversation" },
+              { key: "kids", img: "/hero/kids.jpg", label: c.cardKids, text: c.courseKidsText, href: "/assessment?audience=kids&goal=Kids" },
+              { key: "business", img: "/hero/business-english.jpg", label: c.cardBusiness, text: c.courseBusinessText, href: "/assessment?goal=Business" },
+              { key: "ielts", img: "/hero/ielts-exam.jpg", label: c.cardExam, text: c.courseExamText, href: "/assessment?goal=IELTS" },
+              { key: "travel", img: "/hero/travel-migration.jpg", label: c.cardTravel, text: c.courseTravelText, href: "/assessment?goal=Travel" },
+            ].map(course => (
+              <Link key={course.key} href={course.href} className={`home-course-card course-${course.key}`}>
+                <img src={course.img} alt="" loading="lazy" decoding="async" />
+                <span className="home-course-shade" aria-hidden="true" />
+                <span className="home-course-body">
+                  <b>{course.label}</b>
+                  <span>{course.text}</span>
+                </span>
+                <span className="home-course-arrow" aria-hidden="true"><Icon name="arrow" width={15} height={15} /></span>
+              </Link>
+            ))}
           </div>
         </div>
       </section>
@@ -97,24 +138,16 @@ export default async function Home() {
               <h2 id="kids-learning-title">{c.kidsShort}</h2>
               <p>{c.kidsHint}</p>
             </div>
-            <Link href="/teachers?audience=kids&tag=Kids" className="home-text-link">
+            <Link href="/assessment?audience=kids&goal=Kids" className="home-text-link">
               {c.kidsCta}<Icon name="arrow" width={17} height={17} />
             </Link>
           </div>
-          <SnapRail kind="kids" label={c.kidsShort} previous={c.previous} next={c.next} hint={c.swipe}>
-            {h.characters.map((character, i) => (
-              <article key={character.name} className="learning-friend" style={{ "--friend-color": kidColors[i] } as React.CSSProperties}>
-                <div className="learning-friend-image">
-                  <img src={character.image} alt={character.alt} width={520} height={650} loading="lazy" decoding="async" />
-                </div>
-                <div className="learning-friend-body">
-                  <p className="friend-activity">{character.activity}</p>
-                  <h3>{character.name}</h3>
-                  <p>{character.text}</p>
-                </div>
-              </article>
-            ))}
-          </SnapRail>
+          <KidsCarousel
+            items={h.characters.map((character, i) => ({ ...character, color: kidColors[i] }))}
+            previousLabel={c.previous}
+            nextLabel={c.next}
+            hint={c.swipe}
+          />
           <p className="kids-section-note">{h.kidsSub}</p>
         </div>
       </section>
@@ -132,7 +165,7 @@ export default async function Home() {
             {h.goals.map((g, i) => (
               <Link
                 key={g.tag}
-                href={g.tag === "Kids" ? "/teachers?audience=kids&tag=Kids" : `/teachers?audience=adults&tag=${encodeURIComponent(g.tag)}`}
+                href={g.tag === "Kids" ? "/assessment?audience=kids&goal=Kids" : `/assessment?goal=${encodeURIComponent(g.tag)}`}
                 className="home-goal-card"
               >
                 <span className="goal-card-icon"><Icon name={goalIcons[i] || "book"} width={22} height={22} /></span>
@@ -147,28 +180,6 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="home-tutors-section home-section" id="featured-tutors" aria-labelledby="featured-tutors-title">
-        <div className="home-container">
-          <div className="home-section-heading">
-            <div>
-              <p className="home-eyebrow">{c.tutorsEyebrow}</p>
-              <h2 id="featured-tutors-title">{h.tutorsTitle}</h2>
-              <p>{h.tutorsSub}</p>
-            </div>
-            <Link href="/teachers" className="home-outline-button">
-              {t.viewAll}<Icon name="arrow" width={17} height={17} />
-            </Link>
-          </div>
-          {catalog.unavailable
-            ? <p role="status" className="catalog-notice">{CATALOG_NOTICES[lang]}</p>
-            : (
-              <SnapRail kind="tutors" label={h.tutorsTitle} previous={c.previous} next={c.next} hint={c.swipe}>
-                {featured.map(f => <TeacherCard key={f.id} tr={f} t={t} />)}
-              </SnapRail>
-            )}
-        </div>
-      </section>
-
       <section className="home-details-section home-section" aria-labelledby="lesson-details-title">
         <div className="home-container">
           <div className="home-centered-heading">
@@ -180,16 +191,21 @@ export default async function Home() {
             {h.details.map((d, i) => (
               <article className={`home-detail-row ${i % 2 ? "detail-row-reverse" : ""}`} key={d.title}>
                 <div className="home-detail-image">
-                  <img src={d.image} alt={d.alt} width={1000} height={760} loading="lazy" decoding="async" />
+                  <img src={d.image} alt={d.alt} width={1000} height={800} loading="lazy" decoding="async" />
+                  <span className="detail-image-shade" aria-hidden="true" />
                   <span className="detail-image-label">
-                    <Icon name={i === 0 ? "user" : i === 1 ? "calendar" : "chart"} width={19} height={19} />{d.kicker}
+                    <Icon name={i === 0 ? "user" : i === 1 ? "calendar" : "chart"} width={15} height={15} />{d.kicker}
+                  </span>
+                  <span className="detail-image-stat">
+                    <b>{d.stat}</b>
+                    <span>{d.statLabel}</span>
                   </span>
                 </div>
                 <div className="home-detail-content">
-                  <p className="home-eyebrow">{String(i + 1).padStart(2, "0")} / {d.kicker}</p>
+                  <span className="detail-index" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                   <h3>{d.title}</h3>
                   <p>{d.text}</p>
-                  <ul>{d.bullets.map(b => <li key={b}><Icon name="check" width={17} height={17} />{b}</li>)}</ul>
+                  <ul>{d.bullets.map(b => <li key={b}><Icon name="check" width={14} height={14} />{b}</li>)}</ul>
                 </div>
               </article>
             ))}
@@ -260,34 +276,6 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="home-comparison-section home-section" aria-labelledby="compare-title">
-        <div className="home-container">
-          <div className="home-centered-heading">
-            <p className="home-eyebrow">{c.compareEyebrow}</p>
-            <h2 id="compare-title">{h.cmpTitle}</h2>
-          </div>
-          <div className="home-comparison">
-            <div className="comparison-header">
-              <span />
-              <b>{h.cmpUs}</b>
-              <b>{h.cmpThem}</b>
-            </div>
-            {h.cmpRows.map(([name, us, them]) => (
-              <div key={name} className="comparison-row">
-                <h3>{name}</h3>
-                <div className="comparison-us">
-                  <span className="mobile-comparison-label">{h.cmpUs}</span>
-                  <p><Icon name="check" width={15} height={15} />{us}</p>
-                </div>
-                <div className="comparison-other">
-                  <span className="mobile-comparison-label">{h.cmpThem}</span>
-                  <p>{them}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       <section className="home-stories-section home-section" aria-labelledby="stories-title">
         <div className="home-container">
@@ -337,8 +325,8 @@ export default async function Home() {
           <div className="home-faq-heading">
             <p className="home-eyebrow">{c.faqEyebrow}</p>
             <h2 id="faq-title">{h.faqTitle}</h2>
-            <Link href="/teachers" className="home-text-link">
-              {t.findTeachers}<Icon name="arrow" width={16} height={16} />
+            <Link href="/assessment" className="home-text-link">
+              {c.startTest}<Icon name="arrow" width={16} height={16} />
             </Link>
           </div>
           <div className="home-faq-list">
@@ -352,24 +340,6 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="home-final-section">
-        <div className="home-container">
-          <div className="home-final-card">
-            <div>
-              <p className="home-eyebrow">{c.finalEyebrow}</p>
-              <h2>{h.finalTitle}</h2>
-            </div>
-            <div className="home-final-actions">
-              <Link href="/teachers?audience=adults" className="home-filled-button">
-                {c.adultCta}<Icon name="arrow" width={17} height={17} />
-              </Link>
-              <Link href="/teachers?audience=kids&tag=Kids" className="home-outline-button">
-                {c.kidsCta}<Icon name="arrow" width={17} height={17} />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

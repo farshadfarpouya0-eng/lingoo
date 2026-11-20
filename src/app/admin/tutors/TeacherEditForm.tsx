@@ -50,7 +50,8 @@ export default function TeacherEditForm({ row, t }: { row: TRow; t: T }) {
             <label className={lab}>{t.headline}<input name="headline" maxLength={140} defaultValue={row.headline} className={inp} /></label>
             <label className={lab}>{t.bio}<textarea name="bio" rows={5} maxLength={4000} defaultValue={row.bio} className={inp} /></label>
             <div className="grid grid-cols-2 gap-3">
-              <label className={lab}>{t.price} (USD)<input name="price" type="number" min={0} max={500} step={0.5} defaultValue={row.price / 100} className={inp} /></label>
+              <label className={lab}>Contract pay · 25 min (USD)<input name="fee25" type="number" min={0} max={500} step={0.5} defaultValue={row.fee25 ? row.fee25 / 100 : ""} placeholder="Platform default" className={inp} /></label>
+              <label className={lab}>Contract pay · 50 min (USD)<input name="fee50" type="number" min={0} max={500} step={0.5} defaultValue={row.fee50 ? row.fee50 / 100 : ""} placeholder="Platform default" className={inp} /></label>
               <label className={lab}>Rating<input name="rating" type="number" min={0} max={5} step={0.1} defaultValue={row.rating} className={inp} /></label>
               <label className={lab}>Reviews count<input name="reviewsCount" type="number" min={0} defaultValue={row.reviewsCount} className={inp} /></label>
               <label className={lab}>Lessons taught<input name="lessonsCount" type="number" min={0} defaultValue={row.lessonsCount} className={inp} /></label>

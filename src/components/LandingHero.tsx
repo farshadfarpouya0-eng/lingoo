@@ -3,97 +3,78 @@ import Icon from "./Icon";
 import type { LandingCopy } from "@/lib/landing-i18n";
 import { getLang } from "@/lib/i18n";
 import { getBranding } from "@/lib/branding";
-import { HOME_ASSETS } from "@/lib/home-assets";
+import HeroOrbit from "./HeroOrbit";
+
+const CARDS = [
+  { key: "daily", src: "/hero/daily-english.jpg", alt: "A learner in an online daily English lesson with her tutor", href: "/assessment?audience=adults&goal=Conversation", main: true },
+  { key: "kids", src: "/hero/kids.jpg", alt: "A happy child in a kids English class", href: "/assessment?audience=kids&goal=Kids", main: false },
+  { key: "business", src: "/hero/business-english.jpg", alt: "A professional in an online business English lesson", href: "/assessment?goal=Business", main: false },
+  { key: "ielts", src: "/hero/ielts-exam.jpg", alt: "A student preparing for an English exam with study books and a laptop", href: "/assessment?goal=IELTS", main: false },
+  { key: "travel", src: "/hero/travel-migration.jpg", alt: "A traveler speaking English at an airport check-in desk", href: "/assessment?goal=Travel", main: false },
+] as const;
 
 export default async function LandingHero({ c }: { c: LandingCopy }) {
   const lang = await getLang();
   const branding = await getBranding();
 
-  const hero = {
-    ...c,
-    title: branding.heroTitle[lang] || c.title,
-    titleAccent: branding.heroAccent[lang] || c.titleAccent,
-    intro: branding.intro[lang] || c.intro,
+  const title = branding.heroTitle[lang] || c.title;
+  const accent = branding.heroAccent[lang] || c.titleAccent;
+  const intro = branding.intro[lang] || c.intro;
+
+  const labels: Record<(typeof CARDS)[number]["key"], string> = {
+    daily: c.cardDaily, kids: c.cardKids, business: c.cardBusiness, ielts: c.cardExam, travel: c.cardTravel,
   };
+
+  const benefits = [
+    { icon: "messages", label: c.realTalk },
+    { icon: "user", label: c.expertTeachers },
+    { icon: "chart", label: c.personalized },
+  ] as const;
 
   return (
     <section className="home-hero" aria-labelledby="hero-title" id="hero">
-      <div className="home-container">
-        <div className="hero-introduction">
-          <div>
-            <p className="home-eyebrow"><span className="eyebrow-dot" />{hero.eyebrow}</p>
-            <h1 id="hero-title">
-              {hero.title}
-              <span>{hero.titleAccent}</span>
-            </h1>
+      <div className="hero-bg" aria-hidden="true">
+        <span className="hero-glow hero-glow-a" />
+        <span className="hero-glow hero-glow-b" />
+        <span className="hero-glow hero-glow-c" />
+        <span className="hero-floor" />
+        <span className="hero-ring hero-ring-1" />
+        <span className="hero-ring hero-ring-2" />
+      </div>
+
+      <div className="home-container hero-grid">
+        <div className="hero-copy">
+          <p className="hero-badge"><span className="hero-badge-icon">★</span>{c.badge}</p>
+          <h1 id="hero-title">
+            {title.split("\n").map((line, i) => <span key={i}>{line}</span>)}
+            <span className="hero-accent">{accent}</span>
+          </h1>
+          <p className="hero-intro-text">{intro}</p>
+
+          <ul className="hero-benefits" aria-label="Why Lingorain">
+            {benefits.map(b => (
+              <li key={b.icon}>
+                <span className="hero-benefit-icon"><Icon name={b.icon} width={18} height={18} /></span>
+                <span>{b.label.split("\n").map((l, i) => <span key={i}>{l}</span>)}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hero-actions">
+            <Link href="/assessment" className="hero-cta-primary" data-testid="adult-hero-cta">
+              {c.startTest}<Icon name="arrow" width={18} height={18} />
+            </Link>
+            <a href="#how-it-works" className="hero-cta-secondary">
+              <span className="hero-play" aria-hidden="true" />{c.howItWorks}
+            </a>
           </div>
-          <p className="hero-intro-text">{hero.intro}</p>
         </div>
 
-        <div className="hero-paths">
-          <article className="hero-path hero-path-adult" data-testid="adult-hero" aria-labelledby="adult-title">
-            <img
-              data-hero-image="adult"
-              src={HOME_ASSETS.heroAdults}
-              srcSet={`${HOME_ASSETS.heroAdults400} 400w, ${HOME_ASSETS.heroAdults} 800w`}
-              sizes="(max-width: 640px) 180px, (max-width: 1024px) 40vw, 380px"
-              alt="An adult learner taking notes during an online English lesson"
-              width={800} height={1000} fetchPriority="high" decoding="async"
-              className="adult-hero-image"
-            />
-            <div className="adult-hero-shade" aria-hidden="true" />
-            <div className="hero-path-content">
-              <p className="hero-path-label"><span className="path-label-line" />{hero.adults}</p>
-              <h2 id="adult-title">
-                {hero.adultTitle.split("\n").map((line, i) => <span key={i}>{line}</span>)}
-              </h2>
-              <p className="hero-path-description">{hero.adultText}</p>
-              <div className="hero-topic-list">
-                {hero.adultTopics.map(topic => <span key={topic}>{topic}</span>)}
-              </div>
-              <Link href="/teachers?audience=adults" className="hero-path-button adult-path-button" data-testid="adult-hero-cta">
-                {hero.adultCta}<Icon name="arrow" width={18} height={18} />
-              </Link>
-            </div>
-            <span className="hero-corner-note" aria-hidden="true">01 / ENGLISH FOR LIFE</span>
-          </article>
-
-          <article className="hero-path hero-path-kids" data-testid="kids-hero" aria-labelledby="kids-title">
-            <div className="kids-hero-orbit" aria-hidden="true" />
-            <img
-              data-hero-image="kids"
-              src={HOME_ASSETS.heroKids}
-              alt="Birdie, Teddy and Lulu practicing English with books and a microphone"
-              width={700} height={780} fetchPriority="high" decoding="async"
-              className="kids-hero-image"
-            />
-            <div className="hero-path-content">
-              <p className="hero-path-label"><span className="path-label-line" />{hero.kids}</p>
-              <h2 id="kids-title">
-                {hero.kidsTitle.split("\n").map((line, i) => <span key={i}>{line}</span>)}
-              </h2>
-              <p className="hero-path-description">{hero.kidsText}</p>
-              <div className="hero-topic-list">
-                {hero.kidsTopics.map(topic => <span key={topic}>{topic}</span>)}
-              </div>
-              <Link href="/teachers?audience=kids&tag=Kids" className="hero-path-button kids-path-button" data-testid="kids-hero-cta">
-                {hero.kidsCta}<Icon name="arrow" width={18} height={18} />
-              </Link>
-              <a href="#kids-learning" className="kids-hero-more">{hero.kidsMore}<span aria-hidden="true">↗</span></a>
-            </div>
-            <span className="hero-corner-note kids-corner-note" aria-hidden="true">{hero.kidsBadge}</span>
-          </article>
-        </div>
-
-        <div className="hero-benefits">
-          {([
-            { icon: "video", label: hero.online },
-            { icon: "clock", label: hero.flexible },
-            { icon: "messages", label: hero.languages },
-          ] as const).map(item => (
-            <span key={item.label}><Icon name={item.icon} width={17} height={17} />{item.label}</span>
-          ))}
-        </div>
+        <HeroOrbit
+          cards={CARDS.map(card => ({
+            key: card.key, src: card.src, alt: card.alt, href: card.href, main: card.main, label: labels[card.key],
+          }))}
+        />
       </div>
     </section>
   );

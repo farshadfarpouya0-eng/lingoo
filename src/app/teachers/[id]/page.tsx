@@ -15,6 +15,9 @@ import BookingPanel from "@/components/BookingPanel";
 import Icon from "@/components/Icon";
 import { money } from "@/lib/package-pricing";
 import { ensureSeed } from "@/lib/seed";
+import { getPricingConfig } from "@/lib/pricing-config";
+import { ASSESS } from "@/lib/assessment-i18n";
+import { getLatestCompletedAssessment } from "@/lib/placement";
 export const dynamic = "force-dynamic";
 export default async function TeacherPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ err?: string; package?: string; duration?: string }>;
@@ -28,7 +31,8 @@ export default async function TeacherPage({ params, searchParams }: {
   const [tr] = await teacherQuery().where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, tid), eq(teacherProfiles.active, true), or(eq(users.suspended, false), lte(users.suspendedUntil, new Date()))));
   if (!tr) notFound();
   const user = await getUser();
-  const [booked, revs, prev, credits, weeklySlots, blockedSlots] = await Promise.all([
+  const pricing = await getPricingConfig();
+  const [booked, revs, prev, credits, weeklySlots, blockedSlots, matchInfo] = await Promise.all([
     db.select({ s: lessons.startAt, duration: lessons.duration }).from(lessons).where(and(
       user ? or(eq(lessons.teacherId, tid), eq(lessons.studentId, user.id)) : eq(lessons.teacherId, tid),
       ne(lessons.status, "cancelled"), gt(lessons.startAt, new Date(nowMs() - 3600_000)),
@@ -40,7 +44,13 @@ export default async function TeacherPage({ params, searchParams }: {
       .where(and(eq(lessonPackages.studentId, user.id), eq(lessonPackages.teacherId, tid), gt(lessonPackages.remainingLessons, 0))) : Promise.resolve([]),
     db.select({ weekday: teacherWeeklySlots.weekday, startMinute: teacherWeeklySlots.startMinute, endMinute: teacherWeeklySlots.endMinute }).from(teacherWeeklySlots).where(eq(teacherWeeklySlots.teacherId, tid)),
     db.select({ s: teacherBlockedSlots.startAt, e: teacherBlockedSlots.endAt }).from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, tid), gt(teacherBlockedSlots.endAt, new Date()))),
+    user?.role === "student" ? getLatestCompletedAssessment(user.id) : Promise.resolve(null),
   ]);
+  // Students book through the matching flow: only their chosen/recommended teacher
+  // (or a teacher they already study with) can be booked directly.
+  const a = ASSESS[lang];
+  const recommendedIds = Array.isArray(matchInfo?.recommendedIds) ? (matchInfo!.recommendedIds as number[]) : [];
+  const canBook = user?.role !== "student" || prev.length > 0 || credits.length > 0 || matchInfo?.selectedTeacherId === tid || recommendedIds.includes(tid);
   const groupLessons = await db.select({ id: lessons.id, studentId: lessons.studentId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity })
     .from(lessons).where(and(eq(lessons.teacherId, tid), eq(lessons.classType, "semi_private"), inArray(lessons.status, ["pending", "confirmed"]), gt(lessons.startAt, new Date()), gt(lessons.startAt, new Date(nowMs() - 1000))));
   const groupIds = groupLessons.map(g => g.id);
@@ -72,11 +82,11 @@ export default async function TeacherPage({ params, searchParams }: {
       <div className="rounded-[26px] border border-slate-200 bg-white p-7"><h2 className="text-xl font-bold text-teal-950">★ {tr.rating.toFixed(1)} · {tr.reviewsCount} {t.reviews}</h2><div className="mt-4 divide-y divide-slate-100">{revs.map((r,i)=><div key={i} className="flex gap-3 py-4"><img src={r.avatar || ""} alt="" width={40} height={40} loading="lazy" className="h-10 w-10 rounded-full bg-slate-100 object-cover"/><div><div className="text-sm font-semibold text-slate-700">{r.name} <span className="text-amber-500">{"★".repeat(r.rating)}</span></div><p className="mt-1 text-sm text-slate-500">{r.comment}</p></div></div>)}</div></div>
     </div>
     <aside className="min-w-0 space-y-4 lg:sticky lg:top-24">
-      <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-100/60"><div className="flex items-baseline justify-between gap-2"><div><span className="text-3xl font-bold tracking-tight text-teal-950">{money(tr.price)}</span><span className="ml-1 text-xs text-slate-400">/ 50 {c.minutes}</span></div></div>{error&&<p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error} {sp.err==="balance"&&<Link href="/dashboard?tab=wallet" className="underline">{t.topUp}</Link>}</p>}
-        {user?.role === "student" ? <BookingPanel teacherId={tr.id} studentTimeZone={viewerZone} serverNowMs={serverNowMs} lang={lang} slots50={slots50} slots25={slots25} groupSlots={visibleGroupSlots} price={tr.price} trialEligible={!prev.length} balance={user.balance} t={t} c={c} credits={credits} initialPackageId={Number(sp.package)||undefined} initialDuration={sp.duration==="25"?25:50}/> : !user ? <Link href="/login" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{t.loginToBook}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
+      <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-100/60"><div className="flex items-baseline justify-between gap-2"><div><span className="text-3xl font-bold tracking-tight text-teal-950">{money(pricing.student50)}</span><span className="ml-1 text-xs text-slate-400">/ 50 {c.minutes}</span></div></div>{error&&<p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error} {sp.err==="balance"&&<Link href="/dashboard?tab=wallet" className="underline">{t.topUp}</Link>}</p>}
+        {user?.role === "student" && canBook ? <BookingPanel teacherId={tr.id} studentTimeZone={viewerZone} serverNowMs={serverNowMs} lang={lang} slots50={slots50} slots25={slots25} groupSlots={visibleGroupSlots} price={pricing.student50} price25={pricing.student25} trialEligible={!prev.length} balance={user.balance} t={t} c={c} credits={credits} initialPackageId={Number(sp.package)||undefined} initialDuration={sp.duration==="25"?25:50}/> : user?.role === "student" ? <div className="mt-5 rounded-2xl bg-teal-50 p-5"><p className="text-sm font-bold text-teal-950">{a.dashCardNewTitle}</p><p className="mt-1 text-xs leading-5 text-slate-500">{a.dashCardNewText}</p><Link href={matchInfo ? "/assessment/results" : "/assessment"} className="mt-4 block rounded-xl bg-teal-800 py-2.5 text-center text-sm font-bold text-white">{matchInfo ? a.dashCardViewMatches : a.startTest}</Link></div> : !user ? <Link href="/login" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{t.loginToBook}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
         <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-[11px] leading-5 text-slate-500"><li className="font-bold text-teal-900">{t.policyTitle}</li><li>{t.policy1}</li><li>{t.policy2}</li>{credits.length>0&&<li>{c.creditRestored}</li>}</ul>
       </div>
-      <Link href={user?.role==="student"?`/dashboard?tab=packages&teacher=${tid}`:"/login"} className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-teal-800"><Icon name="box" className="shrink-0"/><div className="min-w-0 flex-1"><b className="text-sm">{c.packages}</b><p className="mt-0.5 text-[11px]">5% · 10% · 15% {c.off}</p></div><Icon name="chevron" width={17} height={17}/></Link>
+      {canBook && <Link href={user?.role==="student"?`/dashboard?tab=packages&teacher=${tid}`:"/login"} className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-teal-800"><Icon name="box" className="shrink-0"/><div className="min-w-0 flex-1"><b className="text-sm">{c.packages}</b><p className="mt-0.5 text-[11px]">5% · 10% · 15% {c.off}</p></div><Icon name="chevron" width={17} height={17}/></Link>}
       {user&&user.id!==tr.id&&<form action={sendMessage as unknown as (fd: FormData) => Promise<void>} className="rounded-[26px] border border-slate-200 bg-white p-6"><input type="hidden" name="to" value={tr.id}/><textarea name="body" required maxLength={2000} rows={3} placeholder={t.messagePlaceholder} className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-500"/><button className="mt-2 w-full rounded-xl bg-teal-950 py-2.5 text-sm font-semibold text-white">{t.sendMessage}</button></form>}
     </aside>
   </div>;

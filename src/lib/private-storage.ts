@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { getIntegrationConfig } from "@/lib/integration-config";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const TEACHER_VIDEO_FOLDER = "teacher-videos" as const;
 type StorageConfig = Awaited<ReturnType<typeof getIntegrationConfig>>["storage"];
 
-type FileKind = "material" | "document" | "avatar";
+type FileKind = "material" | "document" | "avatar" | "video";
+type Folder = "materials" | "teacher-documents" | "avatars" | "teacher-videos";
 
 function extFor(mime: string): string | null {
   const m = mime.toLowerCase().split(";")[0].trim();
@@ -13,6 +15,7 @@ function extFor(mime: string): string | null {
     "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
     "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/aac": "aac",
     "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    "video/mp4": "mp4", "video/webm": "webm",
   };
   return map[m] || null;
 }
@@ -28,6 +31,8 @@ function hasValidSignature(buf: Buffer, mime: string) {
   if (m === "audio/mp4") return buf.subarray(4, 8).toString("ascii") === "ftyp";
   if (m === "audio/aac") return buf[0] === 0xff && (buf[1] & 0xf6) === 0xf0;
   if (m === "application/epub+zip") return buf.subarray(0, 2).toString("hex") === "504b";
+  if (m === "video/mp4") return buf.subarray(4, 8).toString("ascii") === "ftyp";
+  if (m === "video/webm") return buf.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
   if (m === "text/plain") return !buf.subarray(0, Math.min(buf.length, 8192)).includes(0);
   return false;
 }
@@ -54,12 +59,12 @@ async function assertPrivateBucket(storage?: StorageConfig) {
 const EXT_TO_MIME: Record<string, string> = {
   pdf: "application/pdf", epub: "application/epub+zip", txt: "text/plain",
   mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4", aac: "audio/aac",
-  jpg: "image/jpeg", png: "image/png", webp: "image/webp",
+  jpg: "image/jpeg", png: "image/png", webp: "image/webp", mp4: "video/mp4", webm: "video/webm",
 };
 
 /** Create a short-lived, single-object upload URL so large files never pass through a serverless function body. */
 export async function createSignedPrivateUpload(args: {
-  folder: "materials" | "teacher-documents" | "avatars";
+  folder: Folder;
   ownerId: number;
   kind: FileKind;
   fileName: string;
@@ -77,6 +82,7 @@ export async function createSignedPrivateUpload(args: {
   if (!extension) throw new Error("Unsupported file type.");
   if (kind === "document" && !["pdf", "jpg", "png", "webp"].includes(extension)) throw new Error("Teacher documents must be PDF, JPEG, PNG, or WebP.");
   if (kind === "avatar" && !["jpg", "png", "webp"].includes(extension)) throw new Error("Profile pictures must be JPEG, PNG, or WebP.");
+  if (kind === "video" && !["mp4", "webm"].includes(extension)) throw new Error("Tutor videos must be MP4 or WebM.");
   if (kind === "material") {
     const audio = ["mp3", "wav", "ogg", "m4a", "aac"].includes(extension);
     if (materialKind === "audio" && !audio) throw new Error("Choose an audio file for an audio resource.");
@@ -151,7 +157,7 @@ async function readBounded(response: Response, maxBytes: number): Promise<Buffer
 }
 
 /** Validate the final object, not just the client-supplied filename/MIME metadata. */
-export async function validateUploadedPrivateFile(reference: string, folder: "materials" | "teacher-documents" | "avatars", ownerId: number, kind: FileKind) {
+export async function validateUploadedPrivateFile(reference: string, folder: Folder, ownerId: number, kind: FileKind) {
   const parsed = parsePrivateStorageRef(reference);
   if (!parsed || !parsed.key.startsWith(`${folder}/${ownerId}/`)) throw new Error("Invalid or unauthorized private upload reference.");
   const extension = parsed.key.split(".").pop()?.toLowerCase() || "";
@@ -159,6 +165,7 @@ export async function validateUploadedPrivateFile(reference: string, folder: "ma
   if (!mime) throw new Error("Unsupported uploaded file extension.");
   if (kind === "document" && !["pdf", "jpg", "png", "webp"].includes(extension)) throw new Error("Teacher documents must be PDF, JPEG, PNG, or WebP.");
   if (kind === "avatar" && !["jpg", "png", "webp"].includes(extension)) throw new Error("Profile pictures must be JPEG, PNG, or WebP.");
+  if (kind === "video" && !["mp4", "webm"].includes(extension)) throw new Error("Tutor videos must be MP4 or WebM.");
   // Only inspect the first 8 KiB. Downloading the entire audio/PDF back from
   // storage during a Server Action made large uploads slow and could exceed the
   // serverless function's execution window. Supabase Storage supports Range.
@@ -183,11 +190,12 @@ export async function validateUploadedPrivateFile(reference: string, folder: "ma
   const bytes = await readBounded(response, 8192);
   const actualSize = advertisedSize || bytes.length;
   if (kind === "avatar" && actualSize > 5 * 1024 * 1024) throw new Error("Profile pictures must be no larger than 5 MB.");
+  if (actualSize < 1) throw new Error("The uploaded file is empty.");
   if (!bytes.length || !hasValidSignature(bytes, mime)) throw new Error("Uploaded file content does not match its expected file type.");
   return { mime, extension, size: actualSize };
 }
 
-export async function uploadPrivateFile(file: File, folder: "materials" | "teacher-documents" | "avatars", ownerId: number, kind: FileKind) {
+export async function uploadPrivateFile(file: File, folder: Folder, ownerId: number, kind: FileKind) {
   if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_BYTES) throw new Error("File must be between 1 byte and 25 MB.");
   const mime = file.type.toLowerCase().split(";")[0].trim();
   const extension = extFor(mime);
@@ -247,7 +255,7 @@ export const privateFileContentType = (reference: string) => {
   const types: Record<string, string> = {
     pdf: "application/pdf", epub: "application/epub+zip", txt: "text/plain; charset=utf-8",
     mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4", aac: "audio/aac",
-    jpg: "image/jpeg", png: "image/png", webp: "image/webp",
+    jpg: "image/jpeg", png: "image/png", webp: "image/webp", mp4: "video/mp4", webm: "video/webm",
   };
   return types[ext || ""] || "application/octet-stream";
 };

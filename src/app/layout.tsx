@@ -57,9 +57,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </Link>
 
             <nav className="site-desktop-nav" aria-label={c.navigation}>
-              <Link href="/teachers?audience=adults">{c.adultNav}</Link>
-              <Link href="/teachers?audience=kids&tag=Kids">{c.kidsNav}</Link>
-              <Link href="/teachers">{c.allTutors}</Link>
+              <Link href="/assessment">{c.testNav}</Link>
+              <Link href="/#how-it-works">{c.howNav}</Link>
               {user && (
                 <Link href={user.role === "admin" ? "/admin" : "/dashboard"}>
                   {user.role === "admin" ? t.admin : t.dashboard}
@@ -121,9 +120,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="footer-column">
               <h2>{t.col_tutors}</h2>
               <ul>
-                <li><Link href="/teachers?audience=adults">{c.adultNav}</Link></li>
-                <li><Link href="/teachers?audience=kids&tag=Kids">{c.kidsNav}</Link></li>
-                <li><Link href="/teachers">{t.findTeachers}</Link></li>
+                <li><Link href="/assessment">{c.testNav}</Link></li>
+                <li><Link href="/assessment/test">{c.startTest}</Link></li>
                 <li><Link href="/login">{t.login}</Link></li>
               </ul>
             </div>
