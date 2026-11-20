@@ -28,12 +28,12 @@ export async function dashboardSummary(userId: number, isTutor: boolean) {
     const [cfg, [profile], upcoming] = await Promise.all([
       getPricingConfig(),
       db.select({ fee25: teacherProfiles.fee25, fee50: teacherProfiles.fee50 }).from(teacherProfiles).where(eq(teacherProfiles.userId, userId)),
-      db.select({ duration: lessons.duration }).from(lessons)
+      db.select({ duration: lessons.duration, placementAssessment: lessons.placementAssessment }).from(lessons)
         .where(and(eq(lessons.teacherId, userId), inArray(lessons.status, ["pending", "confirmed"]))),
     ]);
     const f25 = profile?.fee25 ?? cfg.fee25;
     const f50 = profile?.fee50 ?? cfg.fee50;
-    escrow = upcoming.reduce((sum, l) => sum + (l.duration === 25 ? f25 : f50), 0);
+    escrow = upcoming.reduce((sum, l) => sum + (l.placementAssessment ? cfg.assessmentFee25 : l.duration === 25 ? f25 : f50), 0);
   }
 
   return {

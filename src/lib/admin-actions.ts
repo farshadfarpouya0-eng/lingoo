@@ -13,6 +13,7 @@ import { encryptIntegrationSecret } from "./integration-config";
 import { refundStudent, refundGroupSeat, ledger } from "./money";
 import { siteSettings } from "@/db/schema";
 import { PRICING_KEY } from "./pricing-config";
+import { SIGNUP_KEY } from "./signup-config";
 import {
   saveContentAndSettings, resetContent as resetContentFn,
   type HomeContent, type Settings, type Lang,
@@ -431,6 +432,7 @@ export async function savePricingConfig(_p: unknown, fd: FormData): Promise<{ ok
   const cfg = {
     student25: dollars("student25"), student50: dollars("student50"),
     fee25: dollars("fee25"), fee50: dollars("fee50"),
+    assessmentFee25: dollars("assessmentFee25"),
   };
   if (cfg.student25 < 100 || cfg.student50 < 100) return { ok: false, error: "price" };
   await db.insert(siteSettings).values({ key: PRICING_KEY, value: cfg })
@@ -438,5 +440,17 @@ export async function savePricingConfig(_p: unknown, fd: FormData): Promise<{ ok
   revalidatePath("/admin/settings");
   revalidatePath("/dashboard");
   revalidatePath("/");
+  return { ok: true };
+}
+
+/** Sign-up policy (Admin → Settings): whether new accounts must confirm their email first. */
+export async function saveSignupConfig(_p: unknown, fd: FormData): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  const cfg = { requireEmailVerification: fd.get("requireEmailVerification") === "on" };
+  await db.insert(siteSettings).values({ key: SIGNUP_KEY, value: cfg })
+    .onConflictDoUpdate({ target: siteSettings.key, set: { value: cfg, updatedAt: new Date() } });
+  revalidatePath("/admin/settings");
+  revalidatePath("/register");
+  revalidatePath("/login");
   return { ok: true };
 }

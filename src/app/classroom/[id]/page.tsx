@@ -34,7 +34,7 @@ export default async function Classroom({ params, searchParams }: { params: Prom
   const c = LEARNING[lang];
   const isTutor = user.role === "admin" ? l.topic.startsWith("[TEST]") : user.id === l.teacherId;
   const [other] = await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, isTutor ? l.studentId : l.teacherId));
-  const endFee = isTutor ? await getTeacherFee(l.teacherId, l.duration) : 0;
+  const endFee = isTutor ? await getTeacherFee(l.teacherId, l.duration, l.placementAssessment) : 0;
   const groupStudentIds = l.classType === "semi_private" ? await activeLessonStudentIds(l.id, l.studentId, l.classType) : [l.studentId];
   const groupStudents = groupStudentIds.length ? await db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(inArray(users.id, groupStudentIds)) : [];
   const reportTargets = (isTutor ? groupStudents : [{ id: other?.id || l.teacherId, name: other?.name || "Teacher", avatar: other?.avatar || "" }, ...groupStudents]).filter((person, index, all) => person.id !== user.id && all.findIndex(p => p.id === person.id) === index).map(p => ({ id: p.id, name: p.name }));
@@ -107,17 +107,17 @@ export default async function Classroom({ params, searchParams }: { params: Prom
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 sm:py-8">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+        <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-teal-800 text-white"><Icon name="video" /></span>
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Lingorain · #{id}</p>
-            <h1 className="text-2xl font-bold tracking-tight text-teal-950">{t.classroom}</h1>
+            <h1 className="text-xl font-bold tracking-tight text-teal-950 sm:text-2xl">{t.classroom}</h1>
             <p className="mt-1 text-xs font-semibold text-teal-700">Session {sessionNumber}{sessionTotal ? ` of ${sessionTotal}` : ""}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
           {isTutor && l.status === "completed" && (
             <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700">
               ✓ Lesson ended{l.classType === "private" ? ` · ${money(endFee)} paid to your wallet` : ""}

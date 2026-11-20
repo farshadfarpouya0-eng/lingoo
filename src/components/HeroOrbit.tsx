@@ -30,9 +30,12 @@ export default function HeroOrbit({ cards }: { cards: HeroCardData[] }) {
     let isDown = false, moved = 0, startX = 0, lastX = 0, lastT = 0;
     let raf = 0, prev = performance.now();
 
+    const compact = () => window.matchMedia("(max-width: 860px)").matches;
     const apply = () => {
       const ry = theta + sway;
-      orbit.style.transform = `rotateX(${tilt.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+      // On phones the ring is shallower and calmer so cards never overlap the copy.
+      const tiltNow = compact() ? tilt * 0.55 : tilt;
+      orbit.style.transform = `rotateX(${tiltNow.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
       orbit.style.setProperty("--ry", `${ry.toFixed(2)}deg`);
     };
     apply();
@@ -42,7 +45,7 @@ export default function HeroOrbit({ cards }: { cards: HeroCardData[] }) {
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
       if (!isDown) {
-        theta += 9 * dt + vel * dt;              // gentle auto-rotation + inertia
+        theta += (compact() ? 5.5 : 9) * dt + vel * dt;  // gentle auto-rotation + inertia
         vel *= Math.exp(-2.4 * dt);
         if (Math.abs(vel) < 0.5) vel = 0;
       }
@@ -58,8 +61,9 @@ export default function HeroOrbit({ cards }: { cards: HeroCardData[] }) {
       const r = scene.getBoundingClientRect();
       const mx = (e.clientX - r.left) / Math.max(1, r.width) - 0.5;
       const my = (e.clientY - r.top) / Math.max(1, r.height) - 0.5;
-      swayTarget = mx * 26;
-      tiltTarget = 8 - my * 12;
+      const strength = compact() ? 12 : 26;
+      swayTarget = mx * strength;
+      tiltTarget = 8 - my * (compact() ? 5 : 12);
       scene.style.setProperty("--px", mx.toFixed(3));
       scene.style.setProperty("--py", my.toFixed(3));
     };

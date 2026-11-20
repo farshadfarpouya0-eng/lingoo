@@ -51,7 +51,7 @@ export async function markLessonComplete(prev: R, formData: FormData): Promise<R
         .set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
         .where(eq(teacherProfiles.userId, l.teacherId));
     } else {
-      await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson completed by tutor", l.duration);
+      await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson completed by tutor", l.duration, l.placementAssessment);
       if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
     }
   });

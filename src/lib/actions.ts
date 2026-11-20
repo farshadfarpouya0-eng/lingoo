@@ -19,6 +19,7 @@ import { getIntegrationConfig } from "./integration-config";
 import { isValidTimeZone, DEFAULT_TIME_ZONE } from "./time";
 import type { Lang } from "./i18n";
 import { sendVerificationForNewUser } from "./auth-flows";
+import { getSignupConfig } from "./signup-config";
 import { isAccountSuspended } from "@/lib/account-status";
 
 const str = (fd: FormData, k: string, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
@@ -40,7 +41,7 @@ export async function login(_: unknown, fd: FormData) {
   const [u] = await db.select().from(users).where(eq(users.email, email));
   const ok = verifyPassword(String(fd.get("password") ?? "").slice(0, 200), u?.passwordHash ?? null);
   if (!u || !ok) return { error: "invalid" };
-  if (!u.emailVerified) return { error: "verify" };
+  if (!u.emailVerified && (await getSignupConfig()).requireEmailVerification) return { error: "verify" };
   await createSession(u.id);
   if (isAccountSuspended(u.suspended, u.suspendedUntil)) redirect("/appeals");
   redirect(u.role === "admin" ? "/admin" : "/dashboard");
@@ -61,11 +62,12 @@ export async function register(_: unknown, fd: FormData) {
   const timeZone = isValidTimeZone(requestedZone) ? requestedZone : (role === "teacher" ? "Asia/Tehran" : DEFAULT_TIME_ZONE[nativeLang]);
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
   if (existing) return { error: "exists" };
+  const { requireEmailVerification } = await getSignupConfig();
 
   const u = await db.transaction(async tx => {
     const referralCode = randomBytes(6).toString("hex").toUpperCase();
     const [nu] = await tx.insert(users).values({
-      email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode, emailVerified: false, timeZone,
+      email, name, passwordHash: hashPassword(pw), role, nativeLang, referralCode, emailVerified: !requireEmailVerification, timeZone,
       avatar: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}`,
     }).returning();
 
@@ -91,6 +93,11 @@ export async function register(_: unknown, fd: FormData) {
   }).catch(e => pgCode(e) === "23505" ? null : Promise.reject(e));
 
   if (!u) return { error: "exists" };
+  if (!requireEmailVerification) {
+    // Verification is switched off in Admin → Settings: sign the new account in immediately.
+    await createSession(u.id);
+    redirect(role === "teacher" ? "/dashboard?tab=profile" : "/assessment");
+  }
   try { await sendVerificationForNewUser(u.id); } catch { return { error: "email_setup_needed" }; }
   return { error: "email_sent" };
 }

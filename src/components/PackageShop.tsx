@@ -31,7 +31,7 @@ function PurchaseDialog({ selection, balance, c, onClose }: { selection: Checkou
     </div>
   </dialog>;
 }
-export default function PackageShop({ tutors, owned, balance, c, initialTutorId }: { tutors: ShopTutor[]; owned: OwnedPackage[]; balance: number; c: LearningCopy; initialTutorId?: number }) {
+export default function PackageShop({ tutors, owned, balance, c, initialTutorId, matchedOnly }: { tutors: ShopTutor[]; owned: OwnedPackage[]; balance: number; c: LearningCopy; initialTutorId?: number; matchedOnly?: boolean }) {
   const [view, setView] = useState<"browse" | "owned">("browse");
   const [teacherId, setTeacherId] = useState(initialTutorId || tutors[0]?.id || 0);
   const [duration, setDuration] = useState<LessonDuration>(50);
@@ -56,12 +56,27 @@ export default function PackageShop({ tutors, owned, balance, c, initialTutorId 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">{owned.map(p => <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center gap-3"><img src={p.avatar || ""} alt="" width={44} height={44} className="h-11 w-11 rounded-xl object-cover"/><div className="min-w-0 flex-1"><h4 className="truncate font-bold text-teal-950">{p.teacherName}</h4><p className="mt-0.5 text-xs text-slate-400">{p.duration} {c.minutes} · {money(p.unitPrice)} {c.perLesson}</p></div><span className="rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">{p.discountPercent}% {c.off}</span></div><div className="mt-6 flex items-baseline gap-1.5"><span className="text-3xl font-bold text-teal-900">{p.remainingLessons}</span><span className="text-xs text-slate-500">{c.of} {p.totalLessons} {c.lessons} {c.remaining}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-teal-600" style={{width:`${p.remainingLessons / p.totalLessons * 100}%`}}/></div><p className="mt-3 text-[11px] text-slate-400">{p.totalLessons - p.remainingLessons} {c.bookedUsed} · {c.lockedPrice}</p>{p.remainingLessons > 0 ? <Link href={`/teachers/${p.teacherId}?package=${p.id}&duration=${p.duration}`} className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-teal-700 py-2.5 text-sm font-bold text-teal-800 hover:bg-teal-50">{c.useCredit}<Icon name="arrow" width={16} height={16}/></Link> : <p className="mt-5 rounded-xl bg-slate-50 py-2.5 text-center text-sm text-slate-400">{c.exhausted}</p>}</article>)}</div>
       {!owned.length && <div className="mt-5 rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="box" width={25} height={25}/></div><h4 className="mt-5 text-lg font-bold text-teal-950">{c.emptyTitle}</h4><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">{c.emptyText}</p><button onClick={() => setView("browse")} className="mt-6 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white">{c.browse}</button></div>}
       <p className="mt-5 text-xs leading-5 text-slate-500">{c.cancelPolicy}</p>
-    </section> : !tutor || !q ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-500">{c.noTutors}</p> : <>
+    </section> : !tutor || !q ? (
+      matchedOnly ? (
+        <section className="rounded-3xl border border-dashed border-teal-200 bg-teal-50/40 p-10 text-center">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white text-teal-700"><Icon name="book" width={25} height={25}/></div>
+          <h4 className="mt-5 text-lg font-bold text-teal-950">Your matched teachers will appear here</h4>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+            Take the free level test first. We recommend a few teachers for your level and goal, and then you can
+            pick packages from the ones you like.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/assessment" className="rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white hover:bg-teal-900">Start free level test</Link>
+            <Link href="/assessment/results" className="rounded-xl border border-teal-300 bg-white px-6 py-3 text-sm font-bold text-teal-800 hover:bg-teal-50">View my matches</Link>
+          </div>
+        </section>
+      ) : <p className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-500">{c.noTutors}</p>
+    ) : <>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_290px]">
         <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white">
           <div className="border-b border-slate-100 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">{c.chooseTutor}</p><h3 className="mt-1 text-lg font-bold text-teal-950">Choose your teacher</h3></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-400">{c.chooseTutor}</p><h3 className="mt-1 text-lg font-bold text-teal-950">{matchedOnly ? "Your matched teachers" : "Choose your teacher"}</h3></div>
               <span className="text-xs text-slate-400">{tutors.length} available</span>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">

@@ -22,7 +22,7 @@ export { CEFR_LEVELS, GOALS, PLACEMENT_QUESTIONS, gradePlacement } from "./place
 export type { CefrLevel, PlacementQuestion } from "./placement-questions";
 import { CEFR_LEVELS, type CefrLevel } from "./placement-questions";
 
-export type MatchReason = "level" | "nearLevel" | "goal" | "kids" | "language" | "topRated";
+export type MatchReason = "level" | "nearLevel" | "goal" | "kids" | "language" | "topRated" | "introVideo";
 
 export type TeacherMatch = {
   id: number;
@@ -84,7 +84,7 @@ export function rankTeachers(
       }
 
       // Tutors who have recorded an introduction give students more to choose from.
-      if (tr.introVideoUrl) score += 6;
+      if (tr.introVideoUrl) { score += 6; reasons.push("introVideo"); }
 
       // Bayesian-ish rating nudge so proven tutors edge out brand-new ones.
       const proven = (tr.rating * tr.reviewsCount + 4.5 * 5) / (tr.reviewsCount + 5);

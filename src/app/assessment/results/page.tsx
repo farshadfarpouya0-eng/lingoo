@@ -17,7 +17,7 @@ export const metadata = { title: "Your matched teachers" };
 
 const REASON_KEY: Record<MatchReason, keyof AssessmentCopy> = {
   level: "reasonLevel", nearLevel: "reasonNearLevel", goal: "reasonGoal",
-  kids: "reasonKids", language: "reasonLanguage", topRated: "reasonTopRated",
+  kids: "reasonKids", language: "reasonLanguage", topRated: "reasonTopRated", introVideo: "reasonIntroVideo",
 };
 
 function VideoBlock({ src, poster, label, emptyLabel }: { src: string; poster?: string | null; label: string; emptyLabel: string }) {

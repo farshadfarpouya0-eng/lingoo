@@ -1,4 +1,10 @@
-# Lingorain — scheduling, classroom and wallet update
+# Lingorain
+
+**نسخهٔ کامل پروژه:** برای انتشار این نسخه روی سایت فعلی و بررسی مایگریشن `0024`، [راهنمای فارسی انتشار](START-HERE.fa.md) را ببینید.
+
+The sections below document the earlier scheduling, classroom and wallet release; its no-migration note applies only to that earlier patch.
+
+## Scheduling, classroom and wallet update (earlier release)
 
 Based on `farshadfarpouya0-eng/lingoo`, branch `fix/vercel-build`, revision `ed32867`. This update includes targeted source changes; it is not the earlier images-only fix.
 

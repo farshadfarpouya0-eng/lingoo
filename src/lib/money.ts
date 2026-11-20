@@ -50,9 +50,10 @@ export async function ledgerOnce(tx: Tx, userId: number, type: string, amount: n
 }
 
 /** Contracted pay for one completed lesson: the tutor's own admin-set fee wins over the platform default. */
-export async function teacherFeeFor(tx: Tx, teacherId: number, duration: number): Promise<number> {
+export async function teacherFeeFor(tx: Tx, teacherId: number, duration: number, placementAssessment = false): Promise<number> {
   const [cfgRow] = await tx.select({ value: siteSettings.value }).from(siteSettings).where(eq(siteSettings.key, PRICING_KEY)).limit(1);
   const cfg = parsePricingConfig(cfgRow?.value);
+  if (placementAssessment) return Math.max(0, Math.round(cfg.assessmentFee25));
   const [profile] = await tx.select({ fee25: teacherProfiles.fee25, fee50: teacherProfiles.fee50 })
     .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId)).limit(1);
   const fee = duration === 25 ? (profile?.fee25 ?? cfg.fee25) : (profile?.fee50 ?? cfg.fee50);
@@ -133,12 +134,15 @@ async function bookEarning(tx: Tx, opts: { teacherId: number; gross: number; bas
   return true;
 }
 
-export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, price: number, note: string, duration = 50) {
+export async function payTeacher(tx: Tx, lessonId: number, teacherId: number, price: number, note: string, duration = 50, placementAssessment = false) {
   const ref = `earning:${lessonId}`;
-  const fee = await teacherFeeFor(tx, teacherId, duration);
+  const fee = await teacherFeeFor(tx, teacherId, duration, placementAssessment);
   const booked = await bookEarning(tx, { teacherId, gross: price, base: fee, lessonId, ref, bonusRef: `bonus:${lessonId}`, note });
   if (!booked) return false;
-  await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` }).where(eq(teacherProfiles.userId, teacherId));
+  // Placement evaluations are paid work, but do not inflate the tutor's regular lesson count/ranking.
+  if (!placementAssessment) {
+    await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` }).where(eq(teacherProfiles.userId, teacherId));
+  }
   return true;
 }
 
@@ -260,7 +264,7 @@ export async function settleLessons(arg?: number | { force?: boolean }) {
           await tx.update(teacherProfiles).set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
             .where(eq(teacherProfiles.userId, l.teacherId));
         } else {
-          await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed (24h safety net)", l.duration);
+          await payTeacher(tx, l.id, l.teacherId, l.price, "Lesson auto-completed (24h safety net)", l.duration, l.placementAssessment);
           if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
         }
       });

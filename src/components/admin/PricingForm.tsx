@@ -38,6 +38,15 @@ export default function PricingForm({ initial }: { initial: PricingConfig }) {
             <label className={lab}>50-minute lesson<input name="fee50" type="number" min={0} max={1000} step={0.5} defaultValue={usd(initial.fee50)} className={inp} /></label>
           </div>
         </fieldset>
+        <fieldset className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:col-span-2">
+          <legend className="px-1 text-xs font-bold uppercase tracking-wider text-amber-700">Free live placement assessment</legend>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,220px)_1fr] sm:items-end">
+            <label className={lab}>Tutor pay · 25-minute assessment (USD)
+              <input name="assessmentFee25" type="number" min={0} max={1000} step={0.5} defaultValue={usd(initial.assessmentFee25)} className={inp} />
+            </label>
+            <p className="text-xs leading-5 text-slate-500">Paid from the platform after the teacher completes the assessment. Students are charged nothing; cancelled assessments do not pay a fee.</p>
+          </div>
+        </fieldset>
       </div>
 
       <button type="submit" disabled={pending} className="mt-5 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">

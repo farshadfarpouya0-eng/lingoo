@@ -82,6 +82,8 @@ export const lessons = pgTable("lessons", {
   duration: integer("duration").notNull().default(50), status: text("status").notNull().default("pending"),
   classType: text("class_type").notNull().default("private"), capacity: integer("capacity").notNull().default(1),
   price: integer("price").notNull(), trial: boolean("trial").notNull().default(false),
+  // Free placement video assessment; tutor compensation comes from admin pricing settings.
+  placementAssessment: boolean("placement_assessment").notNull().default(false),
   topic: text("topic").notNull().default(""), teacherNotes: text("teacher_notes").notNull().default(""),
   reviewed: boolean("reviewed").notNull().default(false),
   packageId: integer("package_id").references(() => lessonPackages.id),

@@ -11,13 +11,14 @@ import { siteSettings, teacherProfiles } from "@/db/schema";
  */
 export const PRICING_KEY = "pricing";
 
-export type PricingConfig = { student25: number; student50: number; fee25: number; fee50: number };
+export type PricingConfig = { student25: number; student50: number; fee25: number; fee50: number; assessmentFee25: number };
 
 export const DEFAULT_PRICING: PricingConfig = {
   student25: 1400, // US$14
   student50: 2500, // US$25
   fee25: 600,      // US$6  (~43% of the student price)
   fee50: 1000,     // US$10 (40% of the student price)
+  assessmentFee25: 600, // US$6 platform-funded fee for a completed free live assessment
 };
 
 const cents = (v: unknown, fallback: number) => {
@@ -32,6 +33,7 @@ export function parsePricingConfig(value: unknown): PricingConfig {
     student50: cents(o.student50, DEFAULT_PRICING.student50),
     fee25: cents(o.fee25, DEFAULT_PRICING.fee25),
     fee50: cents(o.fee50, DEFAULT_PRICING.fee50),
+    assessmentFee25: cents(o.assessmentFee25, DEFAULT_PRICING.assessmentFee25),
   };
 }
 
@@ -42,8 +44,9 @@ export async function getPricingConfig(): Promise<PricingConfig> {
 }
 
 /** Effective contracted pay for one completed lesson of this duration. */
-export async function getTeacherFee(teacherId: number, duration: number): Promise<number> {
+export async function getTeacherFee(teacherId: number, duration: number, placementAssessment = false): Promise<number> {
   const cfg = await getPricingConfig();
+  if (placementAssessment) return cfg.assessmentFee25;
   const [p] = await db.select({ fee25: teacherProfiles.fee25, fee50: teacherProfiles.fee50 })
     .from(teacherProfiles).where(eq(teacherProfiles.userId, teacherId));
   return duration === 25 ? (p?.fee25 ?? cfg.fee25) : (p?.fee50 ?? cfg.fee50);

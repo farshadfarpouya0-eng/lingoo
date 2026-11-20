@@ -1,6 +1,6 @@
 import { and, eq, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { accountingEntries, lessonPackages, lessonParticipants, lessons, referralLessonCredits, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "@/db/schema";
+import { accountingEntries, assessments, lessonPackages, lessonParticipants, lessons, referralLessonCredits, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, transactions, users } from "@/db/schema";
 import { FREE_CANCEL_HOURS, ledger, payGroupSeat, payTeacher, refundGroupSeat, refundStudent } from "./money";
 import { slotIsBookable } from "./time";
 import { getPricingConfig } from "./pricing-config";
@@ -239,9 +239,12 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
       }
 
       await tx.update(lessons).set({ status: "cancelled" }).where(eq(lessons.id, l.id));
-      const free = isTeacher || l.status === "pending" || l.startAt.getTime() - now >= FREE_CANCEL_HOURS * 3600_000;
+      if (l.placementAssessment) {
+        await tx.update(assessments).set({ status: "cancelled", updatedAt: new Date() }).where(eq(assessments.lessonId, l.id));
+      }
+      const free = isTeacher || l.placementAssessment || l.status === "pending" || l.startAt.getTime() - now >= FREE_CANCEL_HOURS * 3600_000;
       if (free) await refundStudent(tx, l.id, l.studentId, l.price, "Lesson cancelled", l.packageId ?? undefined, l.rewardCreditId ?? undefined);
-      else await payTeacher(tx, l.id, l.teacherId, l.price, "Late student cancellation", l.duration);
+      else await payTeacher(tx, l.id, l.teacherId, l.price, "Late student cancellation", l.duration, l.placementAssessment);
       return true;
     }
 
@@ -279,7 +282,7 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
           .set({ lessonsCount: sql`${teacherProfiles.lessonsCount} + 1` })
           .where(eq(teacherProfiles.userId, l.teacherId));
       } else {
-        await payTeacher(tx, l.id, l.teacherId, l.price, `Lesson #${l.id} completed`, l.duration);
+        await payTeacher(tx, l.id, l.teacherId, l.price, `Lesson #${l.id} completed`, l.duration, l.placementAssessment);
         if (!l.trial && l.price > 0) await qualifyStudentReferral(tx, l.studentId);
       }
       return true;

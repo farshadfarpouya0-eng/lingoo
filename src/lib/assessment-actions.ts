@@ -4,13 +4,15 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { assessments, lessons, users } from "@/db/schema";
+import { assessments, users } from "@/db/schema";
 import { getUser } from "./auth";
 import { hit } from "./ratelimit";
 import {
   CEFR_LEVELS, GOALS, PLACEMENT_QUESTIONS, gradePlacement,
-  pickRandomTeacher, recommendTeachers, type CefrLevel,
+  recommendTeachers, type CefrLevel,
 } from "./placement";
+import { bookLivePlacementAssessment } from "./live-assessment-service";
+import { isBookingLeadTimeOpen, zonedLocalToUtc } from "./time";
 
 const str = (fd: FormData, k: string, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
 const cleanGoal = (g: string) => (GOALS as readonly string[]).includes(g) ? g : "";
@@ -53,7 +55,7 @@ export async function submitWrittenAssessment(input: { answers: number[]; goal: 
   redirect("/assessment/results");
 }
 
-/** Books a free live speaking assessment with a randomly assigned teacher. */
+/** Books a free live speaking assessment with a randomly selected teacher who is genuinely available. */
 export async function requestLiveAssessment(fd: FormData) {
   const user = await getUser();
   if (!user) redirect("/login");
@@ -63,30 +65,19 @@ export async function requestLiveAssessment(fd: FormData) {
   const goal = cleanGoal(str(fd, "goal", 40));
   const audience = cleanAudience(str(fd, "audience", 10));
   const whenRaw = str(fd, "scheduledAt", 40);
-  const when = new Date(whenRaw);
-  if (!whenRaw || Number.isNaN(when.getTime()) || when.getTime() < Date.now() + 30 * 60_000) {
-    redirect("/assessment/live?err=time");
-  }
+  const [date, time] = whenRaw.split("T");
+  const when = date && time ? zonedLocalToUtc(date, time, user.timeZone || "UTC") : null;
+  if (!when || !isBookingLeadTimeOpen(when)) redirect("/assessment/live?err=time");
 
-  const teacherId = await pickRandomTeacher(user.nativeLang);
-  if (!teacherId) redirect("/assessment/live?err=noteacher");
-
-  let lessonId: number | null = null;
-  try {
-    const [lesson] = await db.insert(lessons).values({
-      studentId: user.id, teacherId, startAt: when, duration: 25,
-      status: "confirmed", price: 0, trial: true,
-      topic: "Free placement speaking assessment",
-    }).returning({ id: lessons.id });
-    lessonId = lesson.id;
-  } catch {
-    lessonId = null; // slot clash etc. — the assessment request itself still stands
-  }
-
-  await db.insert(assessments).values({
-    studentId: user.id, method: "live", status: "scheduled",
-    goal, audience, assignedTeacherId: teacherId, scheduledAt: when, lessonId,
+  const booking = await bookLivePlacementAssessment({
+    studentId: user.id,
+    startAt: when,
+    goal,
+    audience,
+    nativeLang: user.nativeLang,
   });
+  if (!booking) redirect("/assessment/live?err=unavailable");
+
   revalidatePath("/assessment");
   revalidatePath("/dashboard");
   redirect("/assessment?booked=1");

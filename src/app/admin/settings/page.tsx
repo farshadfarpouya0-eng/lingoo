@@ -5,6 +5,9 @@ import { getSiteContent } from "@/lib/site-content";
 import ContentEditor from "../content/ContentEditor";
 import PricingForm from "@/components/admin/PricingForm";
 import { getPricingConfig } from "@/lib/pricing-config";
+import SignupPolicyForm from "@/components/admin/SignupPolicyForm";
+import { getSignupConfig } from "@/lib/signup-config";
+import { getIntegrationStatus } from "@/lib/integration-config";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
@@ -15,6 +18,7 @@ export default async function AdminSettings() {
   const { t } = await getT();
   const { content, settings } = await getSiteContent();
   const pricing = await getPricingConfig();
+  const [signup, integrations] = await Promise.all([getSignupConfig(), getIntegrationStatus().catch(() => null)]);
   return (
     <>
       <div className="mb-5">
@@ -22,6 +26,7 @@ export default async function AdminSettings() {
         <p className="mt-1 text-sm text-slate-500">Edit site content, images, and settings. Changes publish instantly.</p>
       </div>
       <ContentEditor initialContent={content.en} initialSettings={settings} />
+      <SignupPolicyForm initial={signup} emailConfigured={Boolean(integrations?.email.configured)} />
       <PricingForm initial={pricing} />
     </>
   );
