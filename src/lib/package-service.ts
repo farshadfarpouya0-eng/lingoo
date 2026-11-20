@@ -5,6 +5,7 @@ import { quotePackage } from "./package-pricing";
 import { getPricingConfig } from "./pricing-config";
 import { isAccountSuspended } from "./account-status";
 import { ledger } from "./money";
+import { requirePlacementTutor } from "./placement";
 
 export type PackagePurchaseInput = { teacherId: number; duration: number; count: number; purchaseKey: string; expectedTotal?: number };
 export async function purchaseLessonPackage(studentId: number, input: PackagePurchaseInput) {
@@ -16,8 +17,10 @@ export async function purchaseLessonPackage(studentId: number, input: PackagePur
     const [previous] = await tx.select().from(lessonPackages).where(eq(lessonPackages.purchaseKey, input.purchaseKey));
     if (previous) {
       if (previous.studentId !== studentId) throw new Error("forbidden");
-      return previous;
+      if (previous.teacherId !== input.teacherId || previous.duration !== input.duration || previous.totalLessons !== input.count) throw new Error("plan");
+      return previous; // idempotent replay, never a new purchase
     }
+    await requirePlacementTutor(tx, studentId, input.teacherId);
     const [tutor] = await tx.select({ id: teacherProfiles.userId }).from(teacherProfiles)
       .innerJoin(users, eq(users.id, teacherProfiles.userId))
       .where(and(eq(users.role, "teacher"), eq(teacherProfiles.userId, input.teacherId), eq(teacherProfiles.active, true), or(eq(users.suspended, false), and(eq(users.suspended, true), lte(users.suspendedUntil, new Date())))));

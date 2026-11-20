@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { chromium, expect, type BrowserContext } from "@playwright/test";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db, pool } from "../src/db";
-import { users, sessions, teacherProfiles, lessons, messages, cryptoNetworkSettings, cryptoPaymentOrders, accountingEntries, transactions, adminAuditLogs, siteSettings, userPresence, lessonPlatformEvents } from "../src/db/schema";
+import { assessments, users, sessions, teacherProfiles, lessons, messages, cryptoNetworkSettings, cryptoPaymentOrders, accountingEntries, transactions, adminAuditLogs, siteSettings, userPresence, lessonPlatformEvents } from "../src/db/schema";
 import { localDatabaseConfigured } from "../src/lib/runtime-policy";
 
 const origin = "http://localhost:3000";
@@ -40,6 +40,8 @@ async function main() {
     const [teacher, student, tokyo, admin] = accounts;
     accountIds.push(...accounts.map(account => account.id));
     await db.insert(teacherProfiles).values({ userId: teacher.id, headline: "A personal English lesson at your pace", bio: "Local automated test fixture for accurate lesson scheduling and privacy.", timeZone: "Asia/Tehran", startHour: 9, endHour: 18, workDays: "0,1,2,3,4,5,6", price: 2500, active: true });
+    // A scheduling fixture must have a confirmed match before making new bookings.
+    await db.insert(assessments).values([student, tokyo].map(learner => ({ studentId: learner.id, status: "completed", method: "written", level: "B1", recommendedIds: [teacher.id], selectedTeacherId: teacher.id })));
     const chinaContext = await contextFor(student.id, "Asia/Tokyo"); // Browser zone must NOT override the saved account zone.
     const japanContext = await contextFor(tokyo.id, "Asia/Shanghai");
     const teacherContext = await contextFor(teacher.id, "Asia/Tehran");
@@ -248,6 +250,7 @@ async function main() {
         await tx.delete(lessons).where(or(inArray(lessons.studentId, accountIds), inArray(lessons.teacherId, accountIds)));
         await tx.delete(cryptoPaymentOrders).where(inArray(cryptoPaymentOrders.userId, accountIds));
         await tx.delete(userPresence).where(inArray(userPresence.userId, accountIds));
+        await tx.delete(assessments).where(inArray(assessments.studentId, accountIds));
         await tx.delete(users).where(inArray(users.id, accountIds));
       }
     });

@@ -45,7 +45,7 @@ async function ReferralDashboardBlock({ userId, code }: { userId: number; code: 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My learning", robots: { index: false, follow: false } };
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string; with?: string; teacher?: string; ok?: string; err?: string }> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string; with?: string; ok?: string; err?: string }> }) {
   const user = await getUser();
   if (!user) redirect("/login");
   if (user.role === "admin") redirect("/admin");
@@ -179,7 +179,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   let content: React.ReactNode;
 
   if (tab === "packages") {
-    content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} tutorId={Number(sp.teacher) || undefined} />;
+    content = <PackageDashboard studentId={user.id} balance={balance} lang={lang} />;
   } else if (tab === "lessons") {
     content = <><DashboardRefresh /><DashboardLessons rows={displayRows} isTutor={isTutor} t={t} c={c} lang={lang} booked={sp.ok === "booked"} viewerTimeZone={user.timeZone || undefined} /></>;
   } else if (tab === "test" && isTutor) {

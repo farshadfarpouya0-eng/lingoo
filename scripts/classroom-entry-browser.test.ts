@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db, pool } from "../src/db";
-import { users, sessions, teacherProfiles, lessons, lessonPlatformEvents, transactions, accountingEntries, userPresence } from "../src/db/schema";
+import { assessments, users, sessions, teacherProfiles, lessons, lessonPlatformEvents, transactions, accountingEntries, userPresence } from "../src/db/schema";
 import { localDatabaseConfigured } from "../src/lib/runtime-policy";
 import { buildSlots } from "../src/lib/time";
 import { reserveLesson } from "../src/lib/lesson-service";
@@ -24,6 +24,8 @@ async function main() {
     ]).returning();
     created.push(teacher.id, student.id);
     await db.insert(teacherProfiles).values({ userId: teacher.id, timeZone: "Asia/Tehran", startHour: 9, endHour: 21, workDays: "0,1,2,3,4,5,6", price: 2500, meetUrl: "https://meet.google.com/abc-defg-hij", meetOpenAccess: true, active: true });
+    // A scheduling fixture must have a confirmed match before making new bookings.
+    await db.insert(assessments).values({ studentId: student.id, status: "completed", method: "written", level: "B1", recommendedIds: [teacher.id], selectedTeacherId: teacher.id });
     const slots = buildSlots("en", { timeZone: "Asia/Tehran", startHour: 9, endHour: 21, workDays: "0,1,2,3,4,5,6" }, new Set(), 50);
     const startAt = new Date(slots.find(day => day.slots.length && Date.parse(day.slots[0].iso) > Date.now() + 90 * 60_000)!.slots[0].iso);
     const booked = await reserveLesson(student.id, { teacherId: teacher.id, startAt, duration: 50, topic: "Sandbox-only classroom entry test" });
@@ -121,6 +123,7 @@ async function main() {
       await tx.delete(lessonPlatformEvents).where(inArray(lessonPlatformEvents.changedBy, created));
       await tx.delete(lessons).where(or(inArray(lessons.studentId, created), inArray(lessons.teacherId, created)));
       await tx.delete(userPresence).where(inArray(userPresence.userId, created));
+      await tx.delete(assessments).where(inArray(assessments.studentId, created));
       await tx.delete(users).where(inArray(users.id, created));
     });
     await pool.end();

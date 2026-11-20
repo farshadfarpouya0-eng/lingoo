@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, desc, eq, gt, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { lessonPackages, lessonParticipants, lessons, reviews, teacherBlockedSlots, teacherProfiles, teacherWeeklySlots, users } from "@/db/schema";
@@ -17,7 +17,7 @@ import { money } from "@/lib/package-pricing";
 import { ensureSeed } from "@/lib/seed";
 import { getPricingConfig } from "@/lib/pricing-config";
 import { ASSESS } from "@/lib/assessment-i18n";
-import { getLatestCompletedAssessment } from "@/lib/placement";
+import { getLatestCompletedAssessment, selectedPlacementTutor, shortlistIds } from "@/lib/placement";
 export const dynamic = "force-dynamic";
 export default async function TeacherPage({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ err?: string; package?: string; duration?: string }>;
@@ -46,11 +46,13 @@ export default async function TeacherPage({ params, searchParams }: {
     db.select({ s: teacherBlockedSlots.startAt, e: teacherBlockedSlots.endAt }).from(teacherBlockedSlots).where(and(eq(teacherBlockedSlots.teacherId, tid), gt(teacherBlockedSlots.endAt, new Date()))),
     user?.role === "student" ? getLatestCompletedAssessment(user.id) : Promise.resolve(null),
   ]);
-  // Students book through the matching flow: only their chosen/recommended teacher
-  // (or a teacher they already study with) can be booked directly.
   const a = ASSESS[lang];
-  const recommendedIds = Array.isArray(matchInfo?.recommendedIds) ? (matchInfo!.recommendedIds as number[]) : [];
-  const canBook = user?.role !== "student" || prev.length > 0 || credits.length > 0 || matchInfo?.selectedTeacherId === tid || recommendedIds.includes(tid);
+  const student = user?.role === "student" ? user : null;
+  const confirmed = !!student && selectedPlacementTutor(matchInfo) === tid;
+  const redemption = !confirmed ? credits.find(pack => pack.id === Number(sp.package)) : undefined;
+  const nextStep = matchInfo ? "/assessment/results" : "/assessment";
+  // Only the results page can confirm a tutor. An owned package opens only its own redemption form.
+  if (student && !confirmed && !redemption && !shortlistIds(matchInfo).includes(tid)) redirect(nextStep);
   const groupLessons = await db.select({ id: lessons.id, studentId: lessons.studentId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity })
     .from(lessons).where(and(eq(lessons.teacherId, tid), eq(lessons.classType, "semi_private"), inArray(lessons.status, ["pending", "confirmed"]), gt(lessons.startAt, new Date()), gt(lessons.startAt, new Date(nowMs() - 1000))));
   const groupIds = groupLessons.map(g => g.id);
@@ -83,10 +85,18 @@ export default async function TeacherPage({ params, searchParams }: {
     </div>
     <aside className="min-w-0 space-y-4 lg:sticky lg:top-24">
       <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-100/60"><div className="flex items-baseline justify-between gap-2"><div><span className="text-3xl font-bold tracking-tight text-teal-950">{money(pricing.student50)}</span><span className="ml-1 text-xs text-slate-400">/ 50 {c.minutes}</span></div></div>{error&&<p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error} {sp.err==="balance"&&<Link href="/dashboard?tab=wallet" className="underline">{t.topUp}</Link>}</p>}
-        {user?.role === "student" && canBook ? <BookingPanel teacherId={tr.id} studentTimeZone={viewerZone} serverNowMs={serverNowMs} lang={lang} slots50={slots50} slots25={slots25} groupSlots={visibleGroupSlots} price={pricing.student50} price25={pricing.student25} trialEligible={!prev.length} balance={user.balance} t={t} c={c} credits={credits} initialPackageId={Number(sp.package)||undefined} initialDuration={sp.duration==="25"?25:50}/> : user?.role === "student" ? <div className="mt-5 rounded-2xl bg-teal-50 p-5"><p className="text-sm font-bold text-teal-950">{a.dashCardNewTitle}</p><p className="mt-1 text-xs leading-5 text-slate-500">{a.dashCardNewText}</p><Link href={matchInfo ? "/assessment/results" : "/assessment"} className="mt-4 block rounded-xl bg-teal-800 py-2.5 text-center text-sm font-bold text-white">{matchInfo ? a.dashCardViewMatches : a.startTest}</Link></div> : !user ? <Link href="/login" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{t.loginToBook}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
-        <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-[11px] leading-5 text-slate-500"><li className="font-bold text-teal-900">{t.policyTitle}</li><li>{t.policy1}</li><li>{t.policy2}</li>{credits.length>0&&<li>{c.creditRestored}</li>}</ul>
+        {student && (confirmed || redemption) ? (
+           <BookingPanel key={`${tid}:${redemption?.id ?? "assigned"}`} teacherId={tid} studentTimeZone={viewerZone} serverNowMs={serverNowMs}
+             lang={lang} slots50={slots50} slots25={slots25} groupSlots={confirmed ? visibleGroupSlots : []} price={pricing.student50} price25={pricing.student25}
+             trialEligible={confirmed && !prev.length} balance={student.balance} t={t} c={c} credits={confirmed ? credits : []} redemption={redemption}
+             initialPackageId={Number(sp.package) || undefined} initialDuration={sp.duration === "25" ? 25 : 50} />
+         ) : student ? (
+           <div data-testid="profile-awaiting-selection" className="mt-5 rounded-2xl bg-teal-50 p-5"><p className="text-sm leading-6 text-teal-950">{c.confirmMatchFirst}</p>
+             <Link href={nextStep} className="mt-4 block rounded-xl bg-teal-800 py-2.5 text-center text-sm font-bold text-white">{a.dashCardViewMatches}</Link></div>
+         ) : !user ? <Link href="/assessment" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{a.startTest}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
+         <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-[11px] leading-5 text-slate-500"><li className="font-bold text-teal-900">{t.policyTitle}</li><li>{t.policy1}</li><li>{t.policy2}</li>{credits.length>0&&<li>{c.creditRestored}</li>}</ul>
       </div>
-      {canBook && <Link href={user?.role==="student"?`/dashboard?tab=packages&teacher=${tid}`:"/login"} className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-teal-800"><Icon name="box" className="shrink-0"/><div className="min-w-0 flex-1"><b className="text-sm">{c.packages}</b><p className="mt-0.5 text-[11px]">5% · 10% · 15% {c.off}</p></div><Icon name="chevron" width={17} height={17}/></Link>}
+      {confirmed && <Link href="/dashboard?tab=packages" className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-teal-800"><Icon name="box" className="shrink-0"/><div className="min-w-0 flex-1"><b className="text-sm">{c.packages}</b><p className="mt-0.5 text-[11px]">5% · 10% · 15% {c.off}</p></div><Icon name="chevron" width={17} height={17}/></Link>}
       {user&&user.id!==tr.id&&<form action={sendMessage as unknown as (fd: FormData) => Promise<void>} className="rounded-[26px] border border-slate-200 bg-white p-6"><input type="hidden" name="to" value={tr.id}/><textarea name="body" required maxLength={2000} rows={3} placeholder={t.messagePlaceholder} className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-teal-500"/><button className="mt-2 w-full rounded-xl bg-teal-950 py-2.5 text-sm font-semibold text-white">{t.sendMessage}</button></form>}
     </aside>
   </div>;

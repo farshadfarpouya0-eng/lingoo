@@ -55,7 +55,19 @@ export default function HeroOrbit({ cards }: { cards: HeroCardData[] }) {
       apply();
       raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    // The orbit is visually replaced by a touch carousel on small screens.
+    // Do not keep a hidden animation running on phones or in background tabs.
+    const desktop = window.matchMedia("(min-width: 861px)");
+    const syncAnimation = () => {
+      cancelAnimationFrame(raf);
+      if (desktop.matches && !document.hidden) {
+        prev = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    desktop.addEventListener("change", syncAnimation);
+    document.addEventListener("visibilitychange", syncAnimation);
+    syncAnimation();
 
     const setTargets = (e: PointerEvent) => {
       const r = scene.getBoundingClientRect();
@@ -112,6 +124,8 @@ export default function HeroOrbit({ cards }: { cards: HeroCardData[] }) {
     scene.addEventListener("pointerleave", onLeave);
     return () => {
       cancelAnimationFrame(raf);
+      desktop.removeEventListener("change", syncAnimation);
+      document.removeEventListener("visibilitychange", syncAnimation);
       scene.removeEventListener("pointerdown", onDown);
       scene.removeEventListener("pointermove", onMove);
       scene.removeEventListener("pointerup", onUp);

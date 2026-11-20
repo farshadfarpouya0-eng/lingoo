@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getUser } from "@/lib/auth";
 import { getT } from "@/lib/i18n";
 import { ASSESS } from "@/lib/assessment-i18n";
-import { getLatestAssessment, getTeachersByIds } from "@/lib/placement";
+import { getLatestAssessment, getTeachersByIds, selectedPlacementTutor } from "@/lib/placement";
 import { ensureSeed } from "@/lib/seed";
 import Icon from "@/components/Icon";
 
@@ -26,7 +26,8 @@ export default async function AssessmentHome({ searchParams }: {
 
   const latest = user?.role === "student" ? await getLatestAssessment(user.id) : null;
   const assigned = latest?.assignedTeacherId ? (await getTeachersByIds([latest.assignedTeacherId]))[0] : null;
-  const chosen = latest?.selectedTeacherId ? (await getTeachersByIds([latest.selectedTeacherId]))[0] : null;
+  const selected = selectedPlacementTutor(latest);
+  const chosen = selected ? (await getTeachersByIds([selected]))[0] : null;
   const when = latest?.scheduledAt
     ? new Intl.DateTimeFormat(localeOf(lang), { dateStyle: "medium", timeStyle: "short", timeZone: user?.timeZone || "UTC" }).format(latest.scheduledAt)
     : "";

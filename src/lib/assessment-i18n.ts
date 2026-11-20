@@ -32,6 +32,7 @@ const en = {
   yourLevel: "Your English level",
   levelSetByTeacher: "Level set by your teacher",
   scoreLabel: "Score",
+  noCurrentMatches: "None of these tutors is available right now. Retake the assessment below to request a new shortlist.",
   matchesTitle: "Your matched teachers",
   matchesSub: "Hand-picked for your level and goal. Watch their videos and choose the one you like.",
   reasonLevel: "Teaches your level", reasonNearLevel: "Teaches nearby levels", reasonGoal: "Matches your goal",
@@ -70,6 +71,7 @@ const en = {
   evalStudent: "Student", evalGoal: "Goal", evalSetLevel: "Set level", evalNotes: "Notes for the student (optional)",
   evalSubmit: "Save evaluation & unlock matches", evalDone: "Evaluation saved — matches unlocked for the student.",
   evalJoinHint: "Run the call from your lessons list, then set the student's level here.",
+  completeAnswers: "Answer all 15 questions before submitting your test.", finishLiveFirst: "End the assessment lesson before saving the evaluation.",
   errGeneric: "Something went wrong. Please try again.",
 };
 export type AssessmentCopy = typeof en;
@@ -106,6 +108,7 @@ const zh: AssessmentCopy = {
   yourLevel: "你的英语水平",
   levelSetByTeacher: "由老师定级",
   scoreLabel: "得分",
+  noCurrentMatches: "本次推荐的老师目前均不可预约。请重新测评以获取新的推荐。",
   matchesTitle: "为你推荐的老师",
   matchesSub: "按你的水平和目标精选。看完视频，选你喜欢的一位。",
   reasonLevel: "教授你的级别", reasonNearLevel: "教授相邻级别", reasonGoal: "符合你的目标",
@@ -144,6 +147,7 @@ const zh: AssessmentCopy = {
   evalStudent: "学生", evalGoal: "目标", evalSetLevel: "设定级别", evalNotes: "给学生的备注（可选）",
   evalSubmit: "保存评估并解锁推荐", evalDone: "评估已保存——学生的推荐已解锁。",
   evalJoinHint: "请从课程列表进入课堂，课后在这里设定学生级别。",
+  completeAnswers: "请答完全部15道题后再提交。", finishLiveFirst: "请先结束测评课，再提交级别。",
   errGeneric: "出错了，请再试一次。",
 };
 
@@ -179,6 +183,7 @@ const ja: AssessmentCopy = {
   yourLevel: "あなたの英語レベル",
   levelSetByTeacher: "講師が判定したレベル",
   scoreLabel: "スコア",
+  noCurrentMatches: "今回のおすすめ講師は現在予約できません。下のボタンから再診断して、新しい候補を確認してください。",
   matchesTitle: "あなたへのおすすめ講師",
   matchesSub: "レベルと目標に合わせて厳選。動画を見て、気に入った講師を選びましょう。",
   reasonLevel: "あなたのレベルを指導", reasonNearLevel: "近いレベルを指導", reasonGoal: "目標に合致",
@@ -217,6 +222,7 @@ const ja: AssessmentCopy = {
   evalStudent: "生徒", evalGoal: "目標", evalSetLevel: "レベルを設定", evalNotes: "生徒へのメモ（任意）",
   evalSubmit: "判定を保存しておすすめを表示", evalDone: "判定を保存しました。生徒のおすすめが表示されます。",
   evalJoinHint: "レッスン一覧から通話に入り、終了後にここでレベルを設定してください。",
+  completeAnswers: "15問すべてに回答してから送信してください。", finishLiveFirst: "診断レッスンを終了してから判定を保存してください。",
   errGeneric: "問題が発生しました。もう一度お試しください。",
 };
 

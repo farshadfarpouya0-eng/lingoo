@@ -121,9 +121,13 @@ export async function bookLesson(fd: FormData) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "generic";
-    error = ["balance", "slot", "credit", "trial", "group_unavailable", "group_full", "group_already_joined", "group_payment"].includes(msg) ? msg : pgCode(e) === "23505" ? "slot" : "generic";
+    error = ["placement_required", "balance", "slot", "credit", "trial", "group_unavailable", "group_full", "group_already_joined", "group_payment"].includes(msg) ? msg : pgCode(e) === "23505" ? "slot" : "generic";
   }
-  if (error) redirect(`/teachers/${teacherId}?err=${error}`);
+  if (error === "placement_required") redirect("/assessment");
+  if (error) {
+    const pack = Number(fd.get("packageId"));
+    redirect(`/teachers/${teacherId}?err=${error}${Number.isSafeInteger(pack) && pack > 0 ? `&package=${pack}` : ""}`);
+  }
   redirect("/dashboard?tab=lessons&ok=booked");
 }
 

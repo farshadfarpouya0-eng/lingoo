@@ -1,21 +1,65 @@
-import { and, desc, eq, inArray, lte, or } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { assessments, teacherProfiles, users } from "@/db/schema";
+import { isAccountSuspended } from "./account-status";
 
-/** The student's most recent assessment, if any. */
-export async function getLatestAssessment(studentId: number) {
-  const [row] = await db.select().from(assessments)
-    .where(eq(assessments.studentId, studentId))
-    .orderBy(desc(assessments.createdAt)).limit(1);
+type Reader = Pick<typeof db, "select">;
+type SelectionRecord = Pick<typeof assessments.$inferSelect, "status" | "level" | "selectedTeacherId" | "recommendedIds">;
+
+/** One current placement for display, choosing a match, purchases and bookings.
+ * A newer pending evaluation is not permission to reuse an older shortlist.
+ * A cancelled evaluation is ignored (it never produced a result).
+ */
+export async function getLatestAssessment(studentId: number, reader: Reader = db) {
+  const [row] = await reader.select().from(assessments)
+    .where(and(eq(assessments.studentId, studentId), ne(assessments.status, "cancelled")))
+    .orderBy(desc(assessments.createdAt), desc(assessments.id)).limit(1);
   return row ?? null;
 }
 
-/** The student's most recent completed assessment (recommendations available). */
-export async function getLatestCompletedAssessment(studentId: number) {
-  const [row] = await db.select().from(assessments)
-    .where(and(eq(assessments.studentId, studentId), eq(assessments.status, "completed")))
-    .orderBy(desc(assessments.createdAt)).limit(1);
-  return row ?? null;
+export async function getLatestCompletedAssessment(studentId: number, reader: Reader = db) {
+  const row = await getLatestAssessment(studentId, reader);
+  return row?.status === "completed" && row.level ? row : null;
+}
+
+export function shortlistIds(row: SelectionRecord | null): number[] {
+  if (row?.status !== "completed" || !row.level || !Array.isArray(row.recommendedIds)) return [];
+  return [...new Set(row.recommendedIds.filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0))].slice(0, 3);
+}
+
+export function selectedPlacementTutor(row: SelectionRecord | null): number | null {
+  const id = row?.selectedTeacherId;
+  return id && shortlistIds(row).includes(id) ? id : null;
+}
+
+/** Check inside the payment/booking transaction, after locking the student.
+ * A teacherId sent by the browser confirms intent; it does not grant access.
+ */
+export async function requirePlacementTutor(reader: Reader, studentId: number, teacherId: number) {
+  const current = await getLatestAssessment(studentId, reader);
+  if (selectedPlacementTutor(current) !== teacherId) throw new Error("placement_required");
+}
+
+/** The results screen is the only writer of selectedTeacherId. Stale pages,
+ * another learner's result, unavailable tutors and non-matches cannot assign a tutor.
+ */
+export async function confirmPlacementTutor(studentId: number, assessmentId: number, teacherId: number) {
+  if (![studentId, assessmentId, teacherId].every(id => Number.isSafeInteger(id) && id > 0)) return false;
+  return db.transaction(async tx => {
+    const [student] = await tx.select({ role: users.role, suspended: users.suspended, until: users.suspendedUntil })
+      .from(users).where(eq(users.id, studentId)).for("update");
+    if (student?.role !== "student" || isAccountSuspended(student.suspended, student.until)) return false;
+    const current = await getLatestAssessment(studentId, tx);
+    if (current?.id !== assessmentId || !shortlistIds(current).includes(teacherId)) return false;
+    const [tutor] = await tx.select({ id: users.id }).from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId))
+      .where(and(eq(users.id, teacherId), eq(users.role, "teacher"), eq(teacherProfiles.active, true),
+        or(eq(users.suspended, false), lte(users.suspendedUntil, new Date())))).for("share");
+    if (!tutor) return false;
+    const saved = await tx.update(assessments).set({ selectedTeacherId: tutor.id, updatedAt: new Date() })
+      .where(and(eq(assessments.id, current.id), eq(assessments.studentId, studentId), eq(assessments.status, "completed")))
+      .returning({ id: assessments.id });
+    return saved.length === 1;
+  });
 }
 
 export { CEFR_LEVELS, GOALS, PLACEMENT_QUESTIONS, gradePlacement } from "./placement-questions";
@@ -149,7 +193,8 @@ export async function getTeachersByIds(ids: number[]) {
     })
     .from(teacherProfiles)
     .innerJoin(users, eq(users.id, teacherProfiles.userId))
-    .where(inArray(users.id, ids));
+    .where(and(inArray(users.id, ids), eq(users.role, "teacher"), eq(teacherProfiles.active, true),
+      or(eq(users.suspended, false), lte(users.suspendedUntil, new Date()))));
   const byId = new Map(rows.map(r => [r.id, r]));
   return ids.map(id => byId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
 }
