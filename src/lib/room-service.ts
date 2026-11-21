@@ -72,11 +72,13 @@ export async function classroomSnapshot(actorId: number, lessonId: number, _disp
     meetingUrl: actorId === l.teacherId || (state === "open" && platform !== "undecided") ? l.meetingUrl : "",
     issueReported: !!l.platformIssueAt, updatedAt: l.platformUpdatedAt?.toISOString() ?? null };
 }
-export async function chooseClassroom(actorId: number, lessonId: number, platform: string, meetingUrl: string) {
+export async function chooseClassroom(actorId: number, lessonId: number, platform: string, _meetingUrl: string) {
   // Existing Daily lessons remain accessible, but no new lesson may select Daily.
   if (!["lingo", "meet", "zoom"].includes(platform)) throw new Error("platform");
-  const url = platform === "lingo" ? "" : validMeetingLink(platform, meetingUrl.trim());
-  if ((platform === "meet" || platform === "zoom") && !url && !(await assignedTeacherLinks(actorId))[platform]) throw new Error("link");
+  // Meet / Zoom rooms are managed centrally by the administrator per tutor.
+  // Do not accept or persist lesson-specific meeting links.
+  const url = "";
+  if ((platform === "meet" || platform === "zoom") && !(await assignedTeacherLinks(actorId))[platform]) throw new Error("link");
   return db.transaction(async tx => {
     const [l] = await tx.select().from(lessons).where(eq(lessons.id, lessonId)).for("update");
     if (!l || l.teacherId !== actorId) throw new Error("forbidden");
