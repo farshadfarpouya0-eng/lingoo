@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { lessonPlatformEvents, lessons } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { isAccountSuspended } from "@/lib/account-status";
-import { assignedTeacherLinks, validMeetingLink } from "@/lib/room-service";
+import { assignedTeacherLinks } from "@/lib/room-service";
 type SaveResult = { ok?: boolean; error?: string };
 const PLATFORMS = ["lingo", "meet", "zoom"] as const;
 
@@ -17,7 +17,6 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
 
   const lessonId = Number(formData.get("lessonId"));
   const platform = String(formData.get("platform") ?? "");
-  const rawUrl = String(formData.get("meetingUrl") ?? "").trim();
 
   if (!Number.isInteger(lessonId) || lessonId < 1) return { ok: false, error: "forbidden" };
   if (!PLATFORMS.includes(platform as (typeof PLATFORMS)[number])) return { ok: false, error: "forbidden" };
@@ -37,10 +36,10 @@ export async function saveClassroom(_prev: SaveResult, formData: FormData): Prom
   // A booked seat is not a confirmed class: only after the tutor confirms
   // may they select the meeting platform.
 
-  // A tutor may override with a lesson-specific link. Otherwise store "" so the
-  // classroom always follows the admin-assigned room, including later admin changes.
-  const url = platform === "lingo" ? "" : validMeetingLink(platform, rawUrl);
-  if ((platform === "meet" || platform === "zoom") && !url && !assigned) return { ok: false, error: "link" };
+  // Google Meet / Zoom links are managed only by the administrator in Admin → Tutors.
+  // Keep lesson.meetingUrl empty so every class resolves the current assigned tutor room.
+  const url = "";
+  if ((platform === "meet" || platform === "zoom") && !assigned) return { ok: false, error: "link" };
 
   await db.update(lessons).set({
     platform,

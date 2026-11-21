@@ -122,7 +122,6 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor, assigne
     : initial.platform;
 
   const [platform, setPlatform] = useState<string>(startPlatform);
-  const [link, setLink] = useState(initial.meetingUrl);
   const [result, action, pending] = useActionState(saveClassroom, {} as { ok?: boolean; error?: string });
   useEffect(() => { if (result?.ok) onSaved(); }, [result, onSaved]);
 
@@ -160,7 +159,7 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor, assigne
             <button
               type="button" key={card.key}
               disabled={locked}
-              onClick={() => { setPlatform(card.key); if (card.key !== platform) setLink(""); }}
+              onClick={() => setPlatform(card.key)}
               aria-pressed={on}
               className={`rounded-2xl border-2 p-4 text-left transition ${
                 locked ? "cursor-not-allowed border-slate-100 bg-slate-50 opacity-60"
@@ -189,22 +188,15 @@ function PlatformForm({ lessonId, initial, preference, onSaved, isTutor, assigne
       )}
 
       {isTutor && (platform === "meet" || platform === "zoom") && !hasAssigned(platform) && (
-        <label className="mt-5 block text-xs font-bold text-slate-600">
-          {D.link}
-          <input
-            name="meetingUrl" type="url" required value={link}
-            onChange={e => setLink(e.target.value)}
-            placeholder={platform === "meet" ? "https://meet.google.com/abc-defg-hij" : "https://zoom.us/j/123456789"}
-            className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-normal outline-none focus:border-teal-500"
-          />
-          <span className="mt-2 block text-[11px] font-normal text-slate-400">{D.linkHint} · {D.noAssigned}</span>
-        </label>
+        <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900">
+          No administrator-assigned {platform === "meet" ? "Google Meet" : "Zoom"} room is configured for this tutor. The administrator must add the room in Admin → Tutors. A lesson-specific link cannot be entered here.
+        </div>
       )}
 
       {result?.error && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm text-red-700">{errorText}</p>}
       {result?.ok && <p role="status" className="mt-4 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{D.saved}</p>}
 
-      <button disabled={pending} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">
+      <button disabled={pending || ((platform === "meet" || platform === "zoom") && !hasAssigned(platform))} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900 disabled:opacity-50">
         {pending ? "Saving…" : D.save}<Icon name="arrow" width={17} height={17} />
       </button>
     </form>
