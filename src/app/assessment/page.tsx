@@ -9,8 +9,6 @@ import Icon from "@/components/Icon";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Free English level test" };
 
-const localeOf = (lang: string) => (lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : "en-GB");
-
 export default async function AssessmentHome({ searchParams }: {
   searchParams: Promise<{ audience?: string; goal?: string; booked?: string; err?: string }>;
 }) {
@@ -25,12 +23,8 @@ export default async function AssessmentHome({ searchParams }: {
   const suffix = qs.toString() ? `?${qs}` : "";
 
   const latest = user?.role === "student" ? await getLatestAssessment(user.id) : null;
-  const assigned = latest?.assignedTeacherId ? (await getTeachersByIds([latest.assignedTeacherId]))[0] : null;
   const selected = selectedPlacementTutor(latest);
   const chosen = selected ? (await getTeachersByIds([selected]))[0] : null;
-  const when = latest?.scheduledAt
-    ? new Intl.DateTimeFormat(localeOf(lang), { dateStyle: "medium", timeStyle: "short", timeZone: user?.timeZone || "UTC" }).format(latest.scheduledAt)
-    : "";
 
   const card = "rounded-[26px] border border-slate-200 bg-white p-7";
   const primaryBtn = "inline-flex items-center gap-2 rounded-full bg-teal-800 px-6 py-3 text-sm font-bold text-white transition hover:bg-teal-900";
@@ -63,7 +57,7 @@ export default async function AssessmentHome({ searchParams }: {
           <h2 className="text-lg font-bold text-teal-950">{a.chooseMethod}</h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{a.loginNeeded}</p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
-            <Link href="/register" className={primaryBtn}>{a.registerCta}<Icon name="arrow" width={16} height={16} /></Link>
+            <Link href="/register" className={primaryBtn}>{a.registerWithoutTest}<Icon name="arrow" width={16} height={16} /></Link>
             <Link href="/login" className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-6 py-3 text-sm font-bold text-teal-900 transition hover:border-teal-400">{a.loginCta}</Link>
           </div>
         </section>
@@ -95,17 +89,6 @@ export default async function AssessmentHome({ searchParams }: {
           </div>
           <Link href="/assessment/results" className={primaryBtn}>{a.dashCardViewMatches}<Icon name="arrow" width={16} height={16} /></Link>
         </section>
-      ) : latest?.status === "scheduled" ? (
-        <section className={`${card} mt-8`}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-teal-600">{a.pendingTitle}</p>
-          <h2 className="mt-2 text-lg font-bold text-teal-950">{a.scheduledTitle}</h2>
-          <div className="mt-3 space-y-1.5 text-sm text-slate-600">
-            {assigned && <p>{a.scheduledWith}: <b className="text-teal-900">{assigned.name}</b></p>}
-            {when && <p>{a.scheduledAt}: <b className="text-teal-900">{when}</b></p>}
-          </div>
-          <p className="mt-3 max-w-xl text-xs leading-5 text-slate-400">{a.scheduledNote}</p>
-          <Link href="/dashboard?tab=lessons" className={`${primaryBtn} mt-5`}>{a.goLessons}<Icon name="arrow" width={16} height={16} /></Link>
-        </section>
       ) : (
         <section className="mt-8">
           <h2 className="text-lg font-bold text-teal-950">{a.chooseMethod}</h2>
@@ -118,11 +101,10 @@ export default async function AssessmentHome({ searchParams }: {
               <Link href={`/assessment/test${suffix}`} className={`${primaryBtn} mt-4 self-start`}>{a.startWritten}<Icon name="arrow" width={16} height={16} /></Link>
             </article>
             <article className={`${card} flex flex-col`}>
-              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="video" width={21} height={21} /></span>
-              <h3 className="mt-4 font-bold text-teal-950">{a.liveTitle}</h3>
-              <p className="mt-1.5 flex-1 text-sm leading-6 text-slate-500">{a.liveText}</p>
-              <p className="mt-3 text-[11px] font-semibold text-teal-700">{a.liveMeta}</p>
-              <Link href={`/assessment/live${suffix}`} className="mt-4 inline-flex items-center gap-2 self-start rounded-full border border-teal-700 px-6 py-3 text-sm font-bold text-teal-800 transition hover:bg-teal-50">{a.bookLive}<Icon name="arrow" width={16} height={16} /></Link>
+              <span className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-50 text-teal-700"><Icon name="user" width={21} height={21} /></span>
+              <h3 className="mt-4 font-bold text-teal-950">{a.skipTestTitle}</h3>
+              <p className="mt-1.5 flex-1 text-sm leading-6 text-slate-500">{a.skipTestText}</p>
+              <Link href="/dashboard?tab=packages" className={`${primaryBtn} mt-4 self-start`}>{a.skipTestCta}<Icon name="arrow" width={16} height={16} /></Link>
             </article>
           </div>
         </section>

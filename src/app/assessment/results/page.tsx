@@ -68,7 +68,7 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
           <span className="text-6xl font-extrabold tracking-tight">{assessment.level}</span>
           <div className="pb-1.5 text-sm leading-6 text-teal-100">
             {assessment.method === "written" && assessment.score !== null && (
-              <p>{a.scoreLabel}: <b className="text-white">{assessment.score} / 15</b></p>
+              <p>{a.scoreLabel}: <b className="text-white">{assessment.score} / {assessment.goal ? 20 : 15}</b></p>
             )}
             {assessment.method === "live" && <p>{a.levelSetByTeacher}</p>}
             {assessment.goal && <p>{a.goalLabel}: <b className="text-white">{assessment.goal}</b></p>}
@@ -179,7 +179,6 @@ export default async function ResultsPage({ searchParams }: { searchParams: Prom
 
       <div className="mt-10 flex flex-wrap gap-3">
         <Link href="/assessment/test" className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-xs font-bold text-teal-800 transition hover:border-teal-400">{a.retake}</Link>
-        <Link href="/assessment/live" className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-xs font-bold text-teal-800 transition hover:border-teal-400">{a.bookLive}</Link>
       </div>
     </div>
   );

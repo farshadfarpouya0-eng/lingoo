@@ -123,9 +123,10 @@ export default async function Classroom({ params, searchParams }: { params: Prom
               ✓ Lesson ended{l.classType === "private" ? ` · ${money(endFee)} paid to your wallet` : ""}
             </span>
           )}
-          {isTutor && l.status === "confirmed" && Date.now() >= l.startAt.getTime() && (
+          {isTutor && l.status === "confirmed" && (
             <CompleteLessonButton
               id={l.id}
+              startAtMs={l.startAt.getTime()}
               label={`End lesson${l.classType === "private" ? ` · get ${money(endFee)}` : ""}`}
               earnLabel={l.classType === "private" ? money(endFee) : undefined}
             />

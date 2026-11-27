@@ -21,7 +21,7 @@ export default async function PackageDashboard({ studentId, balance, lang }: { s
   ]);
 
   let access: ShopAccess;
-  if (current?.status === "completed" && current.level) {
+  if (current?.method === "written" && current.status === "completed" && current.level) {
     const teacherId = selectedPlacementTutor(current);
     const [teacher] = teacherId ? await db.select({ id: users.id, name: users.name, avatar: users.avatar, headline: teacherProfiles.headline })
       .from(teacherProfiles).innerJoin(users, eq(users.id, teacherProfiles.userId))
@@ -33,10 +33,8 @@ export default async function PackageDashboard({ studentId, balance, lang }: { s
     } else {
       access = { kind: "results", title: a.matchesTitle, description: LEARNING[lang].confirmMatchFirst, href: "/assessment/results", label: a.dashCardViewMatches };
     }
-  } else if (current?.status === "scheduled" || current?.status === "pending") {
-    access = { kind: "waiting", title: a.pendingTitle, description: a.dashCardScheduledText, href: "/assessment", label: a.scheduledTitle };
   } else {
-    access = { kind: "assessment", title: a.step1, description: a.dashCardNewText, href: "/assessment", label: a.startTest };
+    access = { kind: "assessment", title: a.skipTestTitle, description: a.skipTestText, href: "/teachers", label: a.skipTestCta };
   }
   return <PackageShop key={`${current?.id ?? 0}:${access.kind}:${access.kind === "assigned" ? access.tutor.id : 0}`} access={access} owned={owned} balance={balance} c={LEARNING[lang]} />;
 }

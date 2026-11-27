@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { markLessonComplete } from "@/lib/lesson-actions";
 
 /**
@@ -8,17 +8,26 @@ import { markLessonComplete } from "@/lib/lesson-actions";
  * transaction: the platform releases the held payment and the tutor's share
  * lands in their wallet immediately (see payTeacher in lib/money).
  */
-export default function CompleteLessonButton({ id, disabled, label, earnLabel }: {
+export default function CompleteLessonButton({ id, disabled, label, earnLabel, startAtMs }: {
   id: number;
   disabled?: boolean;
   label?: string;
   earnLabel?: string;
+  startAtMs: number;
 }) {
   const [state, action, pending] = useActionState(markLessonComplete, {} as { ok?: boolean; error?: string });
   const [done, setDone] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const graceEndsAt = startAtMs + 15 * 60_000;
+  const gracePending = now < graceEndsAt;
+  const remainingMinutes = Math.ceil(Math.max(0, graceEndsAt - now) / 60_000);
 
   const message =
-    state.error === "too_early" ? "You can end the lesson once it has started." :
+    state.error === "too_early" ? "You can end the lesson 15 minutes after its scheduled start, to allow the student time to join." :
     state.error === "already" ? "This lesson is already completed." :
     state.error ? "Couldn't complete the lesson." : "";
 
@@ -39,10 +48,10 @@ export default function CompleteLessonButton({ id, disabled, label, earnLabel }:
       <input type="hidden" name="id" value={id} />
       <button
         type="submit"
-        disabled={pending || disabled || state.ok}
+        disabled={pending || disabled || state.ok || gracePending}
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50 sm:w-auto"
       >
-        {pending ? "Paying…" : (label ?? "End lesson")}
+        {pending ? "Paying…" : gracePending ? `Available in ${remainingMinutes} min` : (label ?? "End lesson")}
       </button>
       {message && !state.ok && <span role="alert" className="text-xs text-amber-700">{message}</span>}
     </form>

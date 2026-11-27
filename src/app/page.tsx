@@ -56,7 +56,7 @@ export default async function Home() {
         <div className="home-marquee-track">
           {[0, 1].map(dup => (
             <div key={dup} className="home-marquee-group">
-              {["IELTS", "TOEFL", "TOEIC", "Business English", "Kids English", "Conversation", "Pronunciation", "Job Interview", "Travel", "Grammar", "Writing"].map(w => <span key={w}>{w}</span>)}
+              {["IELTS", "TOEFL", "TOEIC", "Business English", "Kids English", "Conversation", "Travel"].map(w => <span key={w}>{w}</span>)}
             </div>
           ))}
         </div>
@@ -85,14 +85,14 @@ export default async function Home() {
                 <p>{a.writtenText}</p>
                 <span className="match-mode-cta">{a.startWritten}<Icon name="arrow" width={16} height={16} /></span>
               </Link>
-              <Link href="/assessment/live" className="match-mode-card match-mode-live">
+              <Link href="/register?role=student" className="match-mode-card match-mode-secondary">
                 <div className="match-mode-top">
-                  <span className="match-mode-icon"><Icon name="video" width={22} height={22} /></span>
-                  <span className="match-mode-badge">{a.liveMeta}</span>
+                  <span className="match-mode-icon"><Icon name="user" width={22} height={22} /></span>
+                  <span className="match-mode-badge">{a.skipTestMeta}</span>
                 </div>
-                <h3>{a.liveTitle}</h3>
-                <p>{a.liveText}</p>
-                <span className="match-mode-cta">{a.bookLive}<Icon name="arrow" width={16} height={16} /></span>
+                <h3>{a.skipTestTitle}</h3>
+                <p>{a.skipTestText}</p>
+                <span className="match-mode-cta">{a.registerWithoutTest}<Icon name="arrow" width={16} height={16} /></span>
               </Link>
             </div>
           </div>

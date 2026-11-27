@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
-import { GOALS, PLACEMENT_QUESTIONS } from "@/lib/placement-questions";
+import { getPlacementQuestions, GOALS } from "@/lib/placement-questions";
 import { submitWrittenAssessment } from "@/lib/assessment-actions";
 import type { AssessmentCopy } from "@/lib/assessment-i18n";
 import Icon from "./Icon";
@@ -13,13 +13,14 @@ export default function PlacementTest({ a, initialGoal, initialAudience }: {
   const [step, setStep] = useState(0); // 0 = goal/audience, 1..N = questions
   const [goal, setGoal] = useState(initialGoal);
   const [audience, setAudience] = useState(initialAudience === "kids" ? "kids" : "adults");
-  const [answers, setAnswers] = useState<number[]>(() => PLACEMENT_QUESTIONS.map(() => -1));
+  const questions = getPlacementQuestions(goal);
+  const [answers, setAnswers] = useState<number[]>(() => questions.map(() => -1));
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  const total = PLACEMENT_QUESTIONS.length;
+  const total = questions.length;
   const qIndex = step - 1;
-  const q = step >= 1 ? PLACEMENT_QUESTIONS[qIndex] : null;
+  const q = step >= 1 ? questions[qIndex] : null;
   const progress = Math.round((step / total) * 100);
 
   const chip = (on: boolean) =>
@@ -53,9 +54,9 @@ export default function PlacementTest({ a, initialGoal, initialAudience }: {
 
           <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-400">{a.goalLabel}</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" className={chip(goal === "")} onClick={() => setGoal("")}>{a.goalAny}</button>
+            <button type="button" className={chip(goal === "")} onClick={() => { setGoal(""); setAnswers(getPlacementQuestions("").map(() => -1)); }}>{a.goalAny}</button>
             {GOALS.map(g => (
-              <button key={g} type="button" className={chip(goal === g)} onClick={() => setGoal(g)}>{g}</button>
+              <button key={g} type="button" className={chip(goal === g)} onClick={() => { setGoal(g); setAnswers(getPlacementQuestions(g).map(() => -1)); }}>{g}</button>
             ))}
           </div>
 

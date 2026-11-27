@@ -25,7 +25,6 @@ import TeacherProfileProgress from "@/components/TeacherProfileProgress";
 import ProfileAvatarUploadForm from "@/components/ProfileAvatarUploadForm";
 import TeacherClassTest from "@/components/TeacherClassTest";
 import AssessmentStatusCard from "@/components/AssessmentStatusCard";
-import TeacherAssessments from "@/components/TeacherAssessments";
 import { getPricingConfig } from "@/lib/pricing-config";
 import TeacherVideoUpload from "@/components/TeacherVideoUpload";
 import { teacherVideoSrc } from "@/lib/teacher-video-url";
@@ -260,9 +259,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           ))}
         </div>
 
-        {isTutor
-          ? <TeacherAssessments teacherId={user.id} lang={lang} timeZone={user.timeZone} done={sp.ok === "evaluated"} failed={sp.err === "evaluation"} />
-          : <AssessmentStatusCard userId={user.id} lang={lang} timeZone={user.timeZone} />}
+        {!isTutor && <AssessmentStatusCard userId={user.id} lang={lang} timeZone={user.timeZone} />}
 
         {!isTutor && (
           <Link href="/dashboard?tab=packages" className="group flex flex-wrap items-center justify-between gap-5 rounded-[22px] bg-[#eaf3ee] p-6">

@@ -81,6 +81,10 @@ async function main() {
     await expect(learner.locator(`a[href^="/classroom/${id}"]`)).toHaveCount(0);
     await tutor.goto(`${origin}/classroom/${id}`);
     await expect(tutor.getByRole("button", { name: "Save classroom" })).toBeVisible();
+    // Meet / Zoom URLs are configured by administrators in Admin → Tutors;
+    // the tutor can only select an assigned provider, never paste/edit its URL.
+    await expect(tutor.locator('input[type="url"]')).toHaveCount(0);
+    await expect(tutor.getByText("Meeting link", { exact: true })).toHaveCount(0);
     await tutor.getByRole("button", { name: /Google Meet/ }).first().click();
     await tutor.getByRole("button", { name: "Save classroom" }).click();
     await expect.poll(async () => (await db.select({ platform: lessons.platform }).from(lessons).where(eq(lessons.id, id)))[0].platform).toBe("meet");

@@ -1,6 +1,11 @@
 export type EntryRole = "teacher" | "student";
 export type ClassroomPhase = "pending" | "early" | "open" | "closed";
 export const ENTRY_MINUTES: Record<EntryRole, number> = { teacher: 30, student: 10 };
+/** Tutor may only end a lesson after giving a late student a 15-minute grace period. */
+export const TEACHER_END_GRACE_MINUTES = 15;
+export function teacherCanEndLesson(startAt: Date, now = Date.now()) {
+  return Number.isFinite(startAt.getTime()) && now >= startAt.getTime() + TEACHER_END_GRACE_MINUTES * 60_000;
+}
 
 /** One source of truth for classroom entry, independent of the viewer's clock or timezone. */
 export function classroomPhase(
