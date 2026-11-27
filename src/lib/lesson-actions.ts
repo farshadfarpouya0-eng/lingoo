@@ -7,6 +7,7 @@ import { lessonParticipants, lessons, teacherProfiles } from "@/db/schema";
 import { getUser } from "@/lib/auth";
 import { payTeacher, payGroupSeat } from "@/lib/money";
 import { qualifyStudentReferral } from "@/lib/referral-service";
+import { teacherCanEndLesson } from "@/lib/classroom-window";
 
 type R = { ok?: boolean; error?: string };
 
@@ -23,9 +24,8 @@ export async function markLessonComplete(prev: R, formData: FormData): Promise<R
   if (l.teacherId !== me.id && me.role !== "admin") return { ok: false, error: "forbidden" };
   if (["completed", "cancelled"].includes(l.status)) return { ok: false, error: "already" };
 
-  /* The lesson must have started; the tutor may then end it at any point and
-     payTeacher credits their wallet inside the same transaction (admins can force-end). */
-  if (Date.now() < l.startAt.getTime() && me.role !== "admin") return { ok: false, error: "too_early" };
+  /* Give a late student 15 minutes after the scheduled start to join before the tutor can end the lesson. Admins can still force-end. */
+  if (!teacherCanEndLesson(l.startAt) && me.role !== "admin") return { ok: false, error: "too_early" };
 
   await db.transaction(async tx => {
     const r = await tx.update(lessons).set({ status: "completed" })

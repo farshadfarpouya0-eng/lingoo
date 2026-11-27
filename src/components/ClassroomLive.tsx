@@ -28,8 +28,6 @@ const D = {
   tutorOnly: "Only your tutor can use Google Meet or Zoom. Pick Lingo Room.",
   assignedDesc: "Your school's fixed room. Opens in a new tab.",
   assignedLabel: "Room assigned by the administrator",
-  noAssigned: "No fixed room is assigned yet. Paste a link, or ask the administrator to add one in Admin → Tutors.",
-  link: "Meeting link", linkHint: "Paste your Google Meet or Zoom link",
   save: "Save classroom", saved: "Classroom saved",
   invalidLink: "That doesn't look like a valid Google Meet or Zoom link.",
   dailyLoading: "Preparing a previously scheduled video room…",

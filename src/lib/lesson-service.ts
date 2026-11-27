@@ -7,6 +7,7 @@ import { getPricingConfig } from "./pricing-config";
 import { requirePlacementTutor } from "./placement";
 import { qualifyStudentReferral } from "./referral-service";
 import { isAccountSuspended } from "./account-status";
+import { teacherCanEndLesson } from "./classroom-window";
 
 export type BookingInput = {
   teacherId: number; startAt: Date; duration: number; trial?: boolean; packageId?: number; topic?: string;
@@ -274,9 +275,8 @@ export async function changeLessonStatus(actorId: number, lessonId: number, acti
       return true;
     }
 
-    // The tutor ends the lesson from the classroom: once it has started they may
-    // finish it at any point, and payTeacher credits their wallet in the same transaction.
-    if (action === "complete" && l.status === "confirmed" && l.startAt.getTime() <= now) {
+    // The tutor can end the lesson only after the 15-minute late-arrival grace period.
+    if (action === "complete" && l.status === "confirmed" && teacherCanEndLesson(l.startAt, now)) {
       await tx.update(lessons)
         .set({ status: "completed", teacherNotes: notes.trim().slice(0, 1000) })
         .where(eq(lessons.id, l.id));

@@ -77,7 +77,7 @@ const zh: Home = {
   tutorsTitle: "备受欢迎的英语老师", tutorsSub: "查看老师的真实资料、课程主题与学生评价。",
   howTitle: "三步开始英语学习", howSub: "从水平测试到进入教室，每一步都简单清晰。",
   steps: [
-    { title: "做免费水平测试", text: "5分钟书面测试，或与老师进行一次免费口语测评。" },
+    { title: "选择开始方式", text: "可参加5分钟书面测试，也可直接注册并开始学习。" },
     { title: "查看推荐老师", text: "我们按你的水平和目标精选老师，看介绍视频和试听课后选择一位。" },
     { title: "预约并在线上课", text: "按你的时区选择时间，直接通过浏览器进入一对一视频教室。" },
   ],
@@ -231,7 +231,7 @@ const en: Home = {
   tutorsTitle: "Tutors learners love", tutorsSub: "Explore tutor profiles, lesson topics, schedules and student feedback.",
   howTitle: "Your next lesson is three steps away", howSub: "A clear, simple path from level test to joining class.",
   steps: [
-    { title: "Take the free level test", text: "A 5-minute written test — or a free live speaking check with a real teacher." },
+    { title: "Choose how to start", text: "Take a 5-minute written test, or register and start learning without an assessment." },
     { title: "Meet your matched teachers", text: "We hand-pick a few teachers for your level and goal. Watch their intro and sample lessons, then choose." },
     { title: "Book & learn online", text: "Pick a time in your timezone and join your one-to-one video classroom." },
   ],

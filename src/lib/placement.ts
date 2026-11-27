@@ -4,7 +4,7 @@ import { assessments, teacherProfiles, users } from "@/db/schema";
 import { isAccountSuspended } from "./account-status";
 
 type Reader = Pick<typeof db, "select">;
-type SelectionRecord = Pick<typeof assessments.$inferSelect, "status" | "level" | "selectedTeacherId" | "recommendedIds">;
+type SelectionRecord = Pick<typeof assessments.$inferSelect, "method" | "status" | "level" | "selectedTeacherId" | "recommendedIds">;
 
 /** One current placement for display, choosing a match, purchases and bookings.
  * A newer pending evaluation is not permission to reuse an older shortlist.
@@ -32,12 +32,18 @@ export function selectedPlacementTutor(row: SelectionRecord | null): number | nu
   return id && shortlistIds(row).includes(id) ? id : null;
 }
 
-/** Check inside the payment/booking transaction, after locking the student.
- * A teacherId sent by the browser confirms intent; it does not grant access.
+/**
+ * A completed written test uses its shortlist to protect the student's match.
+ * Students who choose direct registration (no written test) may book any active
+ * tutor without being redirected into an assessment. Historical live records
+ * are also ignored so they cannot block the new no-test path.
  */
 export async function requirePlacementTutor(reader: Reader, studentId: number, teacherId: number) {
   const current = await getLatestAssessment(studentId, reader);
-  if (selectedPlacementTutor(current) !== teacherId) throw new Error("placement_required");
+  if (current?.method === "written" && current.status === "completed" && current.level
+    && selectedPlacementTutor(current) !== teacherId) {
+    throw new Error("placement_required");
+  }
 }
 
 /** The results screen is the only writer of selectedTeacherId. Stale pages,
@@ -62,7 +68,7 @@ export async function confirmPlacementTutor(studentId: number, assessmentId: num
   });
 }
 
-export { CEFR_LEVELS, GOALS, PLACEMENT_QUESTIONS, gradePlacement } from "./placement-questions";
+export { CEFR_LEVELS, GOALS, PLACEMENT_QUESTIONS, getPlacementQuestions, gradePlacement } from "./placement-questions";
 export type { CefrLevel, PlacementQuestion } from "./placement-questions";
 import { CEFR_LEVELS, type CefrLevel } from "./placement-questions";
 
@@ -157,26 +163,6 @@ export async function recommendTeachers(input: {
       or(eq(users.suspended, false), lte(users.suspendedUntil, new Date()))!,
     ));
   return rankTeachers(rows, input).slice(0, input.limit ?? 3);
-}
-
-/** Picks a random active tutor for a live assessment, preferring one who speaks the student's language. */
-export async function pickRandomTeacher(nativeLang?: string | null): Promise<number | null> {
-  const rows = await db
-    .select({ id: users.id, speaks: teacherProfiles.speaks })
-    .from(teacherProfiles)
-    .innerJoin(users, eq(users.id, teacherProfiles.userId))
-    .where(and(
-      eq(users.role, "teacher"),
-      eq(teacherProfiles.active, true),
-      or(eq(users.suspended, false), lte(users.suspendedUntil, new Date()))!,
-    ));
-  if (!rows.length) return null;
-  const nl = (nativeLang || "").toLowerCase();
-  const speaking = rows.filter(r =>
-    (nl === "zh" && /(mandarin|cantonese|chinese)/i.test(r.speaks)) ||
-    (nl === "ja" && /japanese/i.test(r.speaks)));
-  const pool = speaking.length ? speaking : rows;
-  return pool[Math.floor(Math.random() * pool.length)].id;
 }
 
 export async function getTeachersByIds(ids: number[]) {

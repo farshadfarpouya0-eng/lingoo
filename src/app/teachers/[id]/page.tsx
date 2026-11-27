@@ -51,8 +51,8 @@ export default async function TeacherPage({ params, searchParams }: {
   const confirmed = !!student && selectedPlacementTutor(matchInfo) === tid;
   const redemption = !confirmed ? credits.find(pack => pack.id === Number(sp.package)) : undefined;
   const nextStep = matchInfo ? "/assessment/results" : "/assessment";
-  // Only the results page can confirm a tutor. An owned package opens only its own redemption form.
-  if (student && !confirmed && !redemption && !shortlistIds(matchInfo).includes(tid)) redirect(nextStep);
+  // Written-test students must use their confirmed match; no-test students can book directly.
+  if (student && matchInfo?.method === "written" && !confirmed && !redemption && !shortlistIds(matchInfo).includes(tid)) redirect(nextStep);
   const groupLessons = await db.select({ id: lessons.id, studentId: lessons.studentId, startAt: lessons.startAt, duration: lessons.duration, capacity: lessons.capacity })
     .from(lessons).where(and(eq(lessons.teacherId, tid), eq(lessons.classType, "semi_private"), inArray(lessons.status, ["pending", "confirmed"]), gt(lessons.startAt, new Date()), gt(lessons.startAt, new Date(nowMs() - 1000))));
   const groupIds = groupLessons.map(g => g.id);
@@ -85,15 +85,15 @@ export default async function TeacherPage({ params, searchParams }: {
     </div>
     <aside className="min-w-0 space-y-4 lg:sticky lg:top-24">
       <div className="rounded-[26px] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-100/60"><div className="flex items-baseline justify-between gap-2"><div><span className="text-3xl font-bold tracking-tight text-teal-950">{money(pricing.student50)}</span><span className="ml-1 text-xs text-slate-400">/ 50 {c.minutes}</span></div></div>{error&&<p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error} {sp.err==="balance"&&<Link href="/dashboard?tab=wallet" className="underline">{t.topUp}</Link>}</p>}
-        {student && (confirmed || redemption) ? (
+        {student && (confirmed || redemption || matchInfo?.method !== "written") ? (
            <BookingPanel key={`${tid}:${redemption?.id ?? "assigned"}`} teacherId={tid} studentTimeZone={viewerZone} serverNowMs={serverNowMs}
-             lang={lang} slots50={slots50} slots25={slots25} groupSlots={confirmed ? visibleGroupSlots : []} price={pricing.student50} price25={pricing.student25}
-             trialEligible={confirmed && !prev.length} balance={student.balance} t={t} c={c} credits={confirmed ? credits : []} redemption={redemption}
+             lang={lang} slots50={slots50} slots25={slots25} groupSlots={confirmed || matchInfo?.method !== "written" ? visibleGroupSlots : []} price={pricing.student50} price25={pricing.student25}
+             trialEligible={!prev.length && (confirmed || matchInfo?.method !== "written")} balance={student.balance} t={t} c={c} credits={confirmed ? credits : []} redemption={redemption}
              initialPackageId={Number(sp.package) || undefined} initialDuration={sp.duration === "25" ? 25 : 50} />
          ) : student ? (
            <div data-testid="profile-awaiting-selection" className="mt-5 rounded-2xl bg-teal-50 p-5"><p className="text-sm leading-6 text-teal-950">{c.confirmMatchFirst}</p>
              <Link href={nextStep} className="mt-4 block rounded-xl bg-teal-800 py-2.5 text-center text-sm font-bold text-white">{a.dashCardViewMatches}</Link></div>
-         ) : !user ? <Link href="/assessment" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{a.startTest}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
+         ) : !user ? <Link href="/register?role=student" className="mt-5 block rounded-xl bg-teal-800 py-3 text-center text-sm font-bold text-white">{a.registerWithoutTest}</Link> : <p className="mt-4 text-xs leading-5 text-slate-500">{t.studentsOnly}</p>}
          <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4 text-[11px] leading-5 text-slate-500"><li className="font-bold text-teal-900">{t.policyTitle}</li><li>{t.policy1}</li><li>{t.policy2}</li>{credits.length>0&&<li>{c.creditRestored}</li>}</ul>
       </div>
       {confirmed && <Link href="/dashboard?tab=packages" className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-teal-800"><Icon name="box" className="shrink-0"/><div className="min-w-0 flex-1"><b className="text-sm">{c.packages}</b><p className="mt-0.5 text-[11px]">5% · 10% · 15% {c.off}</p></div><Icon name="chevron" width={17} height={17}/></Link>}

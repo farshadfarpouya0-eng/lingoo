@@ -12,7 +12,7 @@ import { validMeetingLink, validZoomHostUrl } from "./meeting-links";
 import { encryptIntegrationSecret } from "./integration-config";
 import { refundStudent, refundGroupSeat, ledger } from "./money";
 import { siteSettings } from "@/db/schema";
-import { PRICING_KEY } from "./pricing-config";
+import { parsePricingConfig, PRICING_KEY } from "./pricing-config";
 import { SIGNUP_KEY } from "./signup-config";
 import {
   saveContentAndSettings, resetContent as resetContentFn,
@@ -429,10 +429,14 @@ export async function savePricingConfig(_p: unknown, fd: FormData): Promise<{ ok
     const c = Math.round(Number(fd.get(k) || 0) * 100);
     return Number.isFinite(c) && c >= 0 && c <= 100_000 ? c : 0;
   };
+  const [currentPricing] = await db.select({ value: siteSettings.value })
+    .from(siteSettings).where(eq(siteSettings.key, PRICING_KEY)).limit(1);
+  const legacyAssessmentFee = parsePricingConfig(currentPricing?.value).assessmentFee25;
   const cfg = {
     student25: dollars("student25"), student50: dollars("student50"),
     fee25: dollars("fee25"), fee50: dollars("fee50"),
-    assessmentFee25: dollars("assessmentFee25"),
+    // Retain the legacy value only so any pre-existing assessment lesson can settle safely.
+    assessmentFee25: legacyAssessmentFee,
   };
   if (cfg.student25 < 100 || cfg.student50 < 100) return { ok: false, error: "price" };
   await db.insert(siteSettings).values({ key: PRICING_KEY, value: cfg })

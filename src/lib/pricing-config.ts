@@ -18,7 +18,7 @@ export const DEFAULT_PRICING: PricingConfig = {
   student50: 2500, // US$25
   fee25: 600,      // US$6  (~43% of the student price)
   fee50: 1000,     // US$10 (40% of the student price)
-  assessmentFee25: 600, // US$6 platform-funded fee for a completed free live assessment
+  assessmentFee25: 600, // Legacy payout for pre-existing live-assessment lessons; no longer used for new bookings
 };
 
 const cents = (v: unknown, fallback: number) => {

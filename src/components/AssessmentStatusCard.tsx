@@ -14,7 +14,7 @@ export default async function AssessmentStatusCard({ userId, lang, timeZone }: {
   const primary = "inline-flex items-center gap-2 rounded-full bg-teal-800 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-teal-900";
   const ghost = "inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-xs font-bold text-teal-800 transition hover:border-teal-400";
 
-  if (!latest) {
+  if (!latest || latest.status !== "completed") {
     return (
       <section className={shell}>
         <div className="flex items-center gap-4">
@@ -24,25 +24,10 @@ export default async function AssessmentStatusCard({ userId, lang, timeZone }: {
             <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">{a.dashCardNewText}</p>
           </div>
         </div>
-        <Link href="/assessment" className={primary}>{a.startTest}<Icon name="arrow" width={15} height={15} /></Link>
-      </section>
-    );
-  }
-
-  if (latest.status === "scheduled") {
-    const when = latest.scheduledAt
-      ? new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : lang === "ja" ? "ja-JP" : "en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: timeZone || "UTC" }).format(latest.scheduledAt)
-      : "";
-    return (
-      <section className={shell}>
-        <div className="flex items-center gap-4">
-          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-teal-50 text-teal-700"><Icon name="video" width={23} height={23} /></span>
-          <div>
-            <h2 className="text-base font-bold text-teal-950">{a.dashCardScheduledTitle}</h2>
-            <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">{a.dashCardScheduledText}{when ? ` · ${when}` : ""}</p>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/assessment" className={primary}>{a.startTest}<Icon name="arrow" width={15} height={15} /></Link>
+          <Link href="/dashboard?tab=packages" className={ghost}>{a.skipTestCta}</Link>
         </div>
-        <Link href="/assessment" className={ghost}>{a.scheduledTitle}<Icon name="arrow" width={15} height={15} /></Link>
       </section>
     );
   }

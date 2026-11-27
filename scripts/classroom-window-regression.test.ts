@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classroomPhase, studentClassroomOpen } from "../src/lib/classroom-window";
+import { classroomPhase, studentClassroomOpen, teacherCanEndLesson } from "../src/lib/classroom-window";
 
 const start = Date.UTC(2026, 10, 15, 14, 0);
 const confirmed = { status: "confirmed", startAt: new Date(start), duration: 50, platform: "lingo" };
@@ -37,4 +37,10 @@ test("cancelled and completed classes stay closed; end plus 15 minutes is closed
     assert.equal(phase(role, start + 65 * 60_000 - 1), "open");
     assert.equal(phase(role, start + 65 * 60_000), "closed");
   }
+});
+
+
+test("tutor cannot end before 15-minute late-arrival grace period, but can end at exactly 15 minutes", () => {
+  assert.equal(teacherCanEndLesson(new Date(start), start + 15 * 60_000 - 1), false);
+  assert.equal(teacherCanEndLesson(new Date(start), start + 15 * 60_000), true);
 });

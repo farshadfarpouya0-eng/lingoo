@@ -351,9 +351,8 @@ export const scheduledJobRuns = pgTable("scheduled_job_runs", {
   summary: jsonb("summary").notNull().default(sql`'{}'::jsonb`), error: text("error").notNull().default(""),
 }, t => [index("scheduled_job_name_started_idx").on(t.job, t.startedAt), index("scheduled_job_status_started_idx").on(t.status, t.startedAt)]);
 
-// Placement assessment: students no longer browse all tutors. They take a written test
-// (instant) or a free live speaking assessment with a randomly assigned tutor, then the
-// platform recommends a short list of matched teachers to choose from.
+// Optional written placement assessment. Historical live-assessment fields remain
+// for compatibility with records created before the oral-assessment flow was retired.
 export const assessments = pgTable("assessments", {
   id: serial("id").primaryKey(),
   studentId: integer("student_id").notNull().references(() => users.id, { onDelete: "cascade" }),
